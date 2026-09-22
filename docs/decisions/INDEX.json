@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "decisions": [
+    {
+      "number": "0001",
+      "slug": "micronucleo-y-paquetes-con-dependencias-declaradas",
+      "title": "Arquitectura de micronúcleo y distribución por paquetes con dependencias declaradas",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0001-micronucleo-y-paquetes-con-dependencias-declaradas.md"
+    },
+    {
+      "number": "0002",
+      "slug": "orden-de-entregas",
+      "title": "Orden de entregas de forge614-ai",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0002-orden-de-entregas.md"
+    },
+    {
+      "number": "0003",
+      "slug": "init-de-maquina-y-prepare-de-proyecto",
+      "title": "`forge614 init` para la máquina y `forge614 prepare` para el proyecto",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0003-init-de-maquina-y-prepare-de-proyecto.md"
+    },
+    {
+      "number": "0004",
+      "slug": "atlas-contextualizacion-inicial-opcional",
+      "title": "Atlas es contextualización inicial opcional, no el orquestador general",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0004-atlas-contextualizacion-inicial-opcional.md"
+    },
+    {
+      "number": "0005",
+      "slug": "reglas-en-tres-niveles-y-packs",
+      "title": "Reglas en tres niveles y packs de reglas",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0005-reglas-en-tres-niveles-y-packs.md"
+    },
+    {
+      "number": "0006",
+      "slug": "nodo-hub-almacen-de-paquetes",
+      "title": "Nodo Hub: el almacén de paquetes",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0006-nodo-hub-almacen-de-paquetes.md"
+    },
+    {
+      "number": "0007",
+      "slug": "nodo-sentinel-juzga-nunca-hace",
+      "title": "Nodo Sentinel: juzga, nunca hace",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0007-nodo-sentinel-juzga-nunca-hace.md"
+    },
+    {
+      "number": "0008",
+      "slug": "politicas-como-paquetes-en-tres-capas",
+      "title": "Políticas como paquetes en tres capas",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0008-politicas-como-paquetes-en-tres-capas.md"
+    },
+    {
+      "number": "0009",
+      "slug": "centralizacion-del-estandar-sin-copias",
+      "title": "Centralización del estándar: una sola fuente, sin copias",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0009-centralizacion-del-estandar-sin-copias.md"
+    },
+    {
+      "number": "0010",
+      "slug": "revisor-independiente-reintentos-y-fusible",
+      "title": "Revisor independiente por escalera, reintentos acotados y fusible",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0010-revisor-independiente-reintentos-y-fusible.md"
+    },
+    {
+      "number": "0011",
+      "slug": "libro-de-corridas-en-forge614-ai",
+      "title": "El libro de corridas vive en forge614-ai, no en Engram",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0011-libro-de-corridas-en-forge614-ai.md"
+    },
+    {
+      "number": "0012",
+      "slug": "prohibido-mencionar-productos-externos",
+      "title": "Prohibido mencionar productos externos en código, documentación y contratos",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0012-prohibido-mencionar-productos-externos.md"
+    },
+    {
+      "number": "0013",
+      "slug": "convencion-unica-de-contratos-de-maquina",
+      "title": "Convención única de contratos de máquina",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0013-convencion-unica-de-contratos-de-maquina.md"
+    },
+    {
+      "number": "0014",
+      "slug": "patrones-obligatorios-nombrados-por-problema",
+      "title": "Patrones obligatorios nombrados por problema, no por lista",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0014-patrones-obligatorios-nombrados-por-problema.md"
+    },
+    {
+      "number": "0015",
+      "slug": "registro-de-decisiones-en-cuatro-capas",
+      "title": "Registro de decisiones en cuatro capas",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0015-registro-de-decisiones-en-cuatro-capas.md"
+    },
+    {
+      "number": "0016",
+      "slug": "nombres-de-paquetes-y-bilinguismo",
+      "title": "Nombres de paquetes `origen-tipo-nombre` y bilingüismo es/en",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0016-nombres-de-paquetes-y-bilinguismo.md"
+    },
+    {
+      "number": "0017",
+      "slug": "revision-del-procedimiento-de-agentes-en-cada-cambio-de-nodo",
+      "title": "El procedimiento de agentes se revisa en cada cambio de nodo, con puerta de release",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0017-revision-del-procedimiento-de-agentes-en-cada-cambio-de-nodo.md"
+    },
+    {
+      "number": "0018",
+      "slug": "soporte-obligatorio-de-macos-linux-y-windows",
+      "title": "Soporte obligatorio de macOS, Linux y Windows en todo nodo",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0018-soporte-obligatorio-de-macos-linux-y-windows.md"
+    },
+    {
+      "number": "0019",
+      "slug": "workflows-delgados-documentados-y-validados-antes-de-integrar",
+      "title": "Workflows delgados, documentados y validados antes de integrar a `main`",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0019-workflows-delgados-documentados-y-validados-antes-de-integrar.md"
+    },
+    {
+      "number": "0020",
+      "slug": "huella-minima-en-el-contexto-de-la-ia",
+      "title": "Huella mínima en el contexto de la IA",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0020-huella-minima-en-el-contexto-de-la-ia.md"
+    },
+    {
+      "number": "0021",
+      "slug": "piezas-reemplazables-conforme-evoluciona-el-modelo",
+      "title": "Piezas reemplazables conforme evoluciona el modelo",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0021-piezas-reemplazables-conforme-evoluciona-el-modelo.md"
+    },
+    {
+      "number": "0022",
+      "slug": "ambito-ecosistema-en-engram",
+      "title": "Ámbito \"ecosistema\" en Engram: memoria compartida entre repositorios relacionados, resuelta por el producto",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0022-ambito-ecosistema-en-engram.md"
+    },
+    {
+      "number": "0023",
+      "slug": "identidad-portatil-del-proyecto-en-el-repositorio",
+      "title": "Identidad portátil del proyecto en el repositorio (`.forge614/project.json`, propiedad de Engram)",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0023-identidad-portatil-del-proyecto-en-el-repositorio.md"
+    },
+    {
+      "number": "0024",
+      "slug": "evolucion-aditiva-de-datos-y-contratos",
+      "title": "Evolución aditiva de datos persistidos y contratos públicos: agregar, nunca renombrar ni quitar",
+      "status": "aceptada",
+      "date": "2026-09-22",
+      "session": "forge614-ai-bd590adc-2026-09-21",
+      "file": "0024-evolucion-aditiva-de-datos-y-contratos.md"
+    }
+  ]
+}

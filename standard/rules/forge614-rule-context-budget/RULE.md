@@ -8,4 +8,4 @@
 
 **Por qué.** Los arneses de IA suelen inyectar skills completas, decenas de servidores MCP y pasos extra en cada sesión; el resultado conocido es un agente más lento que gasta más tokens sin que el trabajo mejore. La complejidad de Forge614 debe vivir en el constructor (nodos, verificador, CI), nunca en el contexto de la IA (acta 0020).
 
-**Verificación.** Revisión humana por ahora; `validator: context-budget` llega en una fase posterior y medirá el presupuesto real de arranque.
+**Verificación.** `validator: context-budget` calcula, para el pack del ecosistema, la línea de índice de cada regla (nombre + primera línea de su `RULE.md`) y estima su costo como `caracteres / 4` (etiquetado como estimación en el hallazgo); falla si la suma supera 3 000 tokens. La medición exacta al empaquetar (campo `tokens` del manifiesto) llega en una fase posterior.

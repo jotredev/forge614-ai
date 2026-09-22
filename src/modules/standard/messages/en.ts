@@ -6,6 +6,7 @@ export const en: MessageCatalog = {
   packageNamesInvalid: () => "Package folders outside origin-kind-name.",
   forbiddenMentionsNone: () => "No forbidden mentions.",
   forbiddenMentionsFound: () => "External product mentions.",
+  forbiddenMentionsDataInvalid: () => "Invalid standard/forbidden-mentions.json: could not load the forbidden terms.",
   decisionRecordsOk: () => "Decision records are consistent.",
   decisionRecordsInvalid: () => "Invalid decision records.",
   decisionsIndexMissing: () => "docs/decisions/INDEX.json is missing.",
@@ -26,4 +27,7 @@ export const en: MessageCatalog = {
   workflowsInvalid: () => "Workflows violate the standard.",
   ecosystemContractOk: () => "Ecosystem contract is consistent.",
   ecosystemContractDiverged: () => "Diverged ecosystem contract copy.",
+  contextBudgetOk: (p) => `Context budget (estimated): ~${p.tokens ?? "?"} tokens (limit ${p.budget ?? "3000"}).`,
+  contextBudgetOverBudget: (p) => `Context budget (estimated) exceeds the limit: ~${p.tokens ?? "?"} tokens (limit ${p.budget ?? "3000"}).`,
+  contextBudgetInvalid: () => "Could not estimate the context budget: the ecosystem pack.json is missing or invalid.",
 };

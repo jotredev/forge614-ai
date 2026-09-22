@@ -1,5 +1,6 @@
 import { validateAgentChecklistImpact } from "./agent-checklist-impact";
 import { validateBilingualDocs } from "./bilingual-docs";
+import { validateContextBudget } from "./context-budget";
 import { validateDecisionRecords } from "./decision-records";
 import { validateErrorCodes } from "./error-codes";
 import { validateForbiddenMentions } from "./forbidden-mentions";
@@ -19,4 +20,5 @@ export const VALIDATORS: Record<string, Validator> = {
   "error-codes": validateErrorCodes,
   "support-matrix": validateSupportMatrix,
   workflows: (tree, options) => validateWorkflows(tree, options.parseYaml),
+  "context-budget": validateContextBudget,
 };
