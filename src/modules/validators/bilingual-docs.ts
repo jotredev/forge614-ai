@@ -7,6 +7,7 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["README.md", "README.en.md"],
   ["standard/STANDARD.md", "standard/STANDARD.en.md"],
   ["CONTRACT.md", "CONTRACT.en.md"],
+  ["standard/FORGE614_ECOSYSTEM_CONTRACT.md", "standard/FORGE614_ECOSYSTEM_CONTRACT.en.md"],
 ];
 
 function headingLines(text: string): string[] {
