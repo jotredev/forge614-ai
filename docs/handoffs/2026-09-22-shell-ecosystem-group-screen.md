@@ -6,6 +6,8 @@
 ## Prompt para la sesión en `forge614-shell`
 
 ```
+REGLA DE GIT (no negociable): NO hagas commit, merge, tag, push ni publicación en ningún momento, ni siquiera al final ni "para dejar limpio". La revisión de forge614-ai es PREVIA al commit; si terminas, reportas y esperas. Un commit sin revisión incumple este traspaso.
+
 Contexto. Este repositorio es forge614-shell, la única interfaz visual del ecosistema Forge614. Rigen el
 Estándar de Nodo (forge614-ai/standard/STANDARD.md) y las actas 0001–0023 (forge614-ai/docs/decisions/).
 Lee completas las actas 0022 (ámbito ecosystem) y 0023 (identidad portátil del proyecto) antes de tocar

@@ -504,6 +504,20 @@ del delimitador antes de envolver el bloque — nunca confiar en una sola capa d
       ej. cuando el agente llama una tool MCP de Engram) — es una traducción adicional específica del
       protocolo de este agente (ver punto 3 de `AGENTS.md`), no un requisito para que el chat exista.
 
+**Novedad (Shell, 2026-09-22): indicador de actividad en segundo plano.** Shell muestra agentes y procesos
+en segundo plano (contador en la barra de estado y lista expandible en el panel lateral) a partir del modelo
+común `BackgroundActivity` (`src/engines/types.ts`) que cada adaptador de sesión alimenta con los eventos
+reales de su protocolo. Claude Code lo alimenta con los eventos `task_started`, `task_updated`,
+`task_notification` y `background_tasks_changed` verificados en el `sdk.d.ts` instalado; Codex no lo reporta
+hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez de inventar estado.
+
+- [ ] Declarar **con evidencia real** (tipos del SDK o eventos observados en vivo, nunca por documentación)
+      si el protocolo del agente nuevo reporta actividad en segundo plano. Si sí, implementar
+      `backgroundActivity()` en su sesión alimentando `BackgroundActivity` y cubrirlo con tests con dobles
+      (inicio, actualización, fin, fallo, varios simultáneos, caída del turno). Si no, dejar el método sin
+      implementar y un test que fije esa ausencia: la UI mostrará el aviso de "no informa". Nunca mostrar un
+      estado que el motor no reporte.
+
 ---
 
 ## Agentes ya evaluados

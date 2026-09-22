@@ -6,6 +6,8 @@
 ## Prompt para la sesión en `forge614-engram`
 
 ```
+REGLA DE GIT (no negociable): NO hagas commit, merge, tag, push ni publicación en ningún momento, ni siquiera al final ni "para dejar limpio". La revisión de forge614-ai es PREVIA al commit; si terminas, reportas y esperas. Un commit sin revisión incumple este traspaso.
+
 Contexto. Este repositorio es forge614-engram, el motor de memoria persistente del ecosistema Forge614.
 Rigen el Estándar de Nodo (repo forge614-ai: standard/STANDARD.md) y las actas 0001–0022 (forge614-ai/
 docs/decisions/). Lee completa el acta 0022 (ámbito ecosystem) antes de tocar nada. Reglas: plan antes que
@@ -19,9 +21,17 @@ Forge614, pero también microservicios, microfrontends o monorepos partidos de c
 decisiones y procedimientos que hoy solo ve el proyecto donde se guardaron. Debe resolverse en el producto,
 sin que la persona guarde recuerdos a mano ni sepa que existen ámbitos.
 
+REGLA DURA (acta 0024, evolución aditiva): SOLO se agrega. Ninguna tabla, columna, campo, topicKey,
+comando, herramienta MCP ni código de error existente se renombra, elimina ni cambia de tipo o significado.
+Migraciones hacia adelante, idempotentes, con respaldo automático de engram.db antes de aplicarse y sin
+reescribir datos. Test obligatorio: una base creada por la versión publicada anterior (fixture) se abre y
+se lee completa con la versión nueva sin error ni pérdida; el protocolo v1/v2 y todas las salidas JSON
+actuales siguen byte-idénticas para quien no use el ámbito nuevo.
+
 Tarea (TDD; plan primero):
-1. Esquema: tabla de grupos (`ecosystem_groups`: id, name estable con regex ^[a-z0-9]+(?:-[a-z0-9]+)*$,
-   createdAt) y pertenencia (un proyecto → como máximo un grupo). Migración versionada como las existentes.
+1. Esquema: tabla NUEVA de grupos (`ecosystem_groups`: id, name estable con regex
+   ^[a-z0-9]+(?:-[a-z0-9]+)*$, createdAt) y pertenencia mediante columna NUEVA nula (o tabla nueva de
+   pertenencia) — nunca modificando columnas existentes. Migración versionada como las existentes.
 2. Ámbito `ecosystem` en memorias, sesiones y búsqueda con la misma semántica de topicKey, versiones,
    archivo/restauración y refuerzo que `project`/`shared`. Precedencia al resolver topicKey repetido:
    project > ecosystem > shared.
