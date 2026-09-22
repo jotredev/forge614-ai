@@ -8,14 +8,14 @@ test("reports file:line for each forbidden term, case-insensitive, whole word", 
     "src/a.ts": "// zzzproductX no cuenta\n",
     "standard/forbidden-mentions.json": "{}",
   });
-  const f = validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], today: "2026-09-22" })[0];
+  const f = validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], parseYaml: () => ({}), today: "2026-09-22" })[0];
   expect(f?.verdict).toBe("fail");
   expect(f?.evidence).toEqual(["docs/es/01.md:2: zzzproduct"]);
 });
 
 test("passes when there are no matches", () => {
   const tree = treeFrom({ "README.md": "todo bien aquí\n" });
-  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], today: "2026-09-22" })[0]?.verdict).toBe("pass");
+  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], parseYaml: () => ({}), today: "2026-09-22" })[0]?.verdict).toBe("pass");
 });
 
 test("never scans standard/forbidden-mentions.json itself or anything under .superpowers/", () => {
@@ -23,7 +23,7 @@ test("never scans standard/forbidden-mentions.json itself or anything under .sup
     "standard/forbidden-mentions.json": JSON.stringify({ schemaVersion: 1, terms: ["zzzproduct"], excludePaths: [] }),
     ".superpowers/notes/plan.md": "esto menciona zzzproduct en un borrador\n",
   });
-  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], today: "2026-09-22" })[0]?.verdict).toBe("pass");
+  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], parseYaml: () => ({}), today: "2026-09-22" })[0]?.verdict).toBe("pass");
 });
 
 test("excludePaths declared inside forbidden-mentions.json are also honored", () => {
@@ -35,5 +35,5 @@ test("excludePaths declared inside forbidden-mentions.json are also honored", ()
     }),
     "docs/historical/old.md": "zzzproduct aparece aquí como registro histórico\n",
   });
-  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], today: "2026-09-22" })[0]?.verdict).toBe("pass");
+  expect(validateForbiddenMentions(tree, { forbiddenMentions: ["zzzproduct"], parseYaml: () => ({}), today: "2026-09-22" })[0]?.verdict).toBe("pass");
 });

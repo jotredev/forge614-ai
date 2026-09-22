@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { treeFrom } from "../standard/file-tree";
 import { validateAgentChecklistImpact } from "./agent-checklist-impact";
 
-const opts = { forbiddenMentions: [], today: "2026-09-22" };
+const opts = { forbiddenMentions: [], parseYaml: () => ({}), today: "2026-09-22" };
 
 const plan = (status: string, impact: string) =>
   `# P\n\n**Date:** 2026-09-22\n**Type:** feature\n**Status:** ${status}\n\n## Impacto en el procedimiento de agentes\n${impact}\n## Result\nok\n`;

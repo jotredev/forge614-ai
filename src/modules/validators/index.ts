@@ -6,6 +6,7 @@ import { validateForbiddenMentions } from "./forbidden-mentions";
 import { validatePackageNaming } from "./package-naming";
 import { validateSupportMatrix } from "./support-matrix";
 import type { Validator } from "./types";
+import { validateWorkflows } from "./workflows";
 
 export type { Validator, ValidatorOptions } from "./types";
 
@@ -17,4 +18,5 @@ export const VALIDATORS: Record<string, Validator> = {
   "agent-checklist-impact": validateAgentChecklistImpact,
   "error-codes": validateErrorCodes,
   "support-matrix": validateSupportMatrix,
+  workflows: (tree, options) => validateWorkflows(tree, options.parseYaml),
 };

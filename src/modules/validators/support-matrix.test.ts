@@ -3,7 +3,7 @@ import { treeFrom } from "../standard/file-tree";
 import { validateSupportMatrix } from "./support-matrix";
 import type { ValidatorOptions } from "./types";
 
-const opts = (today: string): ValidatorOptions => ({ forbiddenMentions: [], today });
+const opts = (today: string): ValidatorOptions => ({ forbiddenMentions: [], parseYaml: () => ({}), today });
 
 const m = (cells: unknown[]) => JSON.stringify({ schemaVersion: 1, nodes: ["engines"], agents: ["codex"], cells });
 

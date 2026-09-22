@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { treeFrom } from "../standard/file-tree";
 import { validatePackageNaming } from "./package-naming";
 
-const opts = { forbiddenMentions: [], today: "2026-09-22" };
+const opts = { forbiddenMentions: [], parseYaml: () => ({}), today: "2026-09-22" };
 
 test("every folder under standard/rules, packs and .agents/{rules,skills,policies,mcps,plugins} is canonical", () => {
   const ok = treeFrom({
