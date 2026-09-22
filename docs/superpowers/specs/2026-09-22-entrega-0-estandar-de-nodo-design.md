@@ -4,7 +4,7 @@
 **Estado:** Aprobada por el propietario del producto el 2026-09-22
 **Gobierna:** `forge614-ai` y, por extensión, todos los repositorios del ecosistema Forge614
 **Traducción hermana:** `2026-09-22-delivery-0-node-standard-design.en.md`
-**Actas relacionadas:** `docs/decisions/0001` a `docs/decisions/0021`
+**Actas relacionadas:** `docs/decisions/0001` a `docs/decisions/0024`
 **Anexos:** `docs/audits/2026-09-22-*.md` (auditorías de código de los cinco nodos), `standard/procedures/new-agent-checklist.md`
 
 ---
@@ -145,6 +145,7 @@ Convención única (acta 0013, **aceptada** el 2026-09-22; cambia el formato que
 - Flujos de eventos: NDJSON en stdout, un objeto por línea, cada uno con `schemaVersion` y `type`; evento terminal garantizado.
 - `--help` y `--version` siempre disponibles y nunca bloqueantes.
 - Cambios incompatibles suben `schemaVersion`; el consumidor rechaza versiones que no conoce con `SCHEMA_UNSUPPORTED`.
+- **Evolución aditiva** (acta 0024): en datos persistidos y contratos públicos solo se agrega (tablas, columnas nulas o con valor por defecto, campos opcionales, comandos, herramientas, versiones); nunca se renombra, elimina ni cambia el tipo o significado de algo existente. Lo que deja de usarse se marca obsoleto con `sunset`. Migraciones hacia adelante, idempotentes, con respaldo automático y sin destruir datos; test obligatorio que abre datos escritos por versiones anteriores. El verificador rechaza `DROP`/`RENAME`/cambios de tipo en migraciones (`schema-evolution`, Sentinel fase 0.2).
 - El `code` es un identificador estable en `MAYUSCULAS_CON_GUION_BAJO` (regex `^[A-Z][A-Z0-9_]+$`), listado en el `CONTRACT.md` del nodo. Los nodos con interfaz humana derivan el texto del mismo `code` mediante un catálogo tipado por idioma (4.8).
 
 ### 4.5 Patrones obligatorios
@@ -186,7 +187,8 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 - **Workflows delgados, documentados y validados antes de integrar** (acta 0019):
   - Cada paso de un workflow ejecuta un script del repositorio (`bun run <script>`); ninguna lógica vive dentro del YAML. Así, lo que corre en local es exactamente lo que corre en CI.
   - Cada workflow está documentado en `docs/es/NN-workflows.md` y su par en inglés: disparadores, jobs, qué prueba, qué valida, qué publica y duración esperada. El verificador cruza los jobs del YAML con los documentados.
-  - `bun workflows:check` valida sintaxis y esquema de cada YAML, que las acciones estén fijadas por versión y que los pasos solo llamen scripts; forma parte de `bun verify`.
+  - Todo job declara `timeout-minutes`; ninguna etapa puede quedar sin límite (incidente real: la release 1.5.1 de Engram quedó colgada en `bun test` por una prueba de PostgreSQL sin timeout). Las suites que dependen de servicios externos arrancan con timeout explícito y se omiten con motivo si el servicio no responde.
+  - `bun workflows:check` valida sintaxis y esquema de cada YAML, que las acciones estén fijadas por versión, que los pasos solo llamen scripts y que todo job tenga `timeout-minutes`; forma parte de `bun verify`.
   - `bun workflows:run` ejecuta en local, en el mismo orden, los scripts que CI ejecutaría; un gancho `pre-push` de plantilla lo corre antes de publicar una rama.
   - La rama `main` está protegida: ninguna fusión sin el workflow `verify` en verde. La plantilla de repositorio documenta la configuración exacta de la protección.
 

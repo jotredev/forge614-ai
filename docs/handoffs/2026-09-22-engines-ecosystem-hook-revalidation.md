@@ -6,6 +6,8 @@
 ## Prompt para la sesión en `forge614-engines`
 
 ```
+REGLA DE GIT (no negociable): NO hagas commit, merge, tag, push ni publicación en ningún momento, ni siquiera al final ni "para dejar limpio". La revisión de forge614-ai es PREVIA al commit; si terminas, reportas y esperas. Un commit sin revisión incumple este traspaso.
+
 Contexto. Este repositorio es forge614-engines, el inspector y adaptador interno de asistentes de IA del
 ecosistema Forge614. Rigen el Estándar de Nodo (forge614-ai/standard/STANDARD.md) y las actas 0001–0023.
 Lee las actas 0022 y 0023. Reglas: plan antes que código; acta 0012 (sin productos externos); acta 0013
