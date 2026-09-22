@@ -32,6 +32,7 @@ Una sola convención para todo comando de máquina del ecosistema:
 - Aceptada por el propietario del producto el 2026-09-22. Se adopta con `schemaVersion` nuevo y una ventana de compatibilidad de una versión: cada consumidor acepta el formato anterior y el nuevo durante un ciclo de release, y después solo el nuevo.
 - Shell 1.9.0 usa códigos en kebab-case en su catálogo de presentación (`ShellError`); en su alineación migra al formato del acta con mapeo 1:1. Su catálogo tipado por idioma se adopta como patrón para todos los nodos (spec §4.8).
 - Ruling del coordinador 2026-09-22: formato de `code` fijado sin consulta adicional; costo si es incorrecto: renombrar códigos en un ciclo de release.
+- Ruling del coordinador 2026-09-22 (Task 2 del plan 0.1): el sobre NDJSON (`NdjsonEventSchema`) valida solo `schemaVersion` y `event` y admite campos adicionales; cada tipo de evento define su propio esquema `.strict()` en el nodo que lo consume. Costo si es incorrecto: endurecer el sobre en una versión de esquema nueva.
 
 ## Referencias
 

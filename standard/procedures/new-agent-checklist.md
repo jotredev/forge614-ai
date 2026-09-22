@@ -15,7 +15,15 @@
 
 ---
 
+> **Procedimiento paso a paso:** el orden exacto de pasos, nodos, archivos a tocar y puertas de admisión
+> está en [`add-agent-runbook.md`](add-agent-runbook.md). Este archivo es el catálogo de validaciones por
+> nodo que ese procedimiento consulta.
+
 ## Cómo usar este archivo
+
+> **Paso a paso, en orden y con puertas de salida:** [`add-agent-runbook.md`](add-agent-runbook.md). Este
+> archivo es la checklist detallada por nodo; el runbook dice en qué orden se ejecuta, qué se toca en cada
+> repo, qué prueba cierra cada paso y cómo se actualiza la matriz de soporte al final.
 
 1. Cuando alguien quiera agregar soporte para un agente nuevo, cada nodo relevante (Engines, Workers,
    Atlas, Engram, Shell) revisa **su propia sección de esta guía** y sigue esa checklist para ese agente.
@@ -125,6 +133,11 @@ usar esto como referencia al agregar el hook de un agente nuevo):**
 - [ ] El hook debe delegar la carga real de memoria a `forge614-engram startup-context --directory <ruta>
       --json` (comando público, no interactivo, de solo lectura) — nunca importar nada interno de Engram
       ni reimplementar su lógica de precarga.
+- [ ] **Revalidación 2026-09-22:** `startup-context` ahora devuelve `project.status: "unbound"` (éxito) en
+      carpetas legibles no vinculables (home, raíz, sin Git, Git sin vínculo) en vez de `INVALID_DIRECTORY`.
+      Confirmar que el runtime del hook (`src/app/run-memory-hook.ts`) inyecta `shared` también en ese caso
+      y no descarta la respuesta por no venir `bound`; probar el hook con `cwd` = `~`. Aplica a Claude Code
+      y Codex (ya soportados): sus celdas de Engines quedan en `revalidar` hasta que se ejecute esta prueba.
 - [ ] **Nunca afirmar "el host realmente consumió el contexto"** — eso no es verificable desde Engines.
       Usar nombres honestos como `runtime-observed`, que significan únicamente "el runtime propio de
       Engines fue invocado con un payload con forma de SessionStart y Engram devolvió contexto" —
@@ -241,6 +254,23 @@ integración vía protocolo v1 (el agente llamando `memory_context` por su cuent
 suficiente por sí sola, y no cambió. `forge614-engram memory-protocol --json` ahora también acepta
 `--protocol-version 2`, que añade el campo `startupContext` anunciando este comando a Engines/Shell; la
 versión 1 (`instructions`/`lifecycle` que ya consumen los agentes) permanece byte-idéntica.
+
+**Novedad (Engram, release posterior a v1.5.0, 2026-09-22): `startup-context` en carpetas no vinculadas.**
+`forge614-engram startup-context --directory <ruta> --json` ya **no falla** cuando la carpeta existe y es
+legible pero no puede vincularse como proyecto (home, raíz, carpeta sin Git, Git sin vínculo, Git no
+inspeccionable): devuelve `format: 1`, `shared` completo y `project: { "status": "unbound" }`. Solo falla
+(`INVALID_DIRECTORY`, stderr, exit 1) si la ruta no existe, no es directorio o no se puede leer. La guarda
+que prohíbe **vincular** home y raíz se conserva aparte (`readableDirectory` vs `bindableProjectDirectory`).
+Consecuencia para todo host: `unbound` es un resultado de éxito, no un error, y la memoria `shared` debe
+inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba sin memoria compartida.
+
+- [ ] Confirmar que la integración de arranque del agente nuevo (gancho de Engines, sesión de Shell o
+      instrucción de protocolo) trata `project.status: "unbound"` como éxito e inyecta `shared`; probarlo
+      con una sesión real abierta desde `~` y desde una carpeta sin Git, verificando que una preferencia
+      shared conocida (p. ej. `user/preference/favorite-color`) aparece en el contexto inicial.
+- [ ] Confirmar que ninguna ruta del agente intenta vincular (`project-bind`) home o raíz apoyándose en que
+      `startup-context` ya no falla ahí: vincular sigue prohibido y debe seguir devolviendo
+      `INVALID_DIRECTORY`.
 
 - [ ] Si el agente nuevo no tiene un mecanismo confiable para llamar `memory_context` al inicio (o si el
       host prefiere no depender de esa decisión del modelo), evaluar usar `startup-context` desde el lado
@@ -383,6 +413,11 @@ al inicio de línea, frases de secuestro de instrucciones conocidas — todo con
 tope evadible) y cada adaptador de chat aplica además su **propia** capa independiente de neutralización
 del delimitador antes de envolver el bloque — nunca confiar en una sola capa de saneamiento para esto.
 
+- [ ] **Revalidación 2026-09-22 (por la corrección de `startup-context` en Engram):** abrir Shell desde
+      `~` y desde una carpeta sin Git con el agente seleccionado y confirmar que `getStartupContext`
+      acepta `project.status: "unbound"` como éxito, inyecta el bloque `shared` (una preferencia shared
+      conocida debe aparecer) y no muestra "sin memoria". Aplica a Claude Code y Codex; sus celdas de Shell
+      quedan en `revalidar` hasta ejecutarla.
 - [ ] Si el agente nuevo tiene un punto de inyección de contexto tipo system-prompt (o, si no,
       cualquier forma de anteponer texto al primer turno), cablear `getStartupContext` de la misma
       forma: una función `getStartupContext`/`getStartupContextFn` inyectable en la sesión (sin valor
@@ -475,6 +510,10 @@ del delimitador antes de envolver el bloque — nunca confiar en una sola capa d
 
 | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
 |---|---|---|---|---|---|---|
-| Claude Code | ✅ | ✅ | ✅ | N/A | ⏳ Pendiente (onboarding de `claude setup-token` no diseñado aún) | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). |
-| Codex | ✅ | ✅ | ✅ | N/A | ⏳ Pendiente | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). |
+| Claude Code | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). |
+| Codex | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). |
+
+**Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
+persona ejecuta la prueba indicada, con fecha, después de publicar la release de Engram que incluye la
+corrección de `startup-context`. Plazo máximo: 30 días desde 2026-09-22.
 | Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |

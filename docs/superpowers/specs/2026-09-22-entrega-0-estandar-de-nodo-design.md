@@ -4,7 +4,7 @@
 **Estado:** Aprobada por el propietario del producto el 2026-09-22
 **Gobierna:** `forge614-ai` y, por extensión, todos los repositorios del ecosistema Forge614
 **Traducción hermana:** `2026-09-22-delivery-0-node-standard-design.en.md`
-**Actas relacionadas:** `docs/decisions/0001` a `docs/decisions/0019`
+**Actas relacionadas:** `docs/decisions/0001` a `docs/decisions/0021`
 **Anexos:** `docs/audits/2026-09-22-*.md` (auditorías de código de los cinco nodos), `standard/procedures/new-agent-checklist.md`
 
 ---
@@ -67,7 +67,7 @@ Tomadas con el propietario del producto el 2026-09-22 y registradas como actas (
 4. **Contratos por nodo**: `CONTRACT.md` es/en en los cinco nodos existentes.
 5. **Procedimiento de agentes nuevos y matriz de soporte** (sección 4.12), centralizados.
 6. **Alineación de los cinco nodos** (sección 7): parches P1 de seguridad inmediatos y un plan de alineación por repositorio.
-7. **Registro de decisiones**: `docs/decisions/` en `forge614-ai` con las actas 0001–0019, plantilla y regla de ascenso.
+7. **Registro de decisiones**: `docs/decisions/` en `forge614-ai` con las actas 0001–0021, plantilla y regla de ascenso.
 8. **Actualización del contrato del ecosistema**: Workers como paquete de implementación; Hub y Sentinel como nodos; arquitectura de micronúcleo con distribución por paquetes con dependencias declaradas; comandos `forge614 init|prepare|status|doctor|update`; libro de corridas como excepción explícita a "sin bases de progreso paralelas".
 
 ### 3.2 No entra (a propósito)
@@ -95,11 +95,12 @@ Es normativo. "Debe" significa que el verificador lo comprueba o, si no puede, q
     "schemaVersion": 1,
     "node": "engram",
     "kind": "product | internal",
+    "ecosystem": "forge614",
     "standard": { "version": "1.0.0", "sha256": "<huella del paquete del estándar>" }
   }
   ```
 
-  `kind: internal` marca piezas que nadie instala a mano (Engines, Workers).
+  `kind: internal` marca piezas que nadie instala a mano (Engines, Workers). `ecosystem` es el nombre estable del grupo de proyectos al que pertenece el nodo (acta 0022): Engram lo usa para vincular el proyecto al ámbito `ecosystem` de memoria de forma automática, sin preguntar; todos los nodos Forge614 declaran `forge614`.
 - Todo nodo lleva `CONTRACT.md` y `CONTRACT.en.md` en la raíz, con secciones fijas: propósito en una frase; qué hace; qué no hace; dependencias (nodos y binarios externos); comandos públicos con esquema de entrada, esquema de salida y `schemaVersion`; códigos de error; requisitos obligatorios para agentes de IA soportados (enlace al procedimiento central); política de compatibilidad. El contrato se actualiza en el mismo cambio que modifica cualquiera de esos puntos.
 - `FORGE614_ECOSYSTEM_CONTRACT.md` deja de copiarse. Cada repositorio lo referencia por el puntero; el verificador comprueba que el texto local, si existe, es byte-idéntico al publicado por `forge614-ai` para la versión fijada.
 
@@ -123,7 +124,7 @@ Es normativo. "Debe" significa que el verificador lo comprueba o, si no puede, q
 └── .github/workflows/    verify.yml y release.yml generados desde la plantilla
 ```
 
-- Dependencias solo hacia adentro: `interfaces → app → (modules, infrastructure)`, `infrastructure → modules`. `modules` no importa nada externo. Verificado por prueba AST (la de Engram es la referencia).
+- Dependencias solo hacia adentro: `interfaces → app → (modules, infrastructure)`, `infrastructure → modules`. `modules` no importa nada externo salvo `node:crypto`, `node:util` y `zod` (validación pura, sin I/O). Verificado por prueba AST (la de Engram es la referencia).
 - Tests unitarios junto al código (`x.ts` + `x.test.ts`); integración en `__tests__/`; los que requieren binarios reales o cuentas se marcan y se excluyen de CI por defecto.
 - Un nodo no importa carpetas internas de otro nodo. Consume solo binarios por ruta canónica (`~/.forge614/<nodo>/bin/`) o SDK público publicado y versionado. Prohibido `file:../otro-nodo` en `package.json`.
 
@@ -230,13 +231,34 @@ Instaladas por el gancho de arranque en repositorios del ecosistema (sección 5.
 
 ### 4.12 Agentes de IA nuevos
 
-- El procedimiento maestro vive en `forge614-ai/standard/procedures/new-agent-checklist.md` (origen: el checklist del propietario del producto), con una sección por nodo. Cada nodo lo enlaza desde su `CONTRACT.md` y solo completa su sección.
+- El procedimiento maestro vive en `forge614-ai/standard/procedures/new-agent-checklist.md` (origen: el checklist del propietario del producto), con una sección por nodo. Cada nodo lo enlaza desde su `CONTRACT.md` y solo completa su sección. El **runbook** `standard/procedures/add-agent-runbook.md` fija el orden de ejecución (investigación con el binario real → Engines → Workers → Atlas → Engram → Shell → cierre en `forge614-ai`), qué se modifica en cada repositorio y la puerta de salida de cada paso.
 - La **matriz de soporte** (`standard/support-matrix.json`) es la fuente de verdad de qué asistentes están soportados y en qué nodo. Un asistente pasa a `supported` solo cuando todas las celdas obligatorias están en verde. Si le falta un requisito obligatorio o pierde funcionalidad, no entra.
 - El verificador cruza la matriz con los registros de adaptadores (Engines), de ejecución (Workers) y la lista de chat (Shell): un asistente registrado en un nodo y ausente en la matriz, o al revés, es fallo.
 - **El procedimiento se revisa en cada cambio de nodo, no solo al llegar un asistente nuevo** (acta 0017). Tres candados:
   1. Todo plan lleva la sección obligatoria `## Impacto en el procedimiento de agentes` con `Sí` (qué validación nueva exige) o `No` (motivo). El verificador no permite cerrar un plan sin contenido real ahí.
   2. `bun release` lee los planes cerrados desde el último tag; si alguno declara `Sí`, exige que `forge614.node.json` fije una versión del procedimiento y de la matriz que ya incluyan ese cambio. Si no, no publica y explica qué falta.
   3. Cuando cambia la sección de un nodo en el procedimiento, la matriz de soporte marca `revalidate` en todas las celdas de ese nodo; un asistente vuelve a `supported` solo cuando una persona ejecuta la validación nueva y lo registra con fecha. El verificador falla si una celda lleva más de 30 días en `revalidate`.
+
+### 4.13 Huella mínima y piezas reemplazables
+
+La complejidad de Forge614 vive en el lado del constructor (nodos, verificador, CI, instaladores, contratos), nunca en el contexto de la IA. Dos actas lo hacen verificable.
+
+**Huella mínima en el contexto de la IA** (acta 0020):
+
+1. Presupuesto de arranque: todo lo que Forge614 inyecta al inicio de una sesión (protocolo de memoria + índice de skills + pack de reglas aplicable) cabe en **≤ 3 000 tokens**; el verificador lo mide (`context-budget`) y falla si se excede.
+2. Divulgación progresiva obligatoria: solo índice (nombre y una línea) hasta que una skill, regla o política se usa.
+3. Nada encendido sin uso: un MCP o skill sin uso en 30 días se propone apagar, con datos del libro de corridas.
+4. Cada paquete declara su costo: campo `tokens` en el manifiesto, medido al empaquetar; el Hub lo muestra antes de instalar.
+5. La complejidad vive en el constructor; la IA nunca carga nodos, verificador ni CI.
+6. Prueba de la regla: una sesión con Forge614 completo gasta en arranque menos que la misma sesión con las reglas puestas a mano; se mide y se publica.
+
+**Piezas reemplazables conforme evoluciona el modelo** (acta 0021):
+
+1. Todo paquete y nodo declara `compensates: "model-limitation" | "structural"`. Estructural: memoria durable, contratos entre nodos, contabilidad, verificación, instalación, identidad de proyecto.
+2. Todo paquete `model-limitation` lleva `sunset` obligatorio: condición de retiro verificable ("cuando el modelo haga X de forma nativa") y fecha de revisión.
+3. Apagable sin romper: ningún paquete depende de otro por dentro; el Hub puede deshabilitar cualquier paquete `model-limitation` por política.
+4. Cada release mayor de un asistente soportado dispara la revisión de los `sunset` (procedimiento de agentes); el libro de corridas aporta el uso real.
+5. Pregunta obligatoria antes de agregar algo: "¿el modelo ya lo hace solo?", con evidencia; si sí, no entra y se registra en `Decisions` del plan.
 
 ## 5. Centralización y distribución del estándar
 
@@ -303,6 +325,7 @@ Salida: `{ "schemaVersion": 1, "standard": "1.0.0", "verdict": "pass | caution |
 | `secrets-hygiene` | Patrones de secretos ausentes en el árbol; salidas de `plan` sin contenido completo de archivos |
 | `support-matrix` | Registros de adaptadores coherentes con `support-matrix.json`; ninguna celda en `revalidate` por más de 30 días |
 | `agent-checklist-impact` | Todo plan cerrado tiene `## Impacto en el procedimiento de agentes` con contenido real; si declara `Sí`, el puntero fija una versión del procedimiento y la matriz que incluya el cambio |
+| `context-budget` | Mide los tokens del arranque inyectado (protocolo de memoria + índice de skills + pack de reglas aplicable); falla si supera 3 000 |
 | `versions` | `package.json`, tag más alto, `notion-map.productVersion` y `--version` coinciden |
 
 ### 6.3 Integración
@@ -344,7 +367,7 @@ Orden de alineación: contrato del ecosistema → Engines → Workers → Engram
 | Fase | Entregable | Terminada cuando |
 |---|---|---|
 | 0.1 Estándar | `standard/` completo, bilingüe, con plantillas, pack y esquemas; actas 0001–0016; contrato del ecosistema actualizado | El propietario aprueba `STANDARD.md`; `forge614-ai` pasa su propio `docs-parity` y `decisions` |
-| 0.2 Verificador | Repositorio `forge614-sentinel` con `check` y las 18 comprobaciones; publicado con release e instalador de plantilla | Sentinel pasa su propio `check`; `forge614-ai` pasa `check` |
+| 0.2 Verificador | Repositorio `forge614-sentinel` con `check` y las 19 comprobaciones; publicado con release e instalador de plantilla | Sentinel pasa su propio `check`; `forge614-ai` pasa `check` |
 | 0.3 Parches P1 | Cinco planes pequeños fusionados y liberados | Cada hallazgo P1 tiene test de regresión y release |
 | 0.4 Alineación | Cinco planes de alineación cerrados | Los cinco nodos pasan `check` en CI; matriz de soporte coherente |
 | 0.5 Gancho de mantenedor | Pack de nodo inyectado por el gancho de Engines en repos del ecosistema | Abrir Claude Code o Codex en cualquier nodo muestra el pack; fuera de un nodo, nada |
@@ -395,3 +418,5 @@ Nada del diseño es inventado: cada elemento corresponde a un patrón con nombre
 | Contratos JSON con `schemaVersion` | Versionado de esquemas (compatibilidad explícita) | Diseño de APIs |
 | Índice de skills corto + carga completa bajo demanda | Divulgación progresiva | Diseño de interfaces |
 | Textos bilingües dentro del código | Catálogo tipado por idioma con paridad verificada por el compilador | Shell 1.9.0 |
+| Presupuesto de contexto | Presupuesto como contrato verificable + divulgación progresiva | Diseño de sistemas de agentes |
+| Piezas que compensan al modelo | Obsolescencia programada explícita (sunset) + plug-in reemplazable | Arquitectura de micronúcleo |
