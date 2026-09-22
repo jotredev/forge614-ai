@@ -5,16 +5,22 @@ const Cell = z
   .object({
     node: Slug,
     agent: Slug,
-    status: z.enum(["supported", "partial", "unsupported", "revalidate"]),
+    status: z.enum(["supported", "partial", "unsupported", "revalidate", "not-applicable"]),
     verifiedAt: IsoDate,
     verifiedBy: z.string().min(1),
     notes: z.string(),
     revalidateSince: IsoDate.optional(),
+    reason: z.string().min(1).optional(),
+    deadline: IsoDate.optional(),
   })
   .strict()
   .refine((c) => c.status !== "revalidate" || c.revalidateSince !== undefined, {
     message: "revalidate requires revalidateSince",
     path: ["revalidateSince"],
+  })
+  .refine((c) => c.status !== "revalidate" || c.reason !== undefined, {
+    message: "revalidate requires reason",
+    path: ["reason"],
   });
 
 export const SupportMatrixSchema = z

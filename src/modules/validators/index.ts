@@ -4,6 +4,7 @@ import { validateDecisionRecords } from "./decision-records";
 import { validateErrorCodes } from "./error-codes";
 import { validateForbiddenMentions } from "./forbidden-mentions";
 import { validatePackageNaming } from "./package-naming";
+import { validateSupportMatrix } from "./support-matrix";
 import type { Validator } from "./types";
 
 export type { Validator, ValidatorOptions } from "./types";
@@ -15,4 +16,5 @@ export const VALIDATORS: Record<string, Validator> = {
   "decision-records": validateDecisionRecords,
   "agent-checklist-impact": validateAgentChecklistImpact,
   "error-codes": validateErrorCodes,
+  "support-matrix": validateSupportMatrix,
 };

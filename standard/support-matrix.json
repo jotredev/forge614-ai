@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "nodes": ["engines", "workers", "atlas", "engram", "shell"],
+  "agents": ["claude-code", "codex", "cursor"],
+  "cells": [
+    {
+      "node": "engines",
+      "agent": "claude-code",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-22",
+      "reason": "hook con startup-context unbound",
+      "deadline": "2026-10-22",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED)."
+    },
+    {
+      "node": "workers",
+      "agent": "claude-code",
+      "status": "supported",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Auth por suscripción funciona con cwd aislado y HOME real intacto."
+    },
+    {
+      "node": "atlas",
+      "agent": "claude-code",
+      "status": "supported",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "engram",
+      "agent": "claude-code",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "No requiere cambios en Engram (protocolo v1)."
+    },
+    {
+      "node": "shell",
+      "agent": "claude-code",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-22",
+      "reason": "Shell desde ~ con memoria compartida",
+      "deadline": "2026-10-22",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Onboarding de claude setup-token no diseñado aún."
+    },
+    {
+      "node": "engines",
+      "agent": "codex",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-22",
+      "reason": "hook con startup-context unbound",
+      "deadline": "2026-10-22",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Sí soporta nivel de razonamiento (model_reasoning_effort)."
+    },
+    {
+      "node": "workers",
+      "agent": "codex",
+      "status": "supported",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Necesita --skip-git-repo-check porque rechaza correr en carpetas no confiables."
+    },
+    {
+      "node": "atlas",
+      "agent": "codex",
+      "status": "supported",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "engram",
+      "agent": "codex",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "shell",
+      "agent": "codex",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-22",
+      "reason": "Shell desde ~ con memoria compartida",
+      "deadline": "2026-10-22",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "engines",
+      "agent": "cursor",
+      "status": "partial",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "Detectado; supportsHeadlessExec false; sin instrucciones globales."
+    },
+    {
+      "node": "workers",
+      "agent": "cursor",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": "No requiere adapter en Workers — no puede invocarse headless."
+    },
+    {
+      "node": "atlas",
+      "agent": "cursor",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "engram",
+      "agent": "cursor",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    },
+    {
+      "node": "shell",
+      "agent": "cursor",
+      "status": "not-applicable",
+      "verifiedAt": "2026-09-22",
+      "verifiedBy": "owner",
+      "notes": ""
+    }
+  ]
+}
