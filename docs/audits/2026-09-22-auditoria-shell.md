@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-09-22
 **Método:** lectura estática del código vía API de GitHub (rama main), sin ejecutar tests ni binarios
-**Versión auditada:** 1.8.0
+**Versión auditada:** 1.8.0 (main `dbe3fa9`); **1.9.0 publicada el mismo día** — ver la adenda al final
 
 > Los cinco hallazgos P1 de seguridad fueron re-verificados contra el código por el autor de la spec el 2026-09-22.
 > Todo lo marcado **verificado** se comprobó leyendo el código; lo marcado **no verificado** es supuesto.
@@ -61,3 +61,48 @@ Sin `bun release`, sin CI, sin `.ps1`, sin Zod, sin `CONTRACT.md`, contrato de e
 - **P3** Sustituir `node -e` en `install.sh` por lógica portable o Bun; respaldar dotfiles antes de editarlos.
 
 **No verificado:** comportamiento real de Codex app-server sin `jsonrpc:"2.0"`; que `bun test` pase hoy (no se ejecutó la suite).
+
+## Adenda 2026-09-22 — 1.9.0 (delta `dbe3fa9`…`5eedef9`)
+
+Revisión del delta publicado el mismo día de la auditoría (58 archivos, +3 000/−700 líneas). Se leyeron completos `shell-error.ts`, `i18n/{index,types,es}.ts`, `language-gate.ts`, `language-command.ts`, `install.sh`, `updater.ts`, `update-command.ts`, `package.json`, `docs/es/09` y los parches de `init-engram`, `cli`, `codex/session`, `claude/session`, `forge614-engines`, `shell-preferences` y `options`. Todo lo siguiente es **verificado** salvo indicación contraria.
+
+### Qué cambió
+
+- **i18n tipada** (`src/i18n/types.ts`, `es.ts`, `en.ts`): `Locale = "es" | "en"`; `ShellErrorCode` con 44 códigos estables (`types.ts:11-58`); interfaz `Catalog` con secciones por pantalla (`languageSelector`, `startup`, `engramInit`, `memoryPreview`, `update`, `options`, `errors`, chat…). Los textos viven en un archivo por idioma (460 líneas cada uno) tipados como `const es: Catalog = {...}`: **la paridad es/en la garantiza el compilador**, no un validador de archivos (`types.ts:63-66`). Los mensajes con datos son funciones `(params) => string`. Regla escrita: nunca se traducen identificadores, rutas, comandos ni texto externo de Engines, Engram, Claude o Codex (`types.ts:60-62`).
+- **Locale:** resolución `FORGE614_SHELL_LOCALE` (solo sesión) → `preferences.json.locale` → selector bilingüe de primer arranque; el idioma del sistema solo decide el foco inicial (`i18n/index.ts:20-42`). `ensureLocale` corre antes de cualquier TUI (`language-gate.ts:24-38`); los comandos de automatización nunca preguntan. Comando nuevo `forge614-shell language [es|en]` (`language-command.ts`). `preferences.json` gana `format: 1` y `locale`, escrito de forma atómica (`shell-preferences.ts:59-72`).
+- **`ShellError`** (`src/shell-error.ts:16-26`): `{ code: ShellErrorCode; params: Record<string,string> }`, con `message` renderizado en inglés al construir; `describeError(error, locale)` (`:34-37`) es la única frontera de presentación y deja pasar sin traducir cualquier `Error` externo. Adoptado en `forge614-engines.ts`, `forge614-engram.ts`, sesiones Claude/Codex, `init-engram.ts` y `updater.ts`.
+- **Instalador bilingüe** (`scripts/install.sh`): función `t()` con tabla es/en (`:16-79`); el idioma llega por `FORGE614_SHELL_LOCALE` validado (`:9-12`) y se propaga al instalador de Engines (`:125`). Sigue: solo macOS/Linux (`:93`), requiere `node` y usa `node -e` para parsear el release y editar el perfil (`:94,102-108,146-158,189-199`), edita `.zshrc`/`.bashrc`/`.profile` (`:184-201`); `update` sigue ejecutando el `install.sh` **instalado** (`updater.ts:15`).
+- **`init`:** sesión de pantalla alterna continua con salida limpia garantizada y código ≠ 0 en fallo; `FORGE614_SHELL_DEBUG_INIT=1` escribe diagnóstico en `$FORGE614_HOME/shell/logs/` (`init-debug-log.ts`; `docs/es/08`); `stdin` inyectable para detectar cierre real (`init-engram.ts`, parche 42-57).
+
+### Estado de los hallazgos de esta auditoría
+
+| Hallazgo | Estado |
+|---|---|
+| Sin CI | **Sin cambio** (no hay `.github/`) |
+| Pi dependencia viva / "powered by Pi" | **Sin cambio** (`package.json:5,24-25`; `src/engines/pi/`, `extensions/`) |
+| `update` ejecuta el instalador instalado, no el de la release nueva | **Sin cambio** (`updater.ts:15`) |
+| `bypassPermissions` sin confirmación | **Sin cambio** (`claude/session.ts:141`) |
+| `any` en `rpc.ts` (10) y `codex/session.ts` (7) | **Sin cambio** (`codex/session.ts:87,88,128,215,226,276,322`) |
+| Zod ausente en payloads de Codex y preferencias | **Sin cambio**; `preferences.json` ahora valida `format`/`locale` a mano (`shell-preferences.ts:23-35`) |
+| 5 sitios para un agente nuevo | **Sin cambio** (`options.ts` sigue aceptando `"claude" \| "codex" \| "pi"`) |
+| `AGENTS.md:27` desactualizado | **Sin cambio** |
+| `clientInfo.version "0.1.0"` | **Sin cambio** (`codex/session.ts:80`) |
+| `notion-map.reviewedVersion 1.3.0` | **Sin cambio** (producto en 1.9.0); *supuesto:* los docs 09 nuevos no están en el mapa |
+| `install.sh` edita dotfiles y usa `node -e` | **Sin cambio**, ahora además bilingüe |
+| Capas `app → ui` | **Empeora:** `app/language-gate.ts:6` y `app/language-command.ts:6` importan `ui/startup/language-picker.ts` |
+| `getStartupContextFn(this.cwd, {})` | **Sin cambio** (`codex/session.ts:245`) |
+| `item.arguments` volcado completo | **Sin cambio** (`codex/session.ts:296`) |
+| `cli.ts` `update --json` cae al picker | **Sin cambio** (`cli.ts:22,30` exigen `args.length === 1`) |
+| Errores detectados por prefijo de texto (`startsWith("Forge614 Engines")`) | **Resuelto:** códigos estables `ShellError` |
+| `init` regresaba en silencio | **Resuelto** (`docs/es/08`) |
+| **Nuevo:** `Locale` duplicado | `shell-preferences.ts:12` e `i18n/types.ts:1` definen el mismo tipo |
+
+### Frente al Estándar de Nodo aprobado
+
+- **Catálogo i18n:** encaja con la spec §4.8 y el acta 0016 (textos para personas bilingües, identificadores literales) y es el **patrón a adoptar** en todos los nodos para mensajes dentro del código: interfaz `Catalog` tipada + un archivo por idioma + el compilador como validador de paridad + funciones con parámetros. Un texto en español que se olvide en inglés no compila.
+- **`ShellError` frente al acta 0013:** **compatible, no contradictorio.** El acta gobierna la frontera de *máquina* (stderr JSON `{schemaVersion, code, error}`); `ShellError` es la frontera de *presentación* (código estable + parámetros → texto por idioma). Comparten la pieza clave: código estable, texto derivado. Falta para cumplir 0013: un modo `--json` para los comandos de automatización (Shell no tiene modo máquina hoy) y listar los códigos en `CONTRACT.md`. Los códigos usan kebab-case (`engines-outdated`); el acta fija `MAYUSCULAS_CON_GUION_BAJO`, así que en la alineación migran con mapeo 1:1.
+- Instalador y release desde plantilla: **no**. Tres sistemas operativos: **no** (solo macOS/Linux, `install.sh:93`). CI: **no**. Node como requisito de runtime: sigue (`package.json:9`).
+
+### Consecuencia para la alineación
+
+Se añaden a la lista de Shell: corregir `app → ui` en `language-gate` y `language-command`; un solo módulo para `Locale`; migrar los códigos al formato del acta 0013 con mapeo desde el catálogo; modo `--json` para `update`, `uninstall` y `language`. Se conserva el catálogo tipado como patrón de referencia del ecosistema.

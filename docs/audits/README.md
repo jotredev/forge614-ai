@@ -10,8 +10,8 @@ Estos anexos son la entrada de la Entrega 0 (Estándar de Nodo) y de los planes 
 |---|---|---|
 | Engines | 1.11.0 | [2026-09-22-auditoria-engines.md](2026-09-22-auditoria-engines.md) |
 | Engram | 1.5.0 | [2026-09-22-auditoria-engram.md](2026-09-22-auditoria-engram.md) |
-| Shell | 1.8.0 | [2026-09-22-auditoria-shell.md](2026-09-22-auditoria-shell.md) |
-| Atlas | 0.1.0 (sin releases) | [2026-09-22-auditoria-atlas.md](2026-09-22-auditoria-atlas.md) |
+| Shell | 1.8.0 (+ adenda del delta 1.9.0, publicada el mismo día) | [2026-09-22-auditoria-shell.md](2026-09-22-auditoria-shell.md) |
+| Atlas | 0.1.0 (+ adenda del delta v1.0.0, publicada el mismo día) | [2026-09-22-auditoria-atlas.md](2026-09-22-auditoria-atlas.md) |
 | Workers | 0.1.0 (sin releases) | [2026-09-22-auditoria-workers.md](2026-09-22-auditoria-workers.md) |
 
 ## Problemas comunes a todos los nodos
@@ -21,10 +21,13 @@ Estos anexos son la entrada de la Entrega 0 (Estándar de Nodo) y de los planes 
 | **El "contrato idéntico" tiene cinco versiones distintas** | `FORGE614_ECOSYSTEM_CONTRACT.md`: 10 327 bytes en Engram, 10 158 en Engines, 10 136 en Atlas, 9 825 en Workers, 9 464 en Shell. Cada copia tiene párrafos que las otras no tienen. |
 | **Nadie valida con esquema lo que recibe de otro nodo** | Ninguno usa Zod en sus fronteras (Engram solo en MCP). Atlas lee la salida de Engines y Workers con `JSON.parse(...) as`; un campo faltante pasa en silencio. |
 | **Cada nodo maneja errores y versiones a su modo** | Engram: `{code,error}` por stderr. Engines: `{schemaVersion, error:{code,message}}` por stdout. Atlas: `{status:"error"}` por stdout. Workers: sin `schemaVersion` en nada y `--version` que se cuelga. |
-| **Cinco recetas de instalación y release** | Engines: `bun release` + CI con Windows. Engram: instalador de 11 KB a mano, sin Windows, sin `bun release`. Shell: instalador propio que edita dotfiles, subida manual de assets, sin CI. Atlas y Workers: nada (cero tags, cero CI). |
-| **Documentación que contradice el código** | Atlas dice "Planes 1–3, `init` solo emite plan" cuando los Planes 1–4 están fusionados; Engram documenta "v1.2.1" en un repo v1.5.0; el `AGENTS.md` de Shell contradice su código; Engines promete `apply --revert` y no existe. |
+| **Cinco recetas de instalación y release** | Engines: `bun release` + CI con Windows. Engram: instalador de 11 KB a mano, sin Windows, sin `bun release`. Shell: instalador propio que edita dotfiles, subida manual de assets, sin CI. Atlas (v1.0.0, mismo día): instalador propio que edita perfiles de shell sin respaldo, sin Windows, `release.yml` con lógica inline. Workers: nada (cero tags, cero CI). **Sin `verify.yml` en PR: Shell y Atlas.** |
+| **Documentación que contradice el código** | Atlas decía "Planes 1–3" con los Planes 1–4 fusionados (corregido en v1.0.0: "Planes 1–5"); Engram documenta "v1.2.1" en un repo v1.5.0; el `AGENTS.md:27` de Shell contradice su código y su `notion-map` sigue en 1.3.0 (el doc 09 de i18n sí está al día); Engines promete `apply --revert` y no existe. |
 | **Ningún `CONTRACT.md` por nodo** | Los contratos viven repartidos entre specs, docs y código. |
 | **Menciones a productos externos** | La spec de diseño de Engines y un asset versionado en Shell referencian un producto externo (regla del acta 0012). |
+| **Patrón a generalizar (positivo)** | Shell 1.9.0 resuelve los errores con códigos estables (`ShellError`) y un catálogo tipado por idioma cuya paridad es/en la garantiza el compilador. Es el patrón que el estándar adopta para los textos dentro del código (spec §4.8). |
+
+> Las adendas de Atlas (v1.0.0) y Shell (1.9.0), publicadas el mismo día de la auditoría, están al final de cada reporte con el estado actualizado de cada hallazgo.
 
 ## Hallazgos P1 de seguridad (re-verificados)
 

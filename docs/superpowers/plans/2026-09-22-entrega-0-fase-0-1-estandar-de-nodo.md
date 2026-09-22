@@ -98,14 +98,22 @@ Los validadores viven en `src/modules/validators/` (no dentro de cada carpeta de
 **Files:**
 - Create: `package.json`, `tsconfig.json`, `.gitignore`, `forge614.node.json`, `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `README.md`, `README.en.md`
 - Create: `tests/architecture/import-rules.test.ts`
-- Create: `src/modules/standard/finding.ts` (mínimo para que el árbol compile)
+- Create: `src/modules/standard/finding.ts`, `src/modules/standard/messages/{types.ts, es.ts, en.ts, render.ts}`, `src/modules/standard/messages/render.test.ts` (catálogo tipado de mensajes: patrón de la spec §4.8)
 
 **Interfaces:**
-- Produces: scripts `bun run typecheck`, `bun test`; layout de capas verificado por `tests/architecture/import-rules.test.ts`; tipo `Finding` (`src/modules/standard/finding.ts`):
+- Produces: scripts `bun run typecheck`, `bun test`; layout de capas verificado por `tests/architecture/import-rules.test.ts`; tipo `Finding` y catálogo de mensajes (`src/modules/standard/finding.ts`, `src/modules/standard/messages/`):
   ```ts
   export type Verdict = "pass" | "caution" | "fail";
-  export interface Finding { ruleId: string; verdict: Verdict; evidence: string[]; message: { es: string; en: string } }
+  export type Locale = "es" | "en";
+  export type MessageParams = Record<string, string>;
+  export type MessageKey = keyof MessageCatalog; // una clave por mensaje; es.ts y en.ts implementan MessageCatalog completo
+  export interface Finding { ruleId: string; verdict: Verdict; evidence: string[]; messageKey: MessageKey; params: MessageParams }
+  export function pass(ruleId: string, key: MessageKey, params?: MessageParams): Finding;
+  export function fail(ruleId: string, evidence: string[], key: MessageKey, params?: MessageParams): Finding;
+  export function renderMessage(key: MessageKey, params: MessageParams, locale: Locale): string;
+  export function renderFinding(f: Finding): { es: string; en: string };
   ```
+  La paridad es/en la garantiza el compilador: `es.ts` y `en.ts` son `const x: MessageCatalog = {...}`; una clave que falte en un idioma no compila.
 
 - [ ] **Step 1: Crear `package.json`**
 
@@ -237,25 +245,158 @@ English: [README.en.md](README.en.md)
 
 `README.en.md`: traducción fiel del anterior (mismas tablas y comandos), con enlace de vuelta a `README.md`.
 
-- [ ] **Step 5: Escribir el tipo `Finding`**
+- [ ] **Step 5: Escribir el catálogo tipado de mensajes y el tipo `Finding`**
+
+Patrón (spec §4.8): una interfaz `MessageCatalog` con una función por mensaje, un archivo por idioma que la implementa completa, y un `render` que elige idioma. Los mensajes con datos reciben `params`. Identificadores, rutas y comandos nunca se traducen (van en `evidence`, no en el mensaje).
+
+`src/modules/standard/messages/types.ts`:
+```ts
+export type Locale = "es" | "en";
+export type MessageParams = Record<string, string>;
+type Msg = (params: MessageParams) => string;
+
+export interface MessageCatalog {
+  docsParityOk: Msg;
+  docsParityBroken: Msg;
+  packageNamesOk: Msg;
+  packageNamesInvalid: Msg;
+  forbiddenMentionsNone: Msg;
+  forbiddenMentionsFound: Msg;
+  decisionRecordsOk: Msg;
+  decisionRecordsInvalid: Msg;
+  agentImpactDeclared: Msg;
+  agentImpactMissing: Msg;
+  rulesCatalogOk: Msg;
+  rulesCatalogInvalid: Msg;
+  packsOk: Msg;
+  packsInvalid: Msg;
+  supportMatrixMissing: Msg;
+  supportMatrixInvalid: Msg;
+  supportMatrixCurrent: Msg;
+  supportMatrixStale: Msg;
+  errorCodesOk: Msg;
+  errorCodesInvalid: Msg;
+  workflowsNone: Msg;
+  workflowsOk: Msg;
+  workflowsInvalid: Msg;
+  ecosystemContractOk: Msg;
+  ecosystemContractDiverged: Msg;
+}
+export type MessageKey = keyof MessageCatalog;
+```
+
+`src/modules/standard/messages/es.ts`:
+```ts
+import type { MessageCatalog } from "./types";
+export const es: MessageCatalog = {
+  docsParityOk: () => "Documentación bilingüe con paridad.",
+  docsParityBroken: () => "Falta paridad español/inglés en documentación.",
+  packageNamesOk: () => "Nombres de paquetes canónicos.",
+  packageNamesInvalid: () => "Carpetas de paquete fuera de origen-tipo-nombre.",
+  forbiddenMentionsNone: () => "Sin menciones prohibidas.",
+  forbiddenMentionsFound: () => "Menciones a productos externos.",
+  decisionRecordsOk: () => "Actas de decisión coherentes.",
+  decisionRecordsInvalid: () => "Actas de decisión inválidas.",
+  agentImpactDeclared: () => "Planes cerrados declaran impacto en el procedimiento de agentes.",
+  agentImpactMissing: () => "Planes cerrados sin impacto declarado.",
+  rulesCatalogOk: () => "Catálogo de reglas válido.",
+  rulesCatalogInvalid: () => "Catálogo de reglas inválido.",
+  packsOk: () => "Packs válidos.",
+  packsInvalid: () => "Packs inválidos.",
+  supportMatrixMissing: () => "Falta la matriz de soporte.",
+  supportMatrixInvalid: () => "Matriz de soporte inválida.",
+  supportMatrixCurrent: () => "Matriz de soporte vigente.",
+  supportMatrixStale: (p) => `Celdas en revalidación vencidas (más de ${p.days ?? "30"} días).`,
+  errorCodesOk: () => "Códigos de error con formato canónico.",
+  errorCodesInvalid: () => "Códigos de error fuera del formato MAYUSCULAS_CON_GUION_BAJO.",
+  workflowsNone: () => "Sin workflows que validar.",
+  workflowsOk: () => "Workflows delgados, fijados y documentados.",
+  workflowsInvalid: () => "Workflows fuera del estándar.",
+  ecosystemContractOk: () => "Contrato del ecosistema coherente.",
+  ecosystemContractDiverged: () => "Copia del contrato del ecosistema divergente.",
+};
+```
+
+`src/modules/standard/messages/en.ts`:
+```ts
+import type { MessageCatalog } from "./types";
+export const en: MessageCatalog = {
+  docsParityOk: () => "Bilingual documentation with parity.",
+  docsParityBroken: () => "Spanish/English documentation parity is broken.",
+  packageNamesOk: () => "Package names are canonical.",
+  packageNamesInvalid: () => "Package folders outside origin-kind-name.",
+  forbiddenMentionsNone: () => "No forbidden mentions.",
+  forbiddenMentionsFound: () => "External product mentions.",
+  decisionRecordsOk: () => "Decision records are consistent.",
+  decisionRecordsInvalid: () => "Invalid decision records.",
+  agentImpactDeclared: () => "Completed plans declare agent-procedure impact.",
+  agentImpactMissing: () => "Completed plans without declared impact.",
+  rulesCatalogOk: () => "Rules catalog is valid.",
+  rulesCatalogInvalid: () => "Invalid rules catalog.",
+  packsOk: () => "Packs are valid.",
+  packsInvalid: () => "Invalid packs.",
+  supportMatrixMissing: () => "Support matrix missing.",
+  supportMatrixInvalid: () => "Invalid support matrix.",
+  supportMatrixCurrent: () => "Support matrix is current.",
+  supportMatrixStale: (p) => `Stale revalidate cells (older than ${p.days ?? "30"} days).`,
+  errorCodesOk: () => "Error codes use the canonical format.",
+  errorCodesInvalid: () => "Error codes outside the UPPER_SNAKE_CASE format.",
+  workflowsNone: () => "No workflows to validate.",
+  workflowsOk: () => "Workflows are thin, pinned and documented.",
+  workflowsInvalid: () => "Workflows violate the standard.",
+  ecosystemContractOk: () => "Ecosystem contract is consistent.",
+  ecosystemContractDiverged: () => "Diverged ecosystem contract copy.",
+};
+```
+
+`src/modules/standard/messages/render.ts`:
+```ts
+import { en } from "./en";
+import { es } from "./es";
+import type { Locale, MessageKey, MessageParams } from "./types";
+const catalogs = { es, en } as const;
+export function renderMessage(key: MessageKey, params: MessageParams, locale: Locale): string {
+  return catalogs[locale][key](params);
+}
+```
+
+`src/modules/standard/messages/render.test.ts`:
+```ts
+import { expect, test } from "bun:test";
+import { renderMessage } from "./render";
+test("renders the same key in both locales with params", () => {
+  expect(renderMessage("supportMatrixStale", { days: "30" }, "es")).toBe("Celdas en revalidación vencidas (más de 30 días).");
+  expect(renderMessage("supportMatrixStale", { days: "30" }, "en")).toBe("Stale revalidate cells (older than 30 days).");
+  expect(renderMessage("docsParityOk", {}, "en")).toBe("Bilingual documentation with parity.");
+});
+```
 
 `src/modules/standard/finding.ts`:
 ```ts
+import { renderMessage } from "./messages/render";
+import type { MessageKey, MessageParams } from "./messages/types";
+export type { Locale, MessageKey, MessageParams } from "./messages/types";
+
 export type Verdict = "pass" | "caution" | "fail";
 
 export interface Finding {
   ruleId: string;
   verdict: Verdict;
   evidence: string[];
-  message: { es: string; en: string };
+  messageKey: MessageKey;
+  params: MessageParams;
 }
 
-export function pass(ruleId: string, es: string, en: string): Finding {
-  return { ruleId, verdict: "pass", evidence: [], message: { es, en } };
+export function pass(ruleId: string, key: MessageKey, params: MessageParams = {}): Finding {
+  return { ruleId, verdict: "pass", evidence: [], messageKey: key, params };
 }
 
-export function fail(ruleId: string, evidence: string[], es: string, en: string): Finding {
-  return { ruleId, verdict: "fail", evidence, message: { es, en } };
+export function fail(ruleId: string, evidence: string[], key: MessageKey, params: MessageParams = {}): Finding {
+  return { ruleId, verdict: "fail", evidence, messageKey: key, params };
+}
+
+export function renderFinding(f: Finding): { es: string; en: string } {
+  return { es: renderMessage(f.messageKey, f.params, "es"), en: renderMessage(f.messageKey, f.params, "en") };
 }
 
 export function worst(findings: readonly Finding[]): Verdict {
@@ -264,6 +405,9 @@ export function worst(findings: readonly Finding[]): Verdict {
   return "pass";
 }
 ```
+
+Run: `bun test src/modules/standard/messages/render.test.ts`
+Expected: PASS (3 aserciones).
 
 - [ ] **Step 6: Escribir la prueba de arquitectura (fallará hasta que existan las capas)**
 
@@ -878,8 +1022,8 @@ export function validateBilingualDocs(tree: FileTree): Finding[] {
     if (ha !== hb) evidence.push(`${es}: ${ha} headings vs ${en}: ${hb}`);
   }
   return evidence.length === 0
-    ? [pass(RULE, "Documentación bilingüe con paridad.", "Bilingual documentation with parity.")]
-    : [fail(RULE, evidence, "Falta paridad español/inglés en documentación.", "Spanish/English documentation parity is broken.")];
+    ? [pass(RULE, "docsParityOk")]
+    : [fail(RULE, evidence, "docsParityBroken")];
 }
 ```
 
@@ -932,7 +1076,7 @@ git commit -m "feat(standard): add in-memory file tree, bilingual docs validator
 **Files:**
 - Create: `standard/forbidden-mentions.json`
 - Create: `standard/rules/forge614-rule-<slug>/{RULE.md, RULE.en.md, manifest.json}` para: `package-naming`, `git-readonly-for-agents`, `plan-before-code`, `no-fabricated-validations`, `agent-questions-before-acting`, `no-external-product-mentions`, `never-touch-agents-dir-by-hand`, `machine-contracts`, `three-operating-systems`, `decision-records`, `bilingual-docs`, `agent-checklist-impact`, `thin-workflows`
-- Create: `src/modules/validators/package-naming.ts`, `forbidden-mentions.ts`, `decision-records.ts`, `agent-checklist-impact.ts`, `index.ts` y sus `*.test.ts`
+- Create: `src/modules/validators/package-naming.ts`, `forbidden-mentions.ts`, `decision-records.ts`, `agent-checklist-impact.ts`, `error-codes.ts`, `index.ts` y sus `*.test.ts`
 - Create: `src/modules/validators/rules-catalog.ts`, `rules-catalog.test.ts` (valida la carpeta `standard/rules`)
 
 **Interfaces:**
@@ -940,7 +1084,7 @@ git commit -m "feat(standard): add in-memory file tree, bilingual docs validator
   ```ts
   export type Validator = (tree: FileTree, options: ValidatorOptions) => Finding[];
   export interface ValidatorOptions { forbiddenMentions: readonly string[] }
-  export const VALIDATORS: Record<string, Validator>; // id → función; ids: package-naming, forbidden-mentions, bilingual-docs, decision-records, agent-checklist-impact
+  export const VALIDATORS: Record<string, Validator>; // id → función; ids: package-naming, forbidden-mentions, bilingual-docs, decision-records, agent-checklist-impact, error-codes
   export function validateRulesCatalog(tree: FileTree): Finding[]; // manifests válidos, nombres canónicos, RULE.md + RULE.en.md, validator existente en VALIDATORS
   ```
 
@@ -951,7 +1095,7 @@ git commit -m "feat(standard): add in-memory file tree, bilingual docs validator
 ```
 (Los términos reales los escribe el propietario del producto al ejecutar esta tarea, tomándolos del acta 0012; no se transcriben en este plan para que el propio plan pase el validador. Es dato, no código; el validador excluye este archivo del escaneo.)
 
-- [ ] **Step 2: Tests de los cuatro validadores nuevos**
+- [ ] **Step 2: Tests de los cinco validadores nuevos**
 
 `src/modules/validators/package-naming.test.ts`:
 ```ts
@@ -1015,10 +1159,35 @@ test("completed plans need Sí/No with content; in_progress plans are skipped", 
 });
 ```
 
+`src/modules/validators/error-codes.test.ts` (acta 0013: todo `code` de error es `MAYUSCULAS_CON_GUION_BAJO`):
+```ts
+import { expect, test } from "bun:test";
+import { treeFrom } from "../standard/file-tree";
+import { validateErrorCodes } from "./error-codes";
+const opts = { forbiddenMentions: [] };
+test("accepts canonical codes in CONTRACT.md and source, rejects kebab-case or lowercase", () => {
+  const ok = treeFrom({
+    "CONTRACT.md": "## Códigos de error\n| Código | Significado |\n| --- | --- |\n| `INVALID_ARGUMENTS` | Entrada inválida |\n| `SCHEMA_UNSUPPORTED` | Versión desconocida |\n",
+    "src/interfaces/cli/output.ts": 'printError("INVALID_ARGUMENTS", "x"); printError("SCHEMA_UNSUPPORTED", "y");',
+  });
+  expect(validateErrorCodes(ok, opts)[0]?.verdict).toBe("pass");
+  const bad = treeFrom({
+    "CONTRACT.md": "## Códigos de error\n| Código | Significado |\n| --- | --- |\n| `engines-outdated` | x |\n",
+    "src/app/x.ts": 'printError("engines-outdated", "x"); printError("Bad_Code", "y");',
+  });
+  const f = validateErrorCodes(bad, opts)[0];
+  expect(f?.verdict).toBe("fail");
+  expect(f?.evidence).toEqual(["CONTRACT.md: engines-outdated", "src/app/x.ts:1: engines-outdated", "src/app/x.ts:1: Bad_Code"]);
+});
+test("passes when the repo has no CONTRACT.md and no printError calls", () => {
+  expect(validateErrorCodes(treeFrom({ "README.md": "" }), opts)[0]?.verdict).toBe("pass");
+});
+```
+
 - [ ] **Step 3: Ejecutar para ver los fallos**
 
 Run: `bun test src/modules/validators`
-Expected: FAIL `Cannot find module` en los cuatro nuevos.
+Expected: FAIL `Cannot find module` en los cinco nuevos.
 
 - [ ] **Step 4: Implementar los validadores**
 
@@ -1045,7 +1214,7 @@ export function validatePackageNaming(tree: FileTree, _o: ValidatorOptions): Fin
     for (const root of STRICT_ROOTS) if (path.startsWith(root)) { const dir = path.slice(root.length).split("/")[0] ?? ""; if (!PACKAGE_NAME_PATTERN.test(dir)) bad.add(root + dir); }
     for (const root of HUB_ROOTS) if (path.startsWith(root) && path.endsWith("/manifest.json")) { const dir = path.slice(root.length).split("/")[0] ?? ""; if (!PACKAGE_NAME_PATTERN.test(dir)) bad.add(root + dir); }
   }
-  return bad.size === 0 ? [pass(RULE, "Nombres de paquetes canónicos.", "Package names are canonical.")] : [fail(RULE, [...bad].sort(), "Carpetas de paquete fuera de origen-tipo-nombre.", "Package folders outside origin-kind-name.")];
+  return bad.size === 0 ? [pass(RULE, "packageNamesOk")] : [fail(RULE, [...bad].sort(), "packageNamesInvalid")];
 }
 ```
 
@@ -1062,7 +1231,7 @@ export function validateForbiddenMentions(tree: FileTree, o: ValidatorOptions): 
     if (path === "standard/forbidden-mentions.json") continue;
     text.split("\n").forEach((line, i) => { for (const [term, re] of res) if (re.test(line)) evidence.push(`${path}:${i + 1}: ${term}`); });
   }
-  return evidence.length === 0 ? [pass(RULE, "Sin menciones prohibidas.", "No forbidden mentions.")] : [fail(RULE, evidence, "Menciones a productos externos.", "External product mentions.")];
+  return evidence.length === 0 ? [pass(RULE, "forbiddenMentionsNone")] : [fail(RULE, evidence, "forbiddenMentionsFound")];
 }
 ```
 
@@ -1096,7 +1265,7 @@ export function validateDecisionRecords(tree: FileTree, _o: ValidatorOptions): F
     for (const r of records) if (!tree.files.has(`docs/decisions/${r}`)) evidence.push(`INDEX.json lists ${r} but file is missing (records are never deleted)`);
     for (const f of files) { const n = f.slice("docs/decisions/".length); if (!records.includes(n)) evidence.push(`INDEX.json does not list ${n}`); }
   }
-  return evidence.length === 0 ? [pass(RULE, "Actas de decisión coherentes.", "Decision records are consistent.")] : [fail(RULE, evidence, "Actas de decisión inválidas.", "Invalid decision records.")];
+  return evidence.length === 0 ? [pass(RULE, "decisionRecordsOk")] : [fail(RULE, evidence, "decisionRecordsInvalid")];
 }
 ```
 (`INDEX.json` lo genera `bun run decisions:index` en la Task 9; el validador exige que exista y que nunca pierda entradas.)
@@ -1117,7 +1286,7 @@ export function validateAgentChecklistImpact(tree: FileTree, _o: ValidatorOption
     const body = start < 0 ? "" : text.slice(start + SECTION.length).split(/\n## /)[0]?.trim() ?? "";
     if (!/^(Sí|No)\b.{10,}/s.test(body)) evidence.push(`${path}: section '${SECTION}' must start with 'Sí' or 'No' and explain`);
   }
-  return evidence.length === 0 ? [pass(RULE, "Planes cerrados declaran impacto en el procedimiento de agentes.", "Completed plans declare agent-procedure impact.")] : [fail(RULE, evidence, "Planes cerrados sin impacto declarado.", "Completed plans without declared impact.")];
+  return evidence.length === 0 ? [pass(RULE, "agentImpactDeclared")] : [fail(RULE, evidence, "agentImpactMissing")];
 }
 ```
 
@@ -1126,6 +1295,7 @@ export function validateAgentChecklistImpact(tree: FileTree, _o: ValidatorOption
 import { validateAgentChecklistImpact } from "./agent-checklist-impact";
 import { validateBilingualDocs } from "./bilingual-docs";
 import { validateDecisionRecords } from "./decision-records";
+import { validateErrorCodes } from "./error-codes";
 import { validateForbiddenMentions } from "./forbidden-mentions";
 import { validatePackageNaming } from "./package-naming";
 import type { Validator } from "./types";
@@ -1136,8 +1306,38 @@ export const VALIDATORS: Record<string, Validator> = {
   "bilingual-docs": (tree) => validateBilingualDocs(tree),
   "decision-records": validateDecisionRecords,
   "agent-checklist-impact": validateAgentChecklistImpact,
+  "error-codes": validateErrorCodes,
 };
 ```
+`error-codes.ts` (regla `forge614-rule-machine-contracts`, acta 0013):
+```ts
+import { read, type FileTree } from "../standard/file-tree";
+import { fail, pass, type Finding } from "../standard/finding";
+import type { ValidatorOptions } from "./types";
+const RULE = "forge614-rule-machine-contracts";
+export const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]+$/;
+const CONTRACT_ROW = /^\|\s*`([^`]+)`\s*\|/;
+const PRINT_ERROR = /printError\(\s*"([^"]+)"/g;
+export function validateErrorCodes(tree: FileTree, _o: ValidatorOptions): Finding[] {
+  const evidence: string[] = [];
+  const contract = read(tree, "CONTRACT.md");
+  if (contract !== undefined) {
+    const section = contract.split(/^## /m).find((s) => s.startsWith("Códigos de error")) ?? "";
+    for (const line of section.split("\n")) {
+      const m = CONTRACT_ROW.exec(line);
+      if (m?.[1] !== undefined && m[1] !== "Código" && !ERROR_CODE_PATTERN.test(m[1])) evidence.push(`CONTRACT.md: ${m[1]}`);
+    }
+  }
+  for (const [path, text] of tree.files) {
+    if (!path.startsWith("src/") || !path.endsWith(".ts") || path.endsWith(".test.ts")) continue;
+    text.split("\n").forEach((line, i) => {
+      for (const m of line.matchAll(PRINT_ERROR)) { const code = m[1] ?? ""; if (!ERROR_CODE_PATTERN.test(code)) evidence.push(`${path}:${i + 1}: ${code}`); }
+    });
+  }
+  return evidence.length === 0 ? [pass(RULE, "errorCodesOk")] : [fail(RULE, evidence, "errorCodesInvalid")];
+}
+```
+(Solo inspecciona `CONTRACT.md` y las llamadas `printError("...")` de `src/`; los códigos de otros nodos se validan cuando el verificador de la fase 0.2 corra sobre sus repositorios.)
 
 - [ ] **Step 5: Ejecutar**
 
@@ -1182,7 +1382,7 @@ export function validateRulesCatalog(tree: FileTree): Finding[] {
     if (read(tree, `${base}RULE.md`) === undefined) evidence.push(`${dir}: missing RULE.md`);
     if (read(tree, `${base}RULE.en.md`) === undefined) evidence.push(`${dir}: missing RULE.en.md`);
   }
-  return evidence.length === 0 ? [pass(RULE, "Catálogo de reglas válido.", "Rules catalog is valid.")] : [fail(RULE, evidence, "Catálogo de reglas inválido.", "Invalid rules catalog.")];
+  return evidence.length === 0 ? [pass(RULE, "rulesCatalogOk")] : [fail(RULE, evidence, "rulesCatalogInvalid")];
 }
 ```
 
@@ -1219,7 +1419,7 @@ Tabla de manifiestos (todos `level: core`, `appliesWhen: []`):
 | `forge614-rule-agent-questions-before-acting` | — | 0014 |
 | `forge614-rule-no-external-product-mentions` | `forbidden-mentions` | 0012 |
 | `forge614-rule-never-touch-agents-dir-by-hand` | — | 0005 |
-| `forge614-rule-machine-contracts` | — | 0013 |
+| `forge614-rule-machine-contracts` | `error-codes` | 0013 |
 | `forge614-rule-three-operating-systems` | — | 0018 |
 | `forge614-rule-decision-records` | `decision-records` | 0015 |
 | `forge614-rule-bilingual-docs` | `bilingual-docs` | 0016 |
@@ -1289,7 +1489,7 @@ export function validatePacksCatalog(tree: FileTree): Finding[] {
     if (parsed.data.name !== dir) evidence.push(`${dir}: pack name '${parsed.data.name}' differs from folder`);
     for (const rule of parsed.data.rules) if (!tree.files.has(`standard/rules/${rule}/manifest.json`)) evidence.push(`${dir}: rule '${rule}' not found in standard/rules`);
   }
-  return evidence.length === 0 ? [pass(RULE, "Packs válidos.", "Packs are valid.")] : [fail(RULE, evidence, "Packs inválidos.", "Invalid packs.")];
+  return evidence.length === 0 ? [pass(RULE, "packsOk")] : [fail(RULE, evidence, "packsInvalid")];
 }
 ```
 
@@ -1423,6 +1623,30 @@ if [ "$UNINSTALL" = "1" ]; then
   exit 0
 fi
 
+# Migración de instalaciones anteriores al estándar: instalación plana ($BIN_DIR/forge614-<node> como
+# binario real, sin prefijo versionado) y bloques PATH marcados en los perfiles de shell. Un nodo alineado
+# nunca edita PATH: solo forge614-ai crea el comando global. El perfil se respalda antes de tocarlo.
+MARK_BEGIN="# >>> forge614-$NODE_NAME PATH >>>"
+MARK_END="# <<< forge614-$NODE_NAME PATH <<<"
+remove_path_block() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  grep -qF "$MARK_BEGIN" "$file" || return 0
+  cp "$file" "$file.forge614-backup-$(date +%Y%m%d%H%M%S)"
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '$0==b{skip=1;next} $0==e{skip=0;next} !skip' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  log "removed legacy PATH block from $file (backup kept next to it)"
+}
+migrate_legacy_install() {
+  if [ -f "$LAUNCHER" ] && [ ! -L "$LAUNCHER" ]; then
+    local legacy="$NODE_HOME/legacy-$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$legacy" && mv "$LAUNCHER" "$legacy/forge614-$NODE_NAME"
+    log "moved flat install to $legacy (kept until the new version verifies)"
+  fi
+  for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile" "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"; do remove_path_block "$f"; done
+  [ -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && [ ! -s "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && rm -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"
+  return 0
+}
+
 platform() {
   local os arch
   case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) die "unsupported OS $(uname -s)" ;; esac
@@ -1451,6 +1675,7 @@ else
   [ -n "$VERSION" ] || die "--archive requires --version"
 fi
 
+migrate_legacy_install
 DEST="$NODE_HOME/$VERSION"
 mkdir -p "$DEST" "$BIN_DIR"
 tar -xzf "$ARCHIVE" -C "$DEST"
@@ -1568,6 +1793,8 @@ jobs:
       - run: bun run release:publish
 ```
 (`build:target`, `smoke:target` y `release:publish` son scripts que el paquete `bun release` compartido aporta a cada nodo en la fase 0.4; la plantilla solo los invoca. El validador acepta `bun run <script>` con `env:` declarado.)
+
+**Precondición de la plantilla de release:** el nodo no puede tener dependencias `file:../` a repositorios hermanos en `package.json`; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría. Un nodo con esa dependencia (hoy Atlas con `forge614-engram`) la sustituye por la versión publicada antes de adoptar la plantilla. Se documenta en `docs/*/NN-workflows.md` de plantilla como requisito.
 
 `standard/templates/CONTRACT.md`:
 ```markdown
@@ -1693,7 +1920,7 @@ import { readTree } from "../infrastructure/fs-tree";
 import { run } from "../infrastructure/process";
 import { placeholdersOf } from "../modules/standard/template";
 import { renderNodeFiles } from "./render-templates";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1712,6 +1939,24 @@ test("rendered install.sh passes bash -n", () => {
   const dir = mkdtempSync(join(tmpdir(), "render-"));
   writeFileSync(join(dir, "install.sh"), files["install.sh"] ?? "");
   expect(run(["bash", "-n", join(dir, "install.sh")]).exitCode).toBe(0);
+});
+
+test("install.sh migrates a flat install and removes the legacy PATH block with a backup", () => {
+  const files = renderNodeFiles(readTree("standard/templates"), vars);
+  const home = mkdtempSync(join(tmpdir(), "home-"));
+  const nodeHome = join(home, ".forge614", "demo");
+  mkdirSync(join(nodeHome, "bin"), { recursive: true });
+  writeFileSync(join(nodeHome, "bin", "forge614-demo"), "#!/bin/sh\necho legacy\n", { mode: 0o755 });
+  writeFileSync(join(home, ".zshrc"), "export A=1\n# >>> forge614-demo PATH >>>\nexport PATH=\"$HOME/.forge614/demo/bin:$PATH\"\n# <<< forge614-demo PATH <<<\nexport B=2\n");
+  const script = join(home, "install.sh");
+  writeFileSync(script, files["install.sh"] ?? "", { mode: 0o755 });
+  // Se ejecuta solo la parte de migración: bash -c carga las funciones del script y llama migrate_legacy_install.
+  const r = run(["bash", "-c", `HOME='${home}' FORGE614_HOME='${home}/.forge614'; export HOME FORGE614_HOME; source <(sed -n '1,/^platform()/p' '${script}' | grep -v '^platform()'); migrate_legacy_install`]);
+  expect(r.exitCode).toBe(0);
+  expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("export A=1\nexport B=2\n");
+  expect(readdirSync(home).some((n) => n.startsWith(".zshrc.forge614-backup-"))).toBe(true);
+  expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
+  expect(readdirSync(nodeHome).some((n) => n.startsWith("legacy-"))).toBe(true);
 });
 ```
 
@@ -1831,14 +2076,14 @@ const RULE = "forge614-rule-agent-checklist-impact";
 const DAY = 86_400_000;
 export function validateSupportMatrix(tree: FileTree, today: string): Finding[] {
   const raw = read(tree, "standard/support-matrix.json");
-  if (raw === undefined) return [fail(RULE, ["standard/support-matrix.json missing"], "Falta la matriz de soporte.", "Support matrix missing.")];
+  if (raw === undefined) return [fail(RULE, ["standard/support-matrix.json missing"], "supportMatrixMissing")];
   const parsed = SupportMatrixSchema.safeParse(JSON.parse(raw));
-  if (!parsed.success) return [fail(RULE, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`), "Matriz de soporte inválida.", "Invalid support matrix.")];
+  if (!parsed.success) return [fail(RULE, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`), "supportMatrixInvalid")];
   const evidence: string[] = [];
   for (const c of parsed.data.cells) {
     if (c.status === "revalidate" && c.revalidateSince !== undefined && Date.parse(today) - Date.parse(c.revalidateSince) > 30 * DAY) evidence.push(`${c.node}/${c.agent}: in revalidate since ${c.revalidateSince} (> 30 days)`);
   }
-  return evidence.length === 0 ? [pass(RULE, "Matriz de soporte vigente.", "Support matrix is current.")] : [fail(RULE, evidence, "Celdas en revalidación vencidas.", "Stale revalidate cells.")];
+  return evidence.length === 0 ? [pass(RULE, "supportMatrixCurrent")] : [fail(RULE, evidence, "supportMatrixStale", { days: "30" })];
 }
 ```
 
@@ -2019,7 +2264,7 @@ function documentedJobs(doc: string): Set<string> {
 export function validateWorkflows(tree: FileTree, parse: (yaml: string) => unknown): Finding[] {
   const evidence: string[] = [];
   const files = listUnder(tree, ".github/workflows/").filter((p) => /\.ya?ml$/.test(p));
-  if (files.length === 0) return [pass(RULE, "Sin workflows que validar.", "No workflows to validate.")];
+  if (files.length === 0) return [pass(RULE, "workflowsNone")];
   const docPath = listUnder(tree, "docs/es/").find((p) => /docs\/es\/\d{2}-workflows\.md$/.test(p));
   const documented = docPath ? documentedJobs(read(tree, docPath) ?? "") : new Set<string>();
   if (!docPath) evidence.push("docs/es/NN-workflows.md missing (no file matches docs/es/[0-9][0-9]-workflows.md)");
@@ -2032,7 +2277,7 @@ export function validateWorkflows(tree: FileTree, parse: (yaml: string) => unkno
     evidence.push(...checkWorkflowShape(parsed.data, id));
     if (docPath) for (const job of jobsOf(parsed.data)) if (!documented.has(job)) evidence.push(`${id}: job '${job}' not documented in ${docPath}`);
   }
-  return evidence.length === 0 ? [pass(RULE, "Workflows delgados, fijados y documentados.", "Workflows are thin, pinned and documented.")] : [fail(RULE, evidence, "Workflows fuera del estándar.", "Workflows violate the standard.")];
+  return evidence.length === 0 ? [pass(RULE, "workflowsOk")] : [fail(RULE, evidence, "workflowsInvalid")];
 }
 ```
 Registrar en `validators/index.ts`: `workflows: (tree) => validateWorkflows(tree, parseYaml)` — como `modules` no puede importar `yaml`, el registro recibe el parser por inyección: cambiar `ValidatorOptions` a `{ forbiddenMentions; parseYaml: (s: string) => unknown; today: string }` y que `app/run-validators.ts` (Task 9) inyecte `parse` de `yaml` y la fecha. Actualizar los tests anteriores para pasar `{ forbiddenMentions: [], parseYaml: () => ({}), today: "2026-09-22" }`.
@@ -2145,7 +2390,8 @@ git commit -m "feat(standard): add thin-workflow schema, workflows:check and wor
 - Produces:
   ```ts
   // run-validators.ts
-  export interface VerifyReport { schemaVersion: 1; standard: string; verdict: Verdict; checks: Finding[] }
+  export interface ReportedFinding extends Finding { message: { es: string; en: string } } // mensaje renderizado en ambos idiomas desde el catálogo (renderFinding)
+  export interface VerifyReport { schemaVersion: 1; standard: string; verdict: Verdict; checks: ReportedFinding[] }
   export function runValidators(tree: FileTree, options: { standardVersion: string; today: string }): VerifyReport;
   // decisions-index.ts
   export function buildDecisionsIndex(tree: FileTree): { schemaVersion: 1; records: string[] }; // nombres de archivo NNNN-*.md ordenados
@@ -2176,6 +2422,7 @@ test("aggregates every validator and computes worst verdict", () => {
   expect(report.verdict).toBe("fail");
   expect(report.checks.map((c) => c.ruleId)).toEqual(expect.arrayContaining(["forge614-rule-no-external-product-mentions", "forge614-rule-bilingual-docs", "forge614-rule-package-naming", "forge614-rule-decision-records", "forge614-rule-agent-checklist-impact", "forge614-rule-thin-workflows"]));
   expect(report.checks.find((c) => c.ruleId === "forge614-rule-no-external-product-mentions")?.verdict).toBe("fail");
+  expect(report.checks.find((c) => c.ruleId === "forge614-rule-no-external-product-mentions")?.message).toEqual({ es: "Menciones a productos externos.", en: "External product mentions." });
 });
 ```
 
@@ -2199,12 +2446,13 @@ export function buildDecisionsIndex(tree: FileTree): { schemaVersion: 1; records
 ```ts
 import { parse } from "yaml";
 import { read, type FileTree } from "../modules/standard/file-tree";
-import { worst, type Finding, type Verdict } from "../modules/standard/finding";
+import { renderFinding, worst, type Finding, type Verdict } from "../modules/standard/finding";
 import { VALIDATORS } from "../modules/validators";
 import { validatePacksCatalog } from "../modules/validators/packs-catalog";
 import { validateRulesCatalog } from "../modules/validators/rules-catalog";
 import { validateSupportMatrix } from "../modules/validators/support-matrix";
-export interface VerifyReport { schemaVersion: 1; standard: string; verdict: Verdict; checks: Finding[] }
+export interface ReportedFinding extends Finding { message: { es: string; en: string } }
+export interface VerifyReport { schemaVersion: 1; standard: string; verdict: Verdict; checks: ReportedFinding[] }
 function forbiddenTerms(tree: FileTree): string[] {
   const raw = read(tree, "standard/forbidden-mentions.json");
   if (raw === undefined) return [];
@@ -2217,7 +2465,8 @@ export function runValidators(tree: FileTree, options: { standardVersion: string
   const checks: Finding[] = [];
   for (const validator of Object.values(VALIDATORS)) checks.push(...validator(tree, vo));
   checks.push(...validateRulesCatalog(tree), ...validatePacksCatalog(tree), ...validateSupportMatrix(tree, options.today));
-  return { schemaVersion: 1, standard: options.standardVersion, verdict: worst(checks), checks };
+  const reported: ReportedFinding[] = checks.map((c) => ({ ...c, message: renderFinding(c) }));
+  return { schemaVersion: 1, standard: options.standardVersion, verdict: worst(checks), checks: reported };
 }
 ```
 
@@ -2470,8 +2719,8 @@ const RULE = "forge614-rule-machine-contracts";
 const h = (s: string): string => createHash("sha256").update(s).digest("hex");
 export function validateEcosystemContract(tree: FileTree, canonical: string): Finding[] {
   const local = read(tree, "FORGE614_ECOSYSTEM_CONTRACT.md");
-  if (local === undefined || h(local) === h(canonical)) return [pass(RULE, "Contrato del ecosistema coherente.", "Ecosystem contract is consistent.")];
-  return [fail(RULE, ["FORGE614_ECOSYSTEM_CONTRACT.md differs from the published contract (sha256 mismatch)"], "Copia del contrato del ecosistema divergente.", "Diverged ecosystem contract copy.")];
+  if (local === undefined || h(local) === h(canonical)) return [pass(RULE, "ecosystemContractOk")];
+  return [fail(RULE, ["FORGE614_ECOSYSTEM_CONTRACT.md differs from the published contract (sha256 mismatch)"], "ecosystemContractDiverged")];
 }
 ```
 En `run-validators.ts`: `checks.push(...validateEcosystemContract(tree, read(tree, "standard/FORGE614_ECOSYSTEM_CONTRACT.md") ?? ""))`.
@@ -2546,7 +2795,10 @@ Después del commit, la persona aplica en GitHub la configuración de `BRANCH_PR
 - §4.3 stack (strict, Zod en fronteras) → Task 1 `tsconfig`; Tasks 2, 6, 8, 9 validan argv/JSON/YAML con Zod.
 - §4.4 contratos de máquina (acta 0013) → Task 2 `output.ts`, esquemas de error y evento; toda CLI usa `printJson`/`printError` y códigos `0/1/2`.
 - §4.5 patrones nombrados → cada tarea nombra el patrón (prefijo versionado, Plan/Apply no aplica aquí, Single Source of Truth en Task 4, Quality Gate en Tasks 8–9).
-- §4.6 instalación → Task 6 (`install.sh`/`.ps1` desde plantilla, sin Node/Python, `FORGE614_HOME`, `--uninstall` simétrico, huella).
+- §4.6 instalación → Task 6 (`install.sh`/`.ps1` desde plantilla, sin Node/Python, `FORGE614_HOME`, `--uninstall` simétrico, huella, y migración de instalaciones planas y bloques PATH heredados con respaldo — caso real: Atlas v1.0.0).
+- §4.4 formato de `code` (acta 0013) → Task 4 (validador `error-codes`, regex `^[A-Z][A-Z0-9_]+$`) y Task 2 (`ErrorEnvelopeSchema`).
+- §4.8 textos bilingües dentro del código → Task 1 (`MessageCatalog` tipado es/en con paridad por compilador; `renderFinding`), consumido por todos los validadores y por el `VerifyReport` de la Task 9.
+- §4.7 precondición de la plantilla de release (sin `file:../`) → Task 6, documentada en `docs-workflows` de plantilla.
 - §4.7 release, versionado y workflows delgados (acta 0019) → Tasks 6 (plantillas `verify.yml`/`release.yml`, `pre-push`, `BRANCH_PROTECTION`, `docs-workflows`), 8 (`workflows:check`/`run`), 13 (adopción propia). El paquete `bun release` compartido queda para la fase 0.4 (stubs `NOT_IMPLEMENTED` documentados).
 - §4.8 documentación → Tasks 3 (validador bilingüe, `STANDARD.md`), 11 (docs 00–05 y `notion-map`).
 - §4.9 proceso y actas → Task 4 (`decision-records`), Task 9 (`INDEX.json`), Task 6 (`plan.md` con sección de impacto).
@@ -2558,6 +2810,6 @@ Después del commit, la persona aplica en GitHub la configuración de `BRANCH_PR
 
 **Placeholders.** No hay "TBD/TODO"; los `<completar>` de `CONTRACT.md` son parte de la plantilla para nodos (contenido que cada nodo rellena), no del plan. Los stubs `NOT_IMPLEMENTED` son deliberados y documentados con su fase.
 
-**Consistencia de tipos.** `Finding`, `FileTree`, `treeFrom`, `listUnder`, `read`, `ValidatorOptions { forbiddenMentions; parseYaml; today }` (ampliada en Task 8; los tests de Tasks 4–7 se actualizan en ese paso), `VALIDATORS`, `runValidators`, `VerifyReport`, `renderNodeFiles`/`NodeVars`, `run`, `packStandard`/`PackResult`, `buildDecisionsIndex`, `buildNotionMap`, `WorkflowSchema`/`checkWorkflowShape`/`jobsOf`/`runStepsOf`, `runWorkflow`/`WorkflowRunResult`: nombres idénticos en definición y uso. Funciones puente de `app` para respetar capas: `readRepoTree`, `runCommand`, `readTemplatesTree`, `writeRenderedFiles`, `writeJsonSchemas`.
+**Consistencia de tipos.** `Finding { ruleId, verdict, evidence, messageKey, params }`, `MessageCatalog`/`MessageKey`/`MessageParams`/`Locale` (`messages/types.ts`), `renderMessage`, `renderFinding`, `pass(ruleId, key, params?)`/`fail(ruleId, evidence, key, params?)` (todas las llamadas de las Tasks 3–9 y 12 usan claves del catálogo, nunca texto literal), `FileTree`, `treeFrom`, `listUnder`, `read`, `ValidatorOptions { forbiddenMentions; parseYaml; today }` (ampliada en Task 8; los tests de Tasks 4–7 se actualizan en ese paso), `VALIDATORS`, `runValidators`, `VerifyReport { checks: ReportedFinding[] }` con `ReportedFinding = Finding & { message: { es; en } }`, `renderNodeFiles`/`NodeVars`, `run`, `packStandard`/`PackResult`, `buildDecisionsIndex`, `buildNotionMap`, `WorkflowSchema`/`checkWorkflowShape`/`jobsOf`/`runStepsOf`, `runWorkflow`/`WorkflowRunResult`: nombres idénticos en definición y uso. Funciones puente de `app` para respetar capas: `readRepoTree`, `runCommand`, `readTemplatesTree`, `writeRenderedFiles`, `writeJsonSchemas`.
 
 **Requisito no cubierto por decisión explícita.** El paquete compartido `bun release` (spec §4.7) y su publicación multiplataforma se construyen en la fase 0.4 sobre el script de Engines; aquí solo se deja la plantilla que lo invoca y los stubs.

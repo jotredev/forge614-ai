@@ -19,6 +19,7 @@ Una sola convención para todo comando de máquina del ecosistema:
 - **`--help` y `--version`** responden de inmediato y nunca leen stdin.
 - **Entradas externas** (argv, stdin, archivos de configuración, respuestas de otros nodos) se validan con esquema (Zod) en la frontera; los campos desconocidos se rechazan.
 - El código de error es un contrato: se lista en el `CONTRACT.md` del nodo y el verificador comprueba que los códigos documentados existen en el código y viceversa.
+- **Formato del `code`:** identificador estable en `MAYUSCULAS_CON_GUION_BAJO`, regex `^[A-Z][A-Z0-9_]+$`. Los nodos con interfaz humana derivan el texto del mismo `code` mediante un catálogo tipado por idioma (spec §4.8).
 
 ## Alternativas descartadas
 
@@ -29,6 +30,8 @@ Una sola convención para todo comando de máquina del ecosistema:
 
 - Cambio de contrato (nueva `schemaVersion`) en los cinco nodos durante la alineación; los consumidores (Shell, Atlas, Workers) se actualizan en el mismo ciclo.
 - Aceptada por el propietario del producto el 2026-09-22. Se adopta con `schemaVersion` nuevo y una ventana de compatibilidad de una versión: cada consumidor acepta el formato anterior y el nuevo durante un ciclo de release, y después solo el nuevo.
+- Shell 1.9.0 usa códigos en kebab-case en su catálogo de presentación (`ShellError`); en su alineación migra al formato del acta con mapeo 1:1. Su catálogo tipado por idioma se adopta como patrón para todos los nodos (spec §4.8).
+- Ruling del coordinador 2026-09-22: formato de `code` fijado sin consulta adicional; costo si es incorrecto: renombrar códigos en un ciclo de release.
 
 ## Referencias
 

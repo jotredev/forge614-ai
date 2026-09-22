@@ -28,8 +28,8 @@ The five nodes exist and work to varying degrees. A static code audit (2026-09-2
 | The "identical" ecosystem contract has five different versions | 10 327 B in Engram, 10 158 in Engines, 10 136 in Atlas, 9 825 in Workers, 9 464 in Shell |
 | No node validates with a schema what it receives from another node | Atlas reads the output of Engines and Workers with `JSON.parse(...) as`; Engram uses Zod only in MCP |
 | Errors and output versioning differ per node | Engram: `{code,error}` on stderr; Engines: `{schemaVersion, error:{code,message}}` on stdout; Atlas: `{status:"error"}`; Workers without `schemaVersion` |
-| Five recipes for installation and release | Engines: `bun release` + multi-platform CI; Engram: hand-written installer without Windows; Shell: installer that edits dotfiles and manual asset upload; Atlas and Workers: nothing |
-| Documentation that contradicts the code | Atlas documents "Plans 1–3" with Plans 1–4 merged; Engram documents v1.2.1 at v1.5.0; Shell's `AGENTS.md` contradicts its code |
+| Five recipes for installation and release | Engines: `bun release` + multi-platform CI; Engram: hand-written installer without Windows; Shell: installer that edits dotfiles and manual asset upload; Atlas: own v1.0.0 installer that edits shell profiles, without Windows, without PR CI; Workers: nothing |
+| Documentation that contradicts the code | Atlas documented "Plans 1–3" with Plans 1–4 merged (fixed in v1.0.0, but it still calls itself "orchestrator"); Engram documents v1.2.1 at v1.5.0; Shell's `AGENTS.md` contradicts its code |
 | No per-node contract | Contracts live scattered across specs, docs and code |
 
 Priority 1 security findings, re-verified in the code by the author of this spec:
@@ -40,6 +40,7 @@ Priority 1 security findings, re-verified in the code by the author of this spec
 | Engines | Uninstalling deletes the binary without removing the session hooks: Claude Code and Codex are left invoking a nonexistent executable | `install.sh:36-45`, `install.ps1:31-44` |
 | Engram | `uninstall` invokes `forge614-atlas uninstall --from forge614-engram --confirmed`; Atlas only implements `init` | `src/app/uninstall.ts:35-39`; Atlas `src/interfaces/cli/main.ts:12,21` |
 | Atlas | Persists into Engram the model's raw output without sanitizing or bounding it, and `tokensConsumed: 0` as real data | `src/modules/cli/dispatch-modules.ts:68,115` |
+| Atlas | The installer (v1.0.0) edits `.zshrc`/`.bashrc`/fish without backup and runs Engram's remote installer without verifying its fingerprint | `scripts/install.sh:93-125,143-155` |
 | Workers | Inherits the complete `process.env` (API keys and base URLs included); `--version` blocks waiting for stdin | `src/process-runner.ts:63-68`; `src/main.ts:7` |
 | Shell | No continuous integration; the "retired" Pi engine is still a live runtime dependency | repository tree; `package.json:5,24-25` |
 
@@ -66,7 +67,7 @@ Made with the product owner on 2026-09-22 and recorded as decision records (`doc
 4. **Per-node contracts**: `CONTRACT.md` es/en in the five existing nodes.
 5. **New-agent procedure and support matrix** (section 4.12), centralized.
 6. **Alignment of the five nodes** (section 7): immediate P1 security patches and one alignment plan per repository.
-7. **Decision records**: `docs/decisions/` in `forge614-ai` with records 0001–0016, template and promotion rule.
+7. **Decision records**: `docs/decisions/` in `forge614-ai` with records 0001–0019, template and promotion rule.
 8. **Ecosystem contract update**: Workers as an implementation package; Hub and Sentinel as nodes; microkernel architecture with distribution as packages with declared dependencies; `forge614 init|prepare|status|doctor|update` commands; run ledger as an explicit exception to "no parallel progress databases".
 
 ### 3.2 Out of scope (on purpose)
@@ -79,7 +80,7 @@ Made with the product owner on 2026-09-22 and recorded as decision records (`doc
 | Sentinel with AI (independent reviewer) | Depends on the core to have work to review | Delivery 2 |
 | Token usage capture in Workers/Engines | Only the core consumes it; recorded as a pending contract change | Delivery 2 |
 | Remote marketplace, community origins, quarantine | The local catalog with the official origin is enough to start | Delivery 3 |
-| Execution or functional redesign of Atlas | Atlas already dispatches (Plans 1–4); it is only aligned to the standard and its documentation corrected | Atlas repository |
+| Execution or functional redesign of Atlas | Atlas already dispatches and published v1.0.0 (Plans 1–5); it is only aligned to the standard (installer and release from template) and its documentation corrected | Atlas repository |
 
 ## 4. The Forge614 Node Standard
 
@@ -143,6 +144,7 @@ Single convention (record 0013, **accepted** on 2026-09-22; it changes the forma
 - Event streams: NDJSON on stdout, one object per line, each with `schemaVersion` and `type`; a terminal event is guaranteed.
 - `--help` and `--version` always available and never blocking.
 - Incompatible changes bump `schemaVersion`; the consumer rejects versions it does not know with `SCHEMA_UNSUPPORTED`.
+- The `code` is a stable identifier in `UPPERCASE_WITH_UNDERSCORES` (regex `^[A-Z][A-Z0-9_]+$`), listed in the node's `CONTRACT.md`. Nodes with a human interface derive the text from the same `code` through a typed catalog per language (4.8).
 
 ### 4.5 Mandatory patterns
 
@@ -195,6 +197,7 @@ They are named by problem. An abstraction that does not answer a listed problem 
 - `CONTRACT.md` generated from or verified against the code (listed commands exist; schemas match).
 - Historical documents (`docs/superpowers/`, `docs/handoffs/`) are kept but marked as records, not current state, and do not count toward parity.
 - No mention of external products (record 0012).
+- Texts for people inside the code: typed catalog per language (one `Catalog` interface, one file per language `es.ts`/`en.ts`, functions with parameters for messages carrying data); parity is guaranteed by the compiler; identifiers, paths, commands and external text are never translated. Reference pattern: the Shell 1.9.0 catalog.
 
 ### 4.9 Work process and decision records
 
@@ -320,9 +323,9 @@ It does not fix, does not install, does not run AI work, does not decide. A `cau
 |---|---|
 | Engines | Redact `writes[].afterContent` in every `plan` output (emit diff + fingerprint; content only in the plan-store with `0600`). Uninstallation that runs `plan memory-remove` + `apply` per assistant before deleting. Honor `FORGE614_HOME` in `plan-store.ts` and `snapshot.ts`. |
 | Engram | Decouple `uninstall` from the nonexistent Atlas command (cross-node coordination moves to `forge614-ai` in Delivery 1; meanwhile, Engram uninstalls only its own and warns). `--postgres-url` via stdin or environment variable. `update` with pinned version and verified installer fingerprint. |
-| Atlas | Sanitize and bound the model output before `recordModuleReport`; `tokensConsumed: null` with a "not measured" mark; replace `file:../forge614-engram` with a published version. |
+| Atlas | Sanitize and bound the model output before `recordModuleReport`; `tokensConsumed: null` with a "not measured" mark; replace `file:../forge614-engram` with a published version; remove the PATH/profile writing from the installer; verify the fingerprint of Engram's installer before running it; add `--help`. |
 | Workers | Filter API keys and base URLs from the inherited environment (list shared with Shell); `--help`/`--version` without reading stdin; timeout and stderr capture when invoking Engines; process group to kill children. |
-| Shell | Minimal `verify.yml` (install, typecheck, test, build). Explicit confirmation before bypassing permissions. `update` that downloads the target release's installer. |
+| Shell | Minimal `verify.yml` (install, typecheck, test, build) (1.9.0: CI is still absent). Explicit confirmation before bypassing permissions. `update` that downloads the target release's installer. |
 
 ### 7.2 Full alignment (with the standard published)
 
@@ -330,8 +333,8 @@ Each node opens a plan `2026-MM-DD--alineacion-estandar-de-nodo.md` whose closin
 
 - **Engines**: Zod on argv/stdin/plans/manifests/GitHub responses; `apply --revert` and rollback on partial failure; retention of plans and snapshots; installer from template without Node/Python; spec rewritten without external mentions; `CONTRACT.md`.
 - **Engram**: `schemaVersion` in every output; retire the interactive `init` (Shell takes it over in Delivery 1) while keeping `init --json` complete (reinforcement included); Zod on CLI, `.env` and `summary-json`; installer and release from template **with Windows x64 mandatory** (SQLite and FTS5 compiled and tested on a real Windows runner); remove orphan dependencies and the empty native binary; root README; `CONTRACT.md`; document that `startup-context` returns unsanitized data and the shadowing rule by `topic_key`.
-- **Shell**: decide by decision record the base of its interface (today the whole screen depends on the `pi-tui` library and the Pi runtime remains a dependency even though Pi is "retired" as an engine): declare it the official base and document it, or replace it; in any case remove the Pi launcher, extension and integration test as an engine; Zod on Codex payloads and preferences; chat engine registry in a single module; `app → ui` layers corrected; installer and release from template for the three operating systems; `AGENTS.md`, `clientInfo.version`, `notion-map` up to date; delete unused binary assets.
-- **Atlas**: rewrite README, docs 00–01 and spec as "optional initial contextualization" without TUI or concurrency 3; fix session closing with skipped modules and incremental re-analysis; Zod on Engines/Workers outputs; capture Workers stderr; error convention and `--version`; `infrastructure/app` layers; move the model table to policy (Delivery 1); installer, CI and release from template; `CONTRACT.md`; delete orphan branch.
+- **Shell**: decide by decision record the base of its interface (today the whole screen depends on the `pi-tui` library and the Pi runtime remains a dependency even though Pi is "retired" as an engine): declare it the official base and document it, or replace it; in any case remove the Pi launcher, extension and integration test as an engine; Zod on Codex payloads and preferences; chat engine registry in a single module; `app → ui` layers corrected, including `language-gate` and `language-command` (1.9.0); a single module for `Locale`; adopt the `code` format from record 0013 with a mapping from its typed catalog (kept as the reference pattern); `--json` mode for the automation commands; installer and release from template for the three operating systems; `AGENTS.md`, `clientInfo.version`, `notion-map` up to date; delete unused binary assets.
+- **Atlas**: rewrite README, docs 00–01 and spec as "optional initial contextualization" without TUI or concurrency 3; fix session closing with skipped modules and incremental re-analysis; Zod on Engines/Workers outputs; capture Workers stderr; error convention (`--version` already exists; `--help` is missing); `infrastructure/app` layers; move the model table to policy (Delivery 1); replace its own `scripts/install.sh` and `release.yml` with the template ones (versioned prefix, `FORGE614_HOME`, `--uninstall`, Windows x64, pinned actions, no inline logic), add `verify.yml` and `docs/*/NN-workflows.md`, migrate the flat `~/.forge614/atlas/bin` installation and clean the marked PATH block; remove `file:../` and the sibling checkout in CI; `CONTRACT.md`; delete orphan branch.
 - **Workers**: `schemaVersion` in input and events; Zod with unique ids, positive integers, absolute paths and prompt size cap; quota patterns confirmed against real CLIs; layers; `CONTRACT.md` and runbook in Spanish; CI, installer and release from template; first tag; `kind: internal`.
 
 Alignment order: ecosystem contract → Engines → Workers → Engram → Atlas → Shell (from smallest to largest visible surface; Shell last because Delivery 1 adds the plan screen to it).
@@ -355,6 +358,7 @@ Alignment order: ecosystem contract → Engines → Workers → Engram → Atlas
 | Retiring Engram's interactive `init` before Shell covers it | It is retired only when `forge614 prepare`/Shell take it over (Delivery 1); meanwhile, it is marked transitional |
 | Pi in Shell: removing it may require rewriting the UI | Pending product decision: the ecosystem's UI base (record to be opened when aligning Shell) |
 | Windows in Engram (native SQLite/FTS5) | Mandatory by record 0018; Engram's alignment plan includes compilation and tests on a real Windows runner |
+| Atlas published 1.0.0 with its own installer before the standard | Its alignment is a release with the template installer that migrates the flat `~/.forge614/atlas/bin` path to the versioned prefix and cleans the inherited PATH block; the installer template covers that migration (plan 0.1, Task 6) |
 | Maintainer hook tokens | Bounded pack (< 4 000 tokens) and only in ecosystem repos |
 | Error convention breaks current consumers (Shell reads Engines) | Coordinated change with a new `schemaVersion` and a one-version compatibility window |
 
@@ -390,3 +394,4 @@ Nothing in the design is invented: every element corresponds to a named pattern 
 | Rules in a single place and thin adapters per assistant | Single Source of Truth + adapters | Already applied in the monorepo |
 | JSON contracts with `schemaVersion` | Schema versioning (explicit compatibility) | API design |
 | Short skill index + full load on demand | Progressive disclosure | Interface design |
+| Bilingual texts inside the code | Typed catalog per language with compiler-verified parity | Shell 1.9.0 |
