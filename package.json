@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "verify": "bun run src/interfaces/cli/verify.ts",
+    "decisions:index": "bun run src/interfaces/cli/decisions-index.ts",
     "standard:render": "bun run src/interfaces/cli/standard-render.ts",
     "standard:pack": "bun run src/interfaces/cli/standard-pack.ts",
     "schemas:generate": "bun run src/interfaces/cli/schemas-generate.ts",

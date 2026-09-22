@@ -8,4 +8,4 @@
 
 **Why.** AI harnesses commonly inject full skills, dozens of MCP servers and extra steps into every session; the known result is a slower agent that spends more tokens without the work improving. Forge614's complexity must live in the builder (nodes, verifier, CI), never in the AI's context (acta 0020).
 
-**Verification.** Human review for now; `validator: context-budget` arrives in a later phase and will measure the real startup budget.
+**Verification.** `validator: context-budget` computes, for the ecosystem pack, each rule's index line (name + the first line of its `RULE.md`) and estimates its cost as `characters / 4` (labeled as an estimate in the finding); it fails if the sum exceeds 3,000 tokens. Exact measurement at packaging time (the manifest's `tokens` field) arrives in a later phase.

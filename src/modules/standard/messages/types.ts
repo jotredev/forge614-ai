@@ -9,6 +9,7 @@ export interface MessageCatalog {
   packageNamesInvalid: Msg;
   forbiddenMentionsNone: Msg;
   forbiddenMentionsFound: Msg;
+  forbiddenMentionsDataInvalid: Msg;
   decisionRecordsOk: Msg;
   decisionRecordsInvalid: Msg;
   decisionsIndexMissing: Msg;
@@ -29,5 +30,8 @@ export interface MessageCatalog {
   workflowsInvalid: Msg;
   ecosystemContractOk: Msg;
   ecosystemContractDiverged: Msg;
+  contextBudgetOk: Msg;
+  contextBudgetOverBudget: Msg;
+  contextBudgetInvalid: Msg;
 }
 export type MessageKey = keyof MessageCatalog;

@@ -5,6 +5,7 @@
   "level": "core",
   "title": { "es": "Huella mínima en el contexto de la IA", "en": "Minimal footprint in the AI's context" },
   "appliesWhen": [],
+  "validator": "context-budget",
   "compensates": "structural",
   "decisions": ["0020"]
 }

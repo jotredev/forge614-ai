@@ -6,6 +6,7 @@ export const es: MessageCatalog = {
   packageNamesInvalid: () => "Carpetas de paquete fuera de origen-tipo-nombre.",
   forbiddenMentionsNone: () => "Sin menciones prohibidas.",
   forbiddenMentionsFound: () => "Menciones a productos externos.",
+  forbiddenMentionsDataInvalid: () => "standard/forbidden-mentions.json inválido: no se pudieron cargar los términos prohibidos.",
   decisionRecordsOk: () => "Actas de decisión coherentes.",
   decisionRecordsInvalid: () => "Actas de decisión inválidas.",
   decisionsIndexMissing: () => "Falta docs/decisions/INDEX.json.",
@@ -26,4 +27,8 @@ export const es: MessageCatalog = {
   workflowsInvalid: () => "Workflows fuera del estándar.",
   ecosystemContractOk: () => "Contrato del ecosistema coherente.",
   ecosystemContractDiverged: () => "Copia del contrato del ecosistema divergente.",
+  contextBudgetOk: (p) => `Presupuesto de contexto (estimado): ~${p.tokens ?? "?"} tokens (límite ${p.budget ?? "3000"}).`,
+  contextBudgetOverBudget: (p) =>
+    `Presupuesto de contexto (estimado) excede el límite: ~${p.tokens ?? "?"} tokens (límite ${p.budget ?? "3000"}).`,
+  contextBudgetInvalid: () => "No se pudo estimar el presupuesto de contexto: pack.json del ecosistema ausente o inválido.",
 };
