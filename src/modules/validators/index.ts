@@ -1,7 +1,9 @@
+import { read } from "../standard/file-tree";
 import { validateAgentChecklistImpact } from "./agent-checklist-impact";
 import { validateBilingualDocs } from "./bilingual-docs";
 import { validateContextBudget } from "./context-budget";
 import { validateDecisionRecords } from "./decision-records";
+import { validateEcosystemContract } from "./ecosystem-contract";
 import { validateErrorCodes } from "./error-codes";
 import { validateForbiddenMentions } from "./forbidden-mentions";
 import { validatePackageNaming } from "./package-naming";
@@ -21,4 +23,5 @@ export const VALIDATORS: Record<string, Validator> = {
   "support-matrix": validateSupportMatrix,
   workflows: (tree, options) => validateWorkflows(tree, options.parseYaml),
   "context-budget": validateContextBudget,
+  "ecosystem-contract": (tree) => validateEcosystemContract(tree, read(tree, "standard/FORGE614_ECOSYSTEM_CONTRACT.md") ?? ""),
 };

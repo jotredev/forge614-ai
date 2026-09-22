@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-additive-evolution",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Evolución aditiva de datos y contratos", "en": "Additive evolution of data and contracts" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0024"]
+}
