@@ -1,0 +1,480 @@
+> **Origen:** archivo del propietario del ecosistema (`FORGE614-NUEVO-AGENTE-CHECKLIST.md`), movido al centro del estándar el 2026-09-22 sin cambios de contenido.
+> **Regla de admisión:** un agente nuevo entra al ecosistema solo si cumple todos los requisitos obligatorios de todos los nodos; si le falta algo o pierde funcionalidad, no entra.
+
+# Checklist maestro — Agregar un agente de IA nuevo al ecosistema Forge614
+
+> **Qué es este archivo:** cuando aparece un agente de IA nuevo (ej. OpenCode, o cualquier otro CLI de IA
+> que salga en el futuro) y se quiere que el ecosistema Forge614 lo soporte, cada nodo tiene sus propias
+> validaciones que hacer — **cada uno investiga solo lo que a él le corresponde, nunca lo del otro.**
+> Este archivo se va llenando con lo aprendido cada vez que se agrega un agente nuevo, para no repetir
+> el mismo trabajo de investigación ni los mismos errores dos veces.
+>
+> **Regla de oro:** ningún nodo debe intentar resolver la parte de otro nodo. Si `forge614-workers`
+> descubre algo que en realidad le corresponde a `forge614-engines`, se anota en la sección de Engines
+> y se le pasa como pendiente — no se implementa cruzado.
+
+---
+
+## Cómo usar este archivo
+
+1. Cuando alguien quiera agregar soporte para un agente nuevo, cada nodo relevante (Engines, Workers,
+   Atlas, Engram, Shell) revisa **su propia sección de esta guía** y sigue esa checklist para ese agente.
+2. Al terminar la investigación/implementación, se agrega una fila a la tabla de "Agentes ya evaluados"
+   al final de este archivo, con el resultado de cada nodo.
+3. Si algún nodo descubre una validación nueva que no estaba contemplada aquí, se agrega a la checklist
+   general de ese nodo (no solo a la fila del agente actual) — así el próximo agente que se agregue ya
+   se beneficia de esa lección.
+
+---
+
+## `forge614-engines` — el especialista en motores
+
+*(Esta sección la debe llenar una sesión trabajando directamente dentro del repo `forge614-engines`,
+con su propio conocimiento real del código de ese repo. No se completa desde fuera ni por inferencia
+de otro nodo.)*
+
+Su trabajo: exponer el CLI del agente candidato como un `AgentAdapter` (`src/modules/agents/types.ts`)
+registrado en `AgentRegistry` (`src/modules/agents/registry.ts`). No decide qué modelo/nivel usar en
+cada tarea (eso es de Atlas) ni cómo se aísla o lanza el proceso (eso es de Workers) — solo construye
+el comando correcto y declara con precisión qué soporta el CLI y qué no.
+
+**Detección headless (verificar siempre contra el binario instalado, nunca solo contra su doc):**
+
+- [ ] ¿El CLI candidato tiene un modo headless/no interactivo real (`--help`, `exec --help`, etc.)?
+      Si sí, `capabilities.supportsHeadlessExec = true` y hay que implementar `headlessCommand()`.
+      Si no, se deja `false` y **no** se implementa `headlessCommand` — mismo patrón que el adapter
+      de Cursor (`src/infrastructure/agents/cursor.ts`), que no tiene esa función.
+- [ ] ¿Cómo recibe el prompt en modo headless: como argumento posicional, o puede leerlo por stdin?
+      Confirmarlo ejecutando el binario real (ej. `echo "..." | <cmd> <flag>`), como ya se hizo con
+      Claude Code (`-p` sin prompt posicional lee de stdin) y Codex (`exec` sin `PROMPT` posicional lee
+      de stdin). Si el CLI **no** tiene forma de leer el prompt por stdin, el adapter debe lanzar un
+      error explícito cuando `opts.stdinPrompt` venga en `true` — nunca dejar el prompt silenciosamente
+      en `args` (eso lo expondría completo a `ps`). Mismo patrón defensivo que
+      `ReasoningLevelUnsupportedError`.
+- [ ] ¿Qué flag exacto usa para elegir modelo (`--model`, u otro)? Confirmar la sintaxis contra el
+      binario real, no contra la doc — el comportamiento real de un CLI puede no estar bien documentado
+      (así pasó con el modo stdin de Codex).
+- [ ] ¿Soporta nivel de razonamiento configurable en modo headless? Si sí, documentar el flag/sintaxis
+      exacta (Codex no usa un flag directo: usa `-c model_reasoning_effort=<level>`). Si no, el
+      `headlessCommand()` debe lanzar `ReasoningLevelUnsupportedError` cuando `opts.reasoningLevel` esté
+      presente — nunca ignorarlo en silencio (así lo hace Claude Code, que no tiene flag público y
+      estable para esto).
+- [ ] ¿El CLI candidato tiene algún flag para dar acceso de lectura a una carpeta adicional del proyecto
+      sin romper el aislamiento normal (equivalente a `--add-dir`)? Ya existe el mecanismo genérico para
+      esto: `HeadlessOptions.readableDir` (`src/modules/agents/types.ts`), expuesto públicamente como
+      `--readable-dir <ruta>` en el CLI (`src/interfaces/cli/main.ts`) — el adapter nuevo solo debe
+      mapearlo al flag real de su binario dentro de `headlessCommand()`, igual que ya hacen
+      `claude-code.ts` y `codex.ts`. Si el flag real es variádico (acepta varias rutas seguidas, como
+      `--add-dir`), colocarlo **siempre antes** del prompt/`-p` — después se comería el texto del prompt
+      como si fuera otra ruta. Confirmar con el binario real si, al explorar esa carpeta por su cuenta,
+      el agente carga y se deja influenciar por algún archivo de instrucciones de ahí (`CLAUDE.md`,
+      `AGENTS.md`, etc.); si lo hace y el CLI no tiene forma más fina de restringirlo (como pasa con
+      Codex, que no tiene equivalente a `--allowedTools`), no intentar resolverlo — alcanza con
+      documentarlo como limitación aceptada y de bajo riesgo (mientras el sandbox por defecto siga siendo
+      de solo lectura).
+
+**Registro del agente en el código:**
+
+- [ ] Agregar el id nuevo al union type `AgentId` en `src/modules/agents/types.ts` (única fuente de
+      verdad del tipo — hoy es `"claude-code" | "codex" | "cursor"`).
+- [ ] Crear `src/infrastructure/agents/<agente>.ts` implementando `AgentAdapter` completo:
+      - `capabilities` (`supportsMcp`, `supportsHooks`, `supportsHeadlessExec`) con los valores reales
+        confirmados arriba.
+      - `configFormat`: si el agente usa un formato distinto a `"json"`/`"toml"` (ej. YAML), hay que
+        extender primero el tipo `ConfigFormat` — no forzarlo a uno existente que no aplica.
+      - `mcpEntryPath` + `mcpEntryShape`: solo si `supportsMcp` es `true`. Confirmar contra el archivo
+        de config real del agente dónde vive el bloque de servidores MCP y qué forma espera cada
+        entrada.
+      - `candidateExecutableNames(platform)` y `knownInstallPaths(platform, home)`: rutas reales de
+        instalación verificadas con el CLI instalado en al menos una plataforma, no inventadas.
+      - `configDir(home)` / `configFile(home)`: rutas reales de configuración del agente.
+      - `instructions` (opcional): solo si el agente tiene un mecanismo de archivo estable y
+        oficialmente soportado para cargar instrucciones globales en cada sesión nueva. Si no lo tiene
+        documentado y estable (como Cursor, cuyas "User Rules" solo se configuran desde su UI), se deja
+        sin definir — no inventar un archivo que no está garantizado.
+- [ ] Registrar el adapter nuevo en `buildDefaultRegistry()` (`src/app/default-registry.ts`).
+- [ ] Confirmar que pasa `validateCapabilityManifest` (se corre automáticamente al `register()`): si
+      `supportsHeadlessExec` es `true` debe existir `headlessCommand()`, y si `supportsMcp` es `true`
+      `mcpEntryPath` no puede estar vacío.
+
+**Pruebas y verificación:**
+
+- [ ] Agregar tests unitarios del adapter nuevo (paralelos a `claude-code.test.ts` / `codex.test.ts` /
+      `cursor.test.ts`), cubriendo `headlessCommand()` con y sin `stdinPrompt`, y con y sin
+      `reasoningLevel`.
+- [ ] Confirmar que `agents list` y `capabilities --agent <id>` (comandos CLI genéricos sobre el
+      registry, en `src/interfaces/cli/commands.ts`) exponen el agente nuevo sin cambios adicionales de
+      código — si no aparece automáticamente ahí, algo quedó mal registrado.
+- [ ] Si el agente declara `instructions`, correr `verify memory-integration` (`runVerifyMemoryIntegration`
+      / `verifyMemoryIntegration`) contra una instalación real, para confirmar que el bloque
+      administrado de memoria se escribe y se detecta correctamente con el formato real de archivo de
+      ese agente (primary file directo, o primary file + `contentFile` satélite como usa Claude Code).
+
+**Integración automática de memoria vía SessionStart hooks (ya implementada para Claude Code y Codex —
+usar esto como referencia al agregar el hook de un agente nuevo):**
+
+- [ ] Confirmar si el CLI candidato tiene algún mecanismo de hook real al inicio de sesión (no asumir por
+      similitud con otro agente). Verificarlo con el CLI instalado, no solo con su doc — la creencia
+      inicial de que Codex **no** podía emitir `additionalContext` desde su SessionStart hook resultó
+      falsa; solo se confirmó correcta al leer el hilo completo del issue oficial (no solo el reporte de
+      apertura). El formato real que Codex sí soporta es anidado:
+      `hookSpecificOutput.additionalContext` (no un campo plano). Claude Code, en cambio, no necesita
+      matcher explícito (omitir `matcher` ya hace match-all); Codex sí requiere uno explícito
+      (`^(startup|resume|clear|compact)$` en `~/.codex/config.toml`) y requiere confianza interactiva del
+      usuario vía `/hooks` antes de ejecutarse.
+- [ ] El hook debe delegar la carga real de memoria a `forge614-engram startup-context --directory <ruta>
+      --json` (comando público, no interactivo, de solo lectura) — nunca importar nada interno de Engram
+      ni reimplementar su lógica de precarga.
+- [ ] **Nunca afirmar "el host realmente consumió el contexto"** — eso no es verificable desde Engines.
+      Usar nombres honestos como `runtime-observed`, que significan únicamente "el runtime propio de
+      Engines fue invocado con un payload con forma de SessionStart y Engram devolvió contexto" —
+      explícitamente **no** es prueba de que el cliente lo haya consumido. Ver
+      `src/app/hook-runtime-status.ts` (tipo `HookRuntimeStatus`:
+      `unsupported | absent | needs-user-trust | pending-runtime-verification | runtime-observed`) frente
+      al tipo estructural `HookComponentStatus` (`unsupported | noop | write | blocked`,
+      `src/modules/config-writer/types.ts`) — son cosas distintas a propósito: uno es "¿el archivo de
+      config tiene el hook escrito?", el otro es "¿hay evidencia real de que corrió?". Un plan/verify que
+      solo mire el primero puede reportar "completo" para un hook recién instalado que nunca se ejecutó
+      — ese fue un bug real encontrado en review; el arreglo fue unificar `planMemoryInstall` y
+      `verifyMemoryIntegration` sobre la misma función compartida (`computeHookRuntimeStatus`) en vez de
+      que cada uno calculara el estado por su cuenta.
+- [ ] La evidencia de ejecución (`src/app/hook-evidence.ts`, `recordHookEvidence`/`readHookEvidence`,
+      guardada en `~/.forge614/engines/hook-evidence/<agente>.json`) debe expirar — no quedarse como
+      "verificado" para siempre. Constante ya usada: `HOOK_EVIDENCE_MAX_AGE_MS = 7 días`, con
+      `CLOCK_SKEW_TOLERANCE_MS = 5 minutos` de tolerancia para relojes desincronizados.
+- [ ] Solo registrar evidencia cuando la invocación es inequívocamente un SessionStart real: exigir
+      `hook_event_name === "SessionStart"` exacto y un `cwd` no vacío en el payload
+      (`recognizedInvocation` en `src/app/run-memory-hook.ts`) — nunca grabar evidencia ante cualquier
+      invocación del runtime sin verificar la forma del payload.
+
+---
+
+## `forge614-workers` — el ejecutor
+
+Su trabajo: ejecutar el proceso real del agente ya resuelto por Engines, aislado por tarea. No le
+importa qué modelo/nivel de razonamiento usar (eso es de Atlas) ni cómo se construye el comando del
+sistema operativo (eso es de Engines) — solo cómo correrlo de forma segura y detectar cuándo se le
+acabó la cuota. El runbook completo y accionable vive en `docs/adding-a-new-engine-adapter.md` dentro
+de este repo; esta checklist es el resumen de validaciones que ese runbook exige, con las lecciones
+reales ya aprendidas del aislamiento de autenticación (con Claude Code y Codex).
+
+**Validaciones a investigar para un agente nuevo:**
+
+- [ ] Confirmar con `forge614-engines agents list` que el agente tiene `supportsHeadlessExec: true`.
+      Si es `false`, Workers no necesita adapter — nunca podrá invocarlo headless (caso ya visto con
+      Cursor).
+- [ ] Detectar el patrón real de "cuota/sesión agotada" de este motor **forzando un error real** con
+      el CLI instalado (nunca inventar o adivinar el texto). Anotar el patrón exacto y si aparece en
+      `stderr`, en el inicio de `stdout`, o en ambos. Implementar `detectQuotaExhausted` en el adapter
+      nuevo con ese patrón, y agregar tests con fixtures tanto del caso real de cuota agotada como de
+      un error genérico no relacionado (para evitar falsos positivos).
+      **Nota honesta:** los patrones que hoy trae el repo para Claude Code
+      (`"Claude AI usage limit reached"`) y Codex (`"usage limit"`, `"rate limit"`) **no se confirmaron
+      así** — son best-guesses documentados con un comentario propio en el código
+      (`src/adapters/claude-code.ts`, `src/adapters/codex.ts`) que pide reconfirmarlos contra el CLI
+      real antes de depender de ellos en producción. No están corregidos todavía; quien toque este
+      archivo de nuevo debería considerar cerrarlo también para los dos motores ya existentes, no solo
+      para el agente nuevo que esté agregando.
+- [ ] Verificar con una **sesión real ya autenticada** de este CLI (nunca asumir por similitud con
+      Claude Code o Codex) que la autenticación por suscripción sobrevive cuando Workers aísla
+      únicamente el directorio de trabajo (`cwd`) y deja `HOME`/variables de entorno reales sin tocar.
+      Esto ya rompió una vez en el diseño original (con Claude Code y Codex, cuando se aislaba `HOME`)
+      y costó una investigación completa arreglarlo — no repetir el error de asumir que funciona igual
+      para un motor nuevo. Si la autenticación falla, investigarlo como su propio problema antes de
+      seguir — nunca implementar un mecanismo que dependa de extraer o mover credenciales de un
+      almacén no documentado (Keychain, etc.) sin confirmar primero, con evidencia real, que es
+      necesario y viable.
+- [ ] Confirmar si el CLI rechaza correr en directorios que no reconoce como confiables (como hace
+      Codex, que exige un repo git de confianza). Si es así, encontrar el flag exacto que lo evita
+      (para Codex es `--skip-git-repo-check`) y agregarlo en el `extraArgs()` del adapter nuevo — nunca
+      asumir que no hace falta ningún flag sin probarlo con una invocación real en un directorio
+      temporal vacío.
+- [ ] Confirmar si el CLI necesita alguna variable de entorno adicional más allá de la herencia
+      completa del entorno real (que ya es el comportamiento por defecto de Workers desde el rediseño
+      de aislamiento — `HOME`/`CODEX_HOME`/todo lo demás se hereda intacto). Debería ser poco común,
+      pero no asumirlo sin verificar.
+- [ ] Confirmar que el timeout con escalada `SIGTERM`→`SIGKILL` mata correctamente el proceso de este
+      CLI (algunos CLIs lanzan procesos hijos o subshells que no siempre mueren limpio con `SIGTERM`).
+- [ ] Registrar el adapter nuevo en `src/adapters/registry.ts` y correr `bun test` — el test de
+      completitud del registro (`src/adapters/registry.completeness.test.ts`, que corre contra el
+      binario real de `forge614-engines`) debe pasar sin necesitar cambios adicionales.
+- [ ] Actualizar la fila correspondiente en la tabla "Agentes ya evaluados" al final de este archivo
+      con el resultado de Workers para este agente (✅/❌ y notas relevantes, siguiendo el formato ya
+      usado para Claude Code y Codex).
+
+---
+
+## `forge614-atlas` — el orquestador/decisor
+
+Su trabajo: decidir qué analizar, con qué nivel de profundidad, y qué modelo/motor asignar a cada
+tarea. No le importa cómo se invoca el motor por dentro (eso es de Engines) ni cómo se aísla el
+proceso (eso es de Workers).
+
+**Validaciones a investigar para un agente nuevo:**
+
+- [ ] ¿Qué modelo(s) de este agente corresponden a cada nivel de la tabla ya fija de Atlas
+      (Ligero / Estándar / Profundo)? Agregar la fila correspondiente a la tabla de
+      "Modelo/razonamiento por nivel" en `STATE.md`.
+- [ ] ¿Este agente soporta nivel de razonamiento configurable? Si no, dejar anotado que Atlas **nunca**
+      debe pedirle `--reasoning-level` a este agente al armar una tarea — debe consultar
+      `capabilities`/`agents list` de Engines antes de construir la tarea, igual que ya hace para
+      Claude Code.
+- [ ] Confirmar que el flujo de selección de motor (Shell, cuando hay ambigüedad) puede mostrar este
+      agente nuevo como opción sin cambios adicionales de código en Atlas.
+
+---
+
+## `forge614-engram` — la memoria
+
+**Decisión:** agregar un agente nuevo **no requiere cambiar Engram** mientras su integración use el
+protocolo público `forge614-engram-memory` versión 1 y convierta la información del agente al formato
+canónico de Engram. Engines es quien adapta al agente; Engram no debe recibir plugins, reglas o formatos
+especiales por agente.
+
+**Novedad (Engram v1.5.0): precarga desde el host, sin depender del modelo.** Engram ahora expone
+`forge614-engram startup-context --directory <ruta-absoluta> --json`, un comando público, no interactivo
+y de solo lectura pensado para que el *host* (Engines o Shell, no el agente) precargue `shared` + el
+contexto del proyecto vinculado **antes** de iniciar la sesión — sin depender de que el modelo decida
+llamar `memory_context` (el bug de confiabilidad original). No crea proyectos, vínculos, recuerdos ni
+bases; una carpeta no vinculada no es un error (`project.status: "unbound"`). Esto es **opcional**: la
+integración vía protocolo v1 (el agente llamando `memory_context` por su cuenta) sigue siendo válida y
+suficiente por sí sola, y no cambió. `forge614-engram memory-protocol --json` ahora también acepta
+`--protocol-version 2`, que añade el campo `startupContext` anunciando este comando a Engines/Shell; la
+versión 1 (`instructions`/`lifecycle` que ya consumen los agentes) permanece byte-idéntica.
+
+- [ ] Si el agente nuevo no tiene un mecanismo confiable para llamar `memory_context` al inicio (o si el
+      host prefiere no depender de esa decisión del modelo), evaluar usar `startup-context` desde el lado
+      de Engines/Shell para precargar memoria antes de lanzar la sesión e inyectarla en el contexto
+      inicial. **Esto se implementa en Engines/Shell, no en Engram** — Engram solo expone la interfaz de
+      lectura. **Ya implementado en Engines para Claude Code y Codex** vía SessionStart hooks — ver la
+      checklist "Integración automática de memoria vía SessionStart hooks" en la sección de
+      `forge614-engines` arriba antes de repetir esa investigación para un agente nuevo.
+
+**Compatibilidad con el protocolo público:**
+
+- [ ] Confirmar que el adaptador consume `forge614-engram memory-protocol --json` y reconoce
+      `id: "forge614-engram-memory"` y `version: 1`; no copiar instrucciones privadas ni depender de
+      archivos internos, SQLite o imports internos de Engram.
+- [ ] Confirmar que la integración configura las herramientas MCP públicas de Engram: `memory_context`,
+      `memory_save`, `memory_session_summary` y `memory_session_end`.
+- [ ] Confirmar el ciclo completo: al iniciar y después de compactar usa `memory_context`; ante un
+      “recuerda/guarda” explícito usa `memory_save`; antes de compactar guarda resumen; al terminar guarda
+      el resumen útil y cierra la sesión.
+- [ ] Si Engram no está disponible, el agente debe continuar y decir la verdad; nunca sustituirlo por un
+      archivo privado del cliente ni afirmar que recordó algo que no pudo recuperar.
+
+**Formato fijo del reporte de sesión:**
+
+- [ ] No pasar la salida nativa del agente directamente a `memory_session_summary`. Convertirla a un objeto
+      con **exactamente** estos seis campos: `goal`, `instructions`, `discoveries`, `accomplishments`,
+      `nextSteps` y `files`.
+- [ ] Validar la conversión: `goal` es texto no vacío; los otros cinco campos narrativos son texto; `files`
+      es una lista de rutas/textos. No agregar campos propios del agente: el esquema MCP y el CLI rechazan
+      campos desconocidos, faltantes, objetos extraños y datos inválidos.
+- [ ] Respetar los límites públicos: `goal` hasta 4,000 caracteres; cada campo narrativo hasta 8,000;
+      `files` hasta 200 entradas. Resumir información extensa, no guardar la transcripción cruda.
+- [ ] Si el nuevo agente produce una clase de resultado que no cabe de forma honesta en esos seis campos,
+      detener la integración y proponer una versión nueva y explícita del protocolo. No extender el
+      esquema actual de manera informal.
+
+**Memorias durables y seguridad:**
+
+- [ ] Para preferencias que deban funcionar entre clientes, usar alcance `shared` con un `globalIntent`
+      verdadero; para conocimiento de un repositorio, usar alcance `project`.
+- [ ] Usar un `topicKey` estable al actualizar un tema duradero, para no duplicar recuerdos.
+- [ ] Verificar que la adaptación nunca mande contraseñas, tokens, llaves privadas, credenciales ni cadenas
+      de conexión con credenciales en memorias, resúmenes, `topicKey`, errores o logs.
+- [ ] Probar con el agente nuevo: inicio, guardado explícito, recuperación en una conversación nueva,
+      compactación/reanudación y cierre. Debe usarse Engram compartido y no almacenamiento privado del
+      agente.
+
+---
+
+## `forge614-shell` — la cara humana
+
+*(Esta sección la debe llenar una sesión trabajando directamente dentro del repo `forge614-shell`,
+con su propio conocimiento real del código de ese repo. No se completa desde fuera ni por inferencia
+de otro nodo.)*
+
+Su trabajo: mostrar el agente nuevo como opción seleccionable para **chat real** (no MCP) y resolver su
+login por suscripción. La sección "When Forge614 Engines adds a new agent/assistant" de `AGENTS.md` de
+este repo ya documenta esto en detalle — esta checklist es su resumen accionable.
+
+**Novedad (Shell v1.6.0): feedback en vivo y catálogo de modelos ya son infraestructura compartida.**
+Esta versión rediseñó a fondo la capa genérica de chat (`src/ui/basic/`): tarjetas de actividad de
+herramientas sin caja/JSON (`transcript.ts`), diffs de código con color, spinner de arranque, punto de
+estado animado con segundos transcurridos, colores por estado y mensajes de error en rojo. **Un agente
+nuevo hereda todo esto automáticamente** en cuanto su sesión pasa por los componentes compartidos
+(`ActivityCard`, `ChatText`, `ForgeComposer`, `ShellSidebar`) — no hay nada que implementar aparte para
+tener esa experiencia.
+
+También se agregó `src/infrastructure/shell-preferences.ts`: recuerda el modelo y el nivel de
+razonamiento elegidos por motor entre reinicios de Shell (`~/.forge614/shell/preferences.json`, o bajo
+`FORGE614_HOME`), sin tocar la config nativa del CLI del agente.
+
+**Novedad (Shell v1.8.0, publicada): el hand-off nativo se eliminó por decisión de producto — nunca
+reintroducirlo para un agente nuevo.** La versión anterior de esta sección describía un mecanismo real
+que existió brevemente en `main` (`src/infrastructure/native-handoff.ts`, un `spawn(executable, [],
+{ stdio: "inherit" })` en primer plano) para lanzar el binario nativo del asistente y forzar un
+`SessionStart` real cuando el hook de memoria no tenía evidencia de ejecución. **Ese archivo ya no
+existe.** La decisión final de producto fue que `forge614-shell init --product engram` **nunca** lanza
+Claude Code, Codex ni ningún otro cliente nativo, bajo ninguna circunstancia — ni para esto ni para
+nada. `runMemorySetupStep` (`src/app/init-engram.ts`) llama `verify memory-integration` **exactamente
+una vez** por asistente seleccionado (nunca dos, nunca condicionado a relanzar nada) y clasifica el
+resultado con la función pura `classifyMemoryOutcome`, que produce uno de: `configured` (todo
+verificado, incluida evidencia de runtime), `prepared` (estructuralmente correcto, evidencia de runtime
+aún ausente — reportado como éxito, nunca como pendiente ni como error), `blocked` (conflicto real
+reportado por Engines en el plan, con su detalle textual), `unsupported` (limitación real del agente,
+p. ej. Cursor sin mecanismo de instrucciones) o `failed` (error genuino de Engines). La ausencia de
+evidencia de runtime **nunca** bloquea el resultado ni pide volver a ejecutar nada — es información de
+estado, no una condición de éxito. Todo el comando además renderiza en una sola sesión de pantalla
+alterna continua (`EngramFlowScreen`, `src/ui/startup/frame.ts`) desde la intro hasta el resultado —
+sin cerrar/reabrir pantallas TUI entre pasos.
+
+- [ ] **Nunca lanzar el binario nativo de ningún agente desde `init` ni desde ningún otro flujo humano
+      de Shell**, ni para "probar" un hook ni para ninguna otra razón. Si el agente nuevo también
+      requiere un paso de confianza nativo e interactivo (como `/hooks` de Codex), Shell **no** intenta
+      resolverlo por su cuenta: se reporta como `prepared`/listo con una frase que describe una
+      posibilidad futura, nunca una afirmación de lo que ya pasó (ver el siguiente punto). No existe ni
+      debe volver a existir un módulo tipo `native-handoff.ts`.
+- [ ] **Nunca afirmar que el agente "no confía" en el hook, ni nada que Shell no pueda saber con
+      certeza.** `needs-user-trust` (Codex) y `pending-runtime-verification` (evidencia nunca observada,
+      o vencida) se reportan ambos como `prepared`, con redacción que solo describe una posibilidad
+      futura — p. ej. "Codex memory integration is ready. When you next start Codex normally, Codex may
+      ask you once to approve the Forge614 memory hook." Nunca "has not trusted", nunca pedir volver a
+      ejecutar un comando. Ver `preparedDetail` en `src/app/init-engram.ts`.
+- [ ] **Un conflicto real (`blocked`) en cualquier componente del plan — MCP, instrucciones o hook —
+      siempre gana**, incluso si los otros componentes ya están presentes y verificados. Un bug real
+      encontrado en review: la clasificación original dejaba pasar un hook bloqueado como `configured`
+      si el MCP y las instrucciones ya estaban en su lugar, ocultando el conflicto. `classifyMemoryOutcome`
+      revisa `blocked` antes que cualquier otra cosa, precisamente por esto.
+- [ ] **Nunca depender de un número de versión de Engines para saber si el contrato del hook existe.**
+      La detección es estructural: si la respuesta JSON de `plan`/`verify` no trae el campo `hook`, el
+      Engines instalado es viejo — mostrar exactamente "Forge614 Engines needs to be updated. Run
+      \"forge614-shell update\", then try again." y nada más. Las versiones de Engines cambian
+      constantemente; codificar una versión específica ya causó una corrección de plan real en esta
+      sesión.
+- [ ] **Nunca mostrar ni registrar `writes[].afterContent`/`beforeHash` de ningún componente, para
+      ningún agente.** Confirmado con evidencia real durante esta implementación: un `plan
+      memory-install` real para Cursor devolvió el archivo `~/.cursor/mcp.json` completo, con tokens
+      reales de GitHub y GitLab en texto plano, dentro de `afterContent` — porque Engines reconstruye el
+      archivo completo al planear cualquier escritura de MCP/hook, no solo el fragmento nuevo. Esto
+      aplica todavía más a un agente cuyo hook se escribe en su archivo de configuración principal (como
+      `~/.claude/settings.json` para Claude Code, que también contiene todos sus otros hooks y permisos).
+- [ ] Nunca llamar `forge614-engines memory-hook-run` directamente ni leer
+      `~/.forge614/engines/hook-evidence/*` desde Shell, para ningún agente — solo `detect`,
+      `capabilities`, `plan memory-install`, `apply`, `verify memory-integration`.
+- [ ] Verificado con revisión visual PTY real (entorno aislado, `HOME`/`FORGE614_HOME` propios, stubs de
+      Engines/Engram, binarios falsos de Claude/Codex con marcador): una sola sesión de pantalla alterna
+      de principio a fin, cero lanzamientos de cliente nativo, preview sin secretos, y ambos casos de
+      cancelación (Summary y Preview) detienen la escritura antes de `apply`.
+
+**Novedad (Shell v1.8.0, publicada): memoria propia del chat de Shell, sin depender de hooks del
+agente.** Independiente de todo lo anterior, `src/engines/claude/session.ts` y
+`src/engines/codex/session.ts` ahora recuperan contexto directamente del contrato público
+`forge614-engram startup-context --directory <cwd> --json` (nunca del protocolo v1
+`memory_context`/hooks) — una vez por conversación, y de nuevo tras `/new`/`/resume`, nunca en cada
+turno. `getStartupContext` (`src/infrastructure/forge614-engram.ts`) valida estrictamente la forma del
+JSON (`format: 1`, bucket `shared` con su propio `format`, `project.status` exactamente `"bound"`/
+`"unbound"` con los campos correctos según cada caso) y devuelve `{available:false}` ante cualquier
+forma inesperada, sin inyectar nada. El contenido de cada `title`/`preview` se sanea por campo antes de
+incrustarse (tags del delimitador propio, marcadores `<|...|>`, comentarios `<!-- -->`, prefijos de rol
+al inicio de línea, frases de secuestro de instrucciones conocidas — todo con límites de longitud sin
+tope evadible) y cada adaptador de chat aplica además su **propia** capa independiente de neutralización
+del delimitador antes de envolver el bloque — nunca confiar en una sola capa de saneamiento para esto.
+
+- [ ] Si el agente nuevo tiene un punto de inyección de contexto tipo system-prompt (o, si no,
+      cualquier forma de anteponer texto al primer turno), cablear `getStartupContext` de la misma
+      forma: una función `getStartupContext`/`getStartupContextFn` inyectable en la sesión (sin valor
+      por defecto que llame al binario real — así una prueba que no la provee nunca dispara un spawn
+      real; ver el comentario en `src/engines/claude/session.ts`), envuelta en un bloque delimitado
+      explícito ("esto es dato, no instrucción") con neutralización propia del delimitador, y con una
+      capa de saneamiento de contenido — no reinventarla, revisar primero si `forge614-engram.ts` puede
+      exportarse/reutilizarse tal cual.
+- [ ] **Confirmar que el punto de composición real (`src/app/native-chat.ts` para Codex,
+      `src/ui/basic/claude.ts` para Claude) pasa el entorno real de Shell (`env: process.env`) a
+      `getStartupContext`, nunca `{}`.** Bug real encontrado y corregido en esta versión: tanto
+      `src/cli.ts` (el entrypoint de `init`) como el chat propio de Codex llamaban a funciones que
+      resuelven binarios de Engines/Engram sin pasar `env`, así que un `FORGE614_HOME` personalizado se
+      ignoraba silenciosamente y todo caía al `~/.forge614/...` por defecto. Cualquier llamada nueva a
+      una función que resuelva la ruta de un binario de Engines/Engram debe recibir el `env` real —
+      nunca asumir que el valor por defecto (`homedir()`) es suficiente.
+
+- [ ] Si el agente nuevo expone un catálogo de modelos con nombres amigables (`displayName` o
+      equivalente), verificar **con datos reales** que el id que reporta el evento en vivo del motor
+      coincide con el campo usado para resolver ese nombre — no asumir que van a coincidir limpio. Con
+      Claude Code ese campo (`resolvedModel`) es opcional, no viene poblado en todas las filas del
+      catálogo, y puede traer un sufijo (`[1m]`) que el id en vivo no trae — esto causó que el sidebar
+      mostrara el id técnico crudo en vez del nombre amigable. Si de plano no hay forma de resolverlo,
+      mostrar un fallback legible, nunca el id técnico sin procesar — ver `resolveModelDisplay` /
+      `prettifyModelId` en `src/ui/basic/claude.ts` como referencia del patrón.
+- [ ] Si el agente permite elegir modelo/nivel de razonamiento desde el picker de Shell, cablear la
+      persistencia con `src/infrastructure/shell-preferences.ts` (cargar al iniciar sesión, validando el
+      valor guardado contra el catálogo real antes de aplicarlo; guardar en cada selección explícita del
+      usuario) — así no tiene que re-elegir cada vez que abre Shell, igual que ya pasa con Claude Code y
+      Codex. Extender el tipo `EngineId` de ese archivo con el id del agente nuevo si hace falta.
+
+**Autenticación por suscripción (nunca API key):**
+
+- [ ] Confirmar que **no existe** un paso de configuración manual tipo `claude setup-token` para este
+      agente — Shell nunca copia, lee ni genera tokens de larga duración; siempre delega el login real
+      al mecanismo oficial nativo del CLI/servidor del agente. (Así funciona hoy tanto Claude Code como
+      Codex — no hay ningún comando `init`/`setup` de auth en `src/cli.ts` distinto del `/login`
+      interactivo dentro de cada sesión de chat.)
+- [ ] Escribir la lógica de auth específica de este agente en `src/engines/<agente>/`, siguiendo el
+      mismo contrato que ya usan Claude (`src/engines/claude/auth.ts`) y Codex
+      (`src/engines/codex/session.ts`), aunque el mecanismo concreto sea distinto en cada uno (Claude:
+      `spawn` sobre el subcomando oficial `claude auth login` con `stdio: "inherit"`; Codex: OAuth vía
+      JSON-RPC contra su `app-server`, abriendo el navegador y esperando la notificación de login
+      completado). El contrato común es:
+      1. Bloquear explícitamente cualquier variable de entorno de API key/override propia del agente
+         (mismo patrón que el regex de `claudeEnvironment()` en `src/engines/claude/auth.ts` y de
+         `nativeEnvironment()` en `src/engines/process.ts`).
+      2. Exigir que la sesión activa sea de cuenta/suscripción nativa, nunca de API key.
+      3. Delegar el flujo interactivo real al binario o servidor oficial del agente — Shell nunca
+         implementa su propio flujo OAuth desde cero.
+      4. No persistir, leer ni imprimir tokens en ningún momento.
+- [ ] Verificar con una sesión real ya autenticada de este CLI (no asumir por similitud con Claude Code
+      o Codex) que el `/login` de Shell deja al usuario funcionando con su suscripción normal, sin pedir
+      ni aceptar una API key.
+
+**Flujo de selección de motor (engine picker) — agregarlo como opción de chat no es un solo paso:**
+
+- [ ] Confirmar primero con `forge614-engines agents list` / `capabilities --agent <id>` que Engines ya
+      reporta este agente como `installed` (y, si aplica headless, `supportsHeadlessExec: true` — dato
+      de Engines/Workers, no de Shell).
+- [ ] Crear `src/engines/<agente>/` con una sesión propia (seguir `src/engines/codex/session.ts` si el
+      protocolo encaja en la forma genérica `NativeSession`, o `src/engines/claude/session.ts` si
+      necesita manejo propio): login/auth, catálogo de modelos, envío/cancelación de mensaje, resume de
+      sesión.
+- [ ] Agregar el id nuevo a `supportedShellAdapters` en `src/infrastructure/forge614-engines.ts`
+      (líneas 33-36) — este mapa es un **allowlist deliberado y separado** del chequeo de capacidad MCP
+      (`discoverMcpCapableAgents`, que no tiene allowlist y no requiere cambios aquí). Sin esta entrada,
+      `toSelectableAgent()` descarta el agente aunque Engines lo reporte instalado.
+- [ ] Ampliar el union type hardcodeado `AvailableEngine["id"]` en `src/contracts/available-engine.ts`
+      (hoy `"claude" | "codex"`) para incluir el id nuevo — si no, `supportedShellAdapters` no compila
+      al mapear hacia un id que el tipo no reconoce.
+- [ ] Ampliar el union type hardcodeado del engine en `parseEngine` (`src/app/options.ts`, hoy
+      `"claude" | "codex" | "pi"`) para que `--engine <agente>` no falle al parsear.
+- [ ] Agregar la rama de dispatch nueva en `src/cli.ts` (el `if/else if` que hoy resuelve
+      `"claude"` → `src/ui/basic/claude.ts` / `"codex"` → `src/app/native-chat.ts`): **no es
+      data-driven**, agregar el id al allowlist no basta, hace falta la rama explícita apuntando al
+      módulo de sesión nuevo.
+- [ ] Confirmar que `src/ui/startup/engine-picker.ts` no necesita cambios — es genérico, solo renderiza
+      lo que le pasa `discoverSelectableEngines()`, así que si los pasos anteriores están bien hechos el
+      agente aparece automáticamente en el picker visual.
+- [ ] Nunca reintroducir un escaneo de `PATH` local para detectar el agente — `src/engines/discovery.ts`
+      existió para eso y fue eliminado; Shell solo pregunta a Engines vía `discoverSelectableEngines`.
+- [ ] Solo una vez que el chat ya funcione: evaluar si hace falta feedback visual de "tool en uso" (p.
+      ej. cuando el agente llama una tool MCP de Engram) — es una traducción adicional específica del
+      protocolo de este agente (ver punto 3 de `AGENTS.md`), no un requisito para que el chat exista.
+
+---
+
+## Agentes ya evaluados
+
+| Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
+|---|---|---|---|---|---|---|
+| Claude Code | ✅ | ✅ | ✅ | N/A | ⏳ Pendiente (onboarding de `claude setup-token` no diseñado aún) | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). |
+| Codex | ✅ | ✅ | ✅ | N/A | ⏳ Pendiente | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). |
+| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
