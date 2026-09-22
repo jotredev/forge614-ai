@@ -1,26 +1,26 @@
 # forge614-ai
 
-Piensa en el reglamento de un taller: una sola copia en la pared, y cada estación lo consulta en vez de guardar la suya. `forge614-ai` es el núcleo del ecosistema Forge614: publica el **Estándar de Nodo** (cómo se construye, instala, libera y documenta cada nodo), los contratos del ecosistema y, en entregas futuras, el comando global `forge614`.
+Think of a workshop's rulebook: a single copy on the wall, and every station consults it instead of keeping its own. `forge614-ai` is the core of the Forge614 ecosystem: it publishes the **Node Standard** (how each node is built, installed, released and documented), the ecosystem contracts and, in future deliveries, the global `forge614` command.
 
-## Qué contiene hoy
+## What it contains today
 
-| Carpeta | Contenido |
+| Folder | Contents |
 | --- | --- |
-| `standard/` | Norma, reglas como paquetes, pack de nodo, plantillas, esquemas, matriz de soporte |
-| `docs/decisions/` | Actas de decisión (0001 en adelante) |
-| `docs/audits/` | Auditorías de código de los nodos |
-| `docs/es`, `docs/en` | Documentación numerada bilingüe |
+| `standard/` | Standard, rules as packages, node pack, templates, schemas, support matrix |
+| `docs/decisions/` | Decision records (0001 onward) |
+| `docs/audits/` | Code audits of the nodes |
+| `docs/es`, `docs/en` | Bilingual numbered documentation |
 
-## Comandos
+## Commands
 
 ```bash
 bun install --frozen-lockfile
-bun run verify              # typecheck + tests + validadores del estándar sobre este repo
+bun run verify              # typecheck + tests + standard validators over this repo
 bun run standard:render --node engram --out /tmp/engram-files
 bun run standard:pack       # dist/standard-<VERSION>.tar.gz + SHA256SUMS
 ```
 
-## Documentación
+## Documentation
 
 | No. | Español | English |
 | --- | --- | --- |
@@ -30,4 +30,4 @@ bun run standard:pack       # dist/standard-<VERSION>.tar.gz + SHA256SUMS
 | 03 | [Plantillas y render](docs/es/03-plantillas-y-render.md) | [Templates and rendering](docs/en/03-templates-and-rendering.md) |
 | 04 | [Verificación y empaquetado](docs/es/04-verificacion-y-empaquetado.md) | [Verification and packaging](docs/en/04-verification-and-packaging.md) |
 
-English: [README.en.md](README.en.md)
+Español: [README.md](README.md)

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-decision-records",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Registro de decisiones (actas)", "en": "Decision records (ADRs)" },
+  "appliesWhen": [],
+  "validator": "decision-records",
+  "compensates": "structural",
+  "decisions": ["0015"]
+}

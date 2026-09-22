@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-context-budget",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Huella mínima en el contexto de la IA", "en": "Minimal footprint in the AI's context" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0020"]
+}

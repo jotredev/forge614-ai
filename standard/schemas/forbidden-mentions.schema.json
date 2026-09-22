@@ -1,0 +1,32 @@
+{
+  "$id": "https://forge614.dev/schemas/forbidden-mentions.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "terms": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^A-Z]*$"
+      }
+    },
+    "excludePaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "terms",
+    "excludePaths"
+  ],
+  "additionalProperties": false
+}

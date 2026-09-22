@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-plan-before-code",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Plan antes que código", "en": "Plan before code" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0015"]
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-no-fabricated-validations",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Nunca inventar resultados de validación", "en": "Never fabricate validation results" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0015"]
+}

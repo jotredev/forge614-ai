@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-never-touch-agents-dir-by-hand",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Nunca tocar .agents/ a mano", "en": "Never touch .agents/ by hand" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0005"]
+}

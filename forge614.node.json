@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "node": "ai",
+  "kind": "product",
+  "standard": { "version": "1.0.0", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+  "ecosystem": "forge614"
+}

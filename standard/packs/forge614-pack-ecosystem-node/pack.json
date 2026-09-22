@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-pack-ecosystem-node",
+  "version": "1.0.0",
+  "title": {
+    "es": "Reglas para repositorios del ecosistema Forge614",
+    "en": "Rules for Forge614 ecosystem repositories"
+  },
+  "rules": [
+    "forge614-rule-agent-checklist-impact",
+    "forge614-rule-agent-questions-before-acting",
+    "forge614-rule-bilingual-docs",
+    "forge614-rule-context-budget",
+    "forge614-rule-decision-records",
+    "forge614-rule-git-readonly-for-agents",
+    "forge614-rule-machine-contracts",
+    "forge614-rule-never-touch-agents-dir-by-hand",
+    "forge614-rule-no-external-product-mentions",
+    "forge614-rule-no-fabricated-validations",
+    "forge614-rule-package-naming",
+    "forge614-rule-plan-before-code",
+    "forge614-rule-replaceable-pieces",
+    "forge614-rule-thin-workflows",
+    "forge614-rule-three-operating-systems"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-bilingual-docs",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Documentación bilingüe es/en", "en": "Bilingual es/en documentation" },
+  "appliesWhen": [],
+  "validator": "bilingual-docs",
+  "compensates": "structural",
+  "decisions": ["0016"]
+}

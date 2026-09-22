@@ -1,0 +1,21 @@
+{
+  "$id": "https://forge614.dev/schemas/ndjson-event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "event"
+  ],
+  "additionalProperties": {}
+}

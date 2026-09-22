@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-git-readonly-for-agents",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Git de solo lectura para agentes de IA", "en": "Git is read-only for AI agents" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0015"]
+}

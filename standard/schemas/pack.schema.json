@@ -1,0 +1,53 @@
+{
+  "$id": "https://forge614.dev/schemas/pack.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^([a-z0-9]+)-(rule|skill|mcp|plugin|policy|pack)-([a-z0-9]+(?:-[a-z0-9]+)*)$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "title": {
+      "type": "object",
+      "properties": {
+        "es": {
+          "type": "string",
+          "minLength": 1
+        },
+        "en": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "es",
+        "en"
+      ],
+      "additionalProperties": false
+    },
+    "rules": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^([a-z0-9]+)-(rule|skill|mcp|plugin|policy|pack)-([a-z0-9]+(?:-[a-z0-9]+)*)$"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "name",
+    "version",
+    "title",
+    "rules"
+  ],
+  "additionalProperties": false
+}

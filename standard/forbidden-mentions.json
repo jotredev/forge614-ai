@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "terms": ["gentle-ai", "gentleman-programming", "hermes-agent", "hermes", "nousresearch"],
+  "excludePaths": ["standard/forbidden-mentions.json", ".superpowers/"]
+}

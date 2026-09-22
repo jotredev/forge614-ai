@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-no-external-product-mentions",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Prohibido mencionar productos externos", "en": "No external product mentions" },
+  "appliesWhen": [],
+  "validator": "forbidden-mentions",
+  "compensates": "structural",
+  "decisions": ["0012"]
+}

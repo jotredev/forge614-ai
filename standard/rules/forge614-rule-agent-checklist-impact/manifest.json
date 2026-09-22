@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-agent-checklist-impact",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Impacto en el procedimiento de agentes", "en": "Agent procedure impact" },
+  "appliesWhen": [],
+  "validator": "agent-checklist-impact",
+  "compensates": "structural",
+  "decisions": ["0017"]
+}
