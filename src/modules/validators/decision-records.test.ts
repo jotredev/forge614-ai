@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { treeFrom } from "../standard/file-tree";
 import { validateDecisionRecords } from "./decision-records";
 
-const opts = { forbiddenMentions: [], today: "2026-09-22" };
+const opts = { forbiddenMentions: [], parseYaml: () => ({}), today: "2026-09-22" };
 
 const rec = (n: string, estado: string) =>
   `# ${n} — t\n\n**Fecha:** 2026-09-22\n**Estado:** ${estado}\n**Sesión:** s\n\n## Contexto\nx\n## Decisión\nx\n## Alternativas descartadas\nx\n## Consecuencias\nx\n`;

@@ -3,6 +3,7 @@ import type { Finding } from "../standard/finding";
 
 export interface ValidatorOptions {
   forbiddenMentions: readonly string[];
+  parseYaml: (text: string) => unknown;
   today: string;
 }
 

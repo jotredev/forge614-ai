@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { treeFrom } from "../standard/file-tree";
 import { validateErrorCodes } from "./error-codes";
 
-const opts = { forbiddenMentions: [], today: "2026-09-22" };
+const opts = { forbiddenMentions: [], parseYaml: () => ({}), today: "2026-09-22" };
 
 test("accepts canonical codes in CONTRACT.md and source, rejects kebab-case or lowercase", () => {
   const ok = treeFrom({

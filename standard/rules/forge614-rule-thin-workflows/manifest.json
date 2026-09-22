@@ -5,6 +5,7 @@
   "level": "core",
   "title": { "es": "Workflows delgados, documentados y validados", "en": "Thin, documented and validated workflows" },
   "appliesWhen": [],
+  "validator": "workflows",
   "compensates": "structural",
   "decisions": ["0019"]
 }
