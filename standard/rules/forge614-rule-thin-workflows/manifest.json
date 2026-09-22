@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-thin-workflows",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Workflows delgados, documentados y validados", "en": "Thin, documented and validated workflows" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0019"]
+}

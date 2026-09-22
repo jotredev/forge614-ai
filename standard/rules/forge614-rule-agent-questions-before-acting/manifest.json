@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-agent-questions-before-acting",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "El agente cuestiona antes de actuar", "en": "The agent questions before acting" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0014"]
+}

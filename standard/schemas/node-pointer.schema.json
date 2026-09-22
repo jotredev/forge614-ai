@@ -1,0 +1,51 @@
+{
+  "$id": "https://forge614.dev/schemas/node-pointer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "product",
+        "internal"
+      ]
+    },
+    "standard": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "ecosystem": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "node",
+    "kind",
+    "standard"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-replaceable-pieces",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Piezas reemplazables conforme evoluciona el modelo", "en": "Replaceable pieces as the model evolves" },
+  "appliesWhen": [],
+  "compensates": "structural",
+  "decisions": ["0021"]
+}

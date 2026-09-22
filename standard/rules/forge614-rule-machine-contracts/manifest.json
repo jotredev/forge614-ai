@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "forge614-rule-machine-contracts",
+  "version": "1.0.0",
+  "level": "core",
+  "title": { "es": "Convención única de contratos de máquina", "en": "Single machine contract convention" },
+  "appliesWhen": [],
+  "validator": "error-codes",
+  "compensates": "structural",
+  "decisions": ["0013"]
+}
