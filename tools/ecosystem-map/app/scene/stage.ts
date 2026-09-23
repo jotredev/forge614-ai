@@ -4,14 +4,25 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { createBlueprintFloor } from "./blueprint-floor";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
+import type { Animated } from "./particles";
 import { theme } from "./theme";
 
-const VIEW_SIZE = 24;
+const VIEW_SIZE = 26;
 const CAMERA_DISTANCE = 60;
 
-export type Stage = { scene: THREE.Scene; start(): void; dispose(): void };
+export type FrameInfo = { time: number; delta: number; camera: THREE.OrthographicCamera; target: THREE.Vector3 };
+
+export type Stage = {
+  scene: THREE.Scene;
+  animate(item: Animated): void;
+  onFrame(listener: (info: FrameInfo) => void): void;
+  start(): void;
+  dispose(): void;
+};
 
 export function createStage(container: HTMLElement): Stage {
   const width = container.clientWidth;
@@ -22,6 +33,7 @@ export function createStage(container: HTMLElement): Stage {
   renderer.setSize(width, height);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   container.appendChild(renderer.domElement);
@@ -50,43 +62,32 @@ export function createStage(container: HTMLElement): Stage {
   controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 
-  scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x1a1d26, 1.1));
-  const sun = new THREE.DirectionalLight(0xfff4e6, 2.2);
+  // Cool, low ambient light so the neon accents carry the scene.
+  scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x05070b, 0.45));
+  const key = new THREE.DirectionalLight(0xcfe4ff, 1.4);
   // Light from the left of the camera so shadows fall into view.
-  sun.position.set(-12, 30, 22);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -30;
-  sun.shadow.camera.right = 30;
-  sun.shadow.camera.top = 30;
-  sun.shadow.camera.bottom = -30;
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 100;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.02;
-  sun.shadow.radius = 4;
-  scene.add(sun);
+  key.position.set(-12, 30, 22);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -30;
+  key.shadow.camera.right = 30;
+  key.shadow.camera.top = 30;
+  key.shadow.camera.bottom = -30;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 100;
+  key.shadow.bias = -0.0005;
+  key.shadow.normalBias = 0.02;
+  key.shadow.radius = 4;
+  scene.add(key);
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(400, 400),
-    new THREE.MeshStandardMaterial({ color: theme.floor, roughness: 1 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  const grid = new THREE.GridHelper(120, 60, theme.floorLine, theme.floorLine);
-  grid.position.y = 0.01;
-  const gridMaterial = grid.material as THREE.Material;
-  gridMaterial.transparent = true;
-  gridMaterial.opacity = 0.5;
-  scene.add(grid);
+  scene.add(createBlueprintFloor());
 
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(clampPixelRatio(window.devicePixelRatio));
   composer.setSize(width, height);
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new GTAOPass(scene, camera, width, height));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(width, height), 0.7, 0.5, 0.85));
   composer.addPass(new OutputPass());
 
   const resize = (): void => {
@@ -105,16 +106,33 @@ export function createStage(container: HTMLElement): Stage {
   };
   window.addEventListener("resize", resize);
 
+  // People who ask the system for less motion get a much slower scene.
+  const timeScale = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.15 : 1;
+  const animated: Animated[] = [];
+  const listeners: Array<(info: FrameInfo) => void> = [];
+  const timer = new THREE.Timer();
+
   let frame = 0;
-  const loop = (): void => {
+  const loop = (timestamp?: number): void => {
     frame = requestAnimationFrame(loop);
+    timer.update(timestamp);
+    const delta = Math.min(timer.getDelta(), 0.1) * timeScale;
+    const time = timer.getElapsed() * timeScale;
+    for (const item of animated) item.update(time, delta);
     controls.update();
     composer.render();
     labels.render(scene, camera);
+    for (const listener of listeners) listener({ time, delta, camera, target: controls.target });
   };
 
   return {
     scene,
+    animate: (item) => {
+      animated.push(item);
+    },
+    onFrame: (listener) => {
+      listeners.push(listener);
+    },
     start: () => {
       if (frame === 0) loop();
     },

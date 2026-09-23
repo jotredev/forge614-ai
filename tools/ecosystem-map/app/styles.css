@@ -1,12 +1,13 @@
 :root {
-  --bg: #1b1e27;
-  --card-bg: rgba(38, 42, 54, 0.92);
-  --card-border: #3a4052;
-  --text: #e8e6df;
-  --muted: #9aa0b0;
-  --accent: #5b8f7b;
-  --font-display: ui-serif, Georgia, "Times New Roman", serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bg: #05070b;
+  --panel: rgba(9, 13, 19, 0.78);
+  --line: #23465a;
+  --text: #e6f1f7;
+  --muted: #8ea3b3;
+  --memory: #38d6f5;
+  --forge: #ff8a3d;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -17,29 +18,8 @@ html, body {
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+  font-family: var(--font-sans);
 }
-
-.topbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--card-border);
-  background: linear-gradient(var(--bg), rgba(27, 30, 39, 0.6));
-  pointer-events: none;
-}
-
-.topbar__brand { font-weight: 700; }
-.topbar__divider, .topbar__title { color: var(--muted); }
 
 #office {
   position: fixed;
@@ -52,41 +32,168 @@ html, body {
   inset: 0;
 }
 
-.platform-card {
-  min-width: 180px;
-  padding: 12px 14px;
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  background: var(--card-bg);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+/* ---------- Top bar ---------- */
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 28px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: linear-gradient(rgba(5, 7, 11, 0.95), rgba(5, 7, 11, 0));
   pointer-events: none;
 }
 
-.platform-card__title {
+.topbar__mark {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--memory);
+  transform: rotate(45deg);
+  box-shadow: 0 0 10px var(--memory);
+}
+
+.topbar__brand { font-weight: 700; }
+.topbar__divider { color: var(--line); }
+.topbar__title { color: var(--muted); }
+
+.topbar__status {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  color: var(--memory);
 }
 
-.platform-card__title::before {
-  content: "";
-  width: 7px;
-  height: 7px;
+.topbar__dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  background: var(--memory);
+  box-shadow: 0 0 8px var(--memory);
+  animation: blink 2.4s ease-in-out infinite;
+}
+
+/* ---------- HUD frame ---------- */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Vignette and a faint monitor scanline texture. */
+.hud::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.65) 100%);
+}
+
+.hud::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px);
+}
+
+.hud__corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: rgba(56, 214, 245, 0.55);
+  border-style: solid;
+  border-width: 0;
+}
+
+.hud__corner--tl { top: 60px; left: 20px; border-top-width: 1.5px; border-left-width: 1.5px; }
+.hud__corner--tr { top: 60px; right: 20px; border-top-width: 1.5px; border-right-width: 1.5px; }
+.hud__corner--bl { bottom: 20px; left: 20px; border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.hud__corner--br { bottom: 20px; right: 20px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+
+.hud__readout {
+  position: absolute;
+  left: 34px;
+  bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.hud__label { color: var(--memory); }
+.hud__value { color: var(--muted); white-space: pre; }
+
+.hud__hint {
+  position: absolute;
+  right: 34px;
+  bottom: 32px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(142, 163, 179, 0.6);
+}
+
+/* ---------- Platform cards ---------- */
+
+.platform-card {
+  --accent: var(--memory);
+  position: relative;
+  min-width: 190px;
+  padding: 12px 16px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 0 18px rgba(0, 0, 0, 0.5);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  pointer-events: none;
+}
+
+.platform-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 2px;
   background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.platform-card__code {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+}
+
+.platform-card__title {
+  margin-top: 6px;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .platform-card__subtitle {
-  margin-top: 6px;
-  font-family: var(--font-display);
-  font-size: 15px;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
+
+/* ---------- Fatal error ---------- */
 
 .fatal {
   margin: 80px auto;
@@ -96,7 +203,20 @@ html, body {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  background: var(--card-bg);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar__dot { animation: none; }
+}
+
+@media (max-width: 600px) {
+  .topbar { padding: 14px 16px; }
+  .topbar__title, .hud__hint { display: none; }
 }

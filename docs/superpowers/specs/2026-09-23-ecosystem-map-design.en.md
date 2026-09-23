@@ -76,6 +76,17 @@ There is no server and no UI framework. `map:build` outputs a static folder that
 - **Motion.** The camera flies with smooth easing. Only informative elements animate, and the system reduced-motion preference is respected.
 - **Performance.** Target is 60 frames per second on a mid-range laptop.
 
+### 4.0 Visual concept: the digital forge
+
+Revision of step 1 requested by the owner (2026-09-23), pending their approval. The style takes the ecosystem's name, the forge, and turns it into a technology interface:
+
+- **Two meaningful colors.** Electric cyan for information and memory. Ember orange for work in progress, with sparks rising wherever something is being "forged". The rest of the scene is near-black so both can glow.
+- **Blueprint floor.** A fine and a coarse grid with markers at the intersections, fading toward the edges, with dust floating in the air.
+- **Platforms.** Dark metal slabs with neon edges in the node's color, a faint grid on the surface, a scan line sweeping across it, and a light halo cast on the floor.
+- **Connections.** Dashed energy lines with a light pulse traveling from source to target, so the direction of the flow always reads.
+- **HUD interface.** Corner frames, cut-corner cards, vignette, very subtle monitor lines, and a live camera readout. Real data only.
+- **Real glow.** A bloom post-processing pass on the neon elements.
+
 ### 4.1 Ecosystem layout
 
 | Element | Representation |

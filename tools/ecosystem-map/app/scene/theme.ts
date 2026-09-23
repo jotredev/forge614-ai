@@ -1,13 +1,21 @@
+// "Digital forge" palette: cyan carries information and memory, ember carries
+// work in progress. Everything else stays near-black so both can glow.
 export const theme = {
-  background: "#1b1e27",
-  floor: "#232733",
-  floorLine: "#2e3342",
-  platformSide: "#1f222c",
-  testPlatform: "#5b8f7b",
-  cardBackground: "#262a36",
-  cardBorder: "#3a4052",
-  cardText: "#e8e6df",
-  cardMuted: "#9aa0b0",
+  background: "#05070b",
+  floor: "#0a0d13",
+  gridMinor: "#1c2a36",
+  gridMajor: "#2b4152",
+  gridCross: "#5fa8c8",
+  platformSide: "#121722",
+  platformTop: "#0e131b",
+  testPlatform: "#38d6f5",
+  memory: "#38d6f5",
+  forge: "#ff8a3d",
+  dust: "#9fdcff",
+  cardBackground: "#0f141d",
+  cardBorder: "#23465a",
+  cardText: "#e6f1f7",
+  cardMuted: "#8ea3b3",
 } as const;
 
 export function relativeLuminance(hex: string): number {
