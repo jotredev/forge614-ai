@@ -13,8 +13,7 @@ export type EngramNode = {
   // Where incoming memories plug in, relative to the node's center.
   inlet: THREE.Vector3;
   // Where recalled memories leave for Shell, relative to the node's center.
-  outlet: THREE.Vector3;
-  update(seconds: number): void;
+  outlet: THREE.Vector3;  update(seconds: number): void;
 };
 type Hologram = { group: THREE.Group; update(seconds: number): void; flash(amount: number): void };
 
@@ -161,7 +160,6 @@ export function createEngram(top: number): EngramNode {
   };
   const { at: inletAt, flash: inletFlash } = port(-0.6);
   const { at: outletAt, flash: outletFlash } = port(0.05);
-
   // The pulse that rises through the rack into the hologram.
   const pulse = glowSprite(ENGRAM_LIGHT, 0, 0.7);
   face.add(pulse);
@@ -179,8 +177,7 @@ export function createEngram(top: number): EngramNode {
   return {
     group,
     inlet: inletAt.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),
-    outlet: outletAt.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),
-    update: (seconds) => {
+    outlet: outletAt.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),    update: (seconds) => {
       // Recall: Shell asked, so the hologram glows and a pulse goes down
       // to the inlet, leaving through the cable as RECALL_LEAVES.
       const lookup = since(seconds, RECALL_LEAVES - RECALL_LOOKUP);

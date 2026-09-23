@@ -20,33 +20,39 @@ function solid(geometry: THREE.BufferGeometry, color: string, roughness = 0.6, m
   return mesh;
 }
 
-type Line = { prefix: string; prefixColor: string; text: string };
+// `typed` lines are written by the person; the rest are the answers.
+type Line = { prefix: string; prefixColor: string; text: string; typed?: boolean };
 
 // The commands are the real global commands of the ecosystem; the outputs
-// are neutral confirmations, not invented numbers.
+// are neutral confirmations, not invented numbers. After "prepare", Shell
+// shows Engines' preview, the person confirms it, and Engines applies it
+// (contract, section 5).
 const SESSION: Line[] = [
-  { prefix: "$", prefixColor: SHELL, text: "forge614 status" },
+  { prefix: "$", prefixColor: SHELL, text: "forge614 status", typed: true },
   { prefix: "✓", prefixColor: "#8fbf7a", text: "engram   listo" },
   { prefix: "✓", prefixColor: "#8fbf7a", text: "engines  listo" },
-  { prefix: "$", prefixColor: SHELL, text: "forge614 prepare" },
+  { prefix: "$", prefixColor: SHELL, text: "forge614 prepare", typed: true },
   { prefix: "›", prefixColor: "#e0b458", text: "preparando proyecto…" },
+  { prefix: "›", prefixColor: "#e0b458", text: "vista previa: 1 cambio (motor 3)" },
+  { prefix: "?", prefixColor: SHELL, text: "¿aplicar cambios? (s/n) s", typed: true },
+  { prefix: "✓", prefixColor: "#8fbf7a", text: "cambios aplicados" },
 ];
 
-// Typing rhythm of the terminal, shared so the whole map follows it:
-// characters per second, one full loop (typing plus a pause while the
-// memories travel), and the moment "forge614 prepare" is entered.
-const TYPE_SPEED = 14;
-const TOTAL_CHARS = SESSION.reduce((sum, line) => sum + line.text.length, 0);
-export const SHELL_CYCLE = TOTAL_CHARS / TYPE_SPEED + 7;
-export const PREPARE_ENTERED_AT = SESSION.slice(0, 4).reduce((sum, line) => sum + line.text.length, 0) / TYPE_SPEED;
-export const TYPED_AT = TOTAL_CHARS / TYPE_SPEED;
+// Typing speed and each line's length, so the map's clock can work out
+// when each line starts and ends.
+export const TYPE_SPEED = 14; // characters per second
+export const LINE_LENGTHS = SESSION.map((line) => line.text.length);
+
+// When each line starts in the cycle, in seconds, and how long a cycle is.
+export type Script = { starts: number[]; cycle: number };
 
 type Terminal = { mesh: THREE.Mesh; update(seconds: number): void; isTyping(): boolean };
 
 // A terminal screen: a title bar with the three dots and the window name,
-// then the session typing itself line by line, with a blinking cursor. It
-// redraws only when something visible changes.
-function typingTerminal(width: number, height: number, title: string): Terminal {
+// then the session typing itself line by line, each line starting when the
+// script says, with a blinking cursor. It redraws only when something
+// visible changes.
+function typingTerminal(width: number, height: number, title: string, script: Script): Terminal {
   const canvas = document.createElement("canvas");
   canvas.width = 768;
   canvas.height = Math.round((768 * height) / width);
@@ -59,7 +65,7 @@ function typingTerminal(width: number, height: number, title: string): Terminal 
   let lastKey = "";
   let typing = false;
 
-  const draw = (typed: number, cursorOn: boolean): void => {
+  const draw = (shown: number[], cursorOn: boolean): void => {
     context.fillStyle = "#0b1118";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#161e29";
@@ -77,40 +83,46 @@ function typingTerminal(width: number, height: number, title: string): Terminal 
     context.textAlign = "left";
 
     context.font = "500 30px ui-monospace, Menlo, Consolas, monospace";
-    let remaining = typed;
     let y = bar + 56;
-    let cursorX = 40;
-    for (const line of SESSION) {
-      if (remaining <= 0) break;
-      const shown = line.text.slice(0, remaining);
-      remaining -= line.text.length;
+    let cursorX = 76;
+    let cursorY = y;
+    SESSION.forEach((line, i) => {
+      const count = shown[i]!;
+      if (count <= 0) return;
+      const text = line.text.slice(0, count);
       context.fillStyle = line.prefixColor;
       context.fillText(line.prefix, 40, y);
       context.fillStyle = "#c9d6e3";
-      context.fillText(shown, 76, y);
-      cursorX = 76 + context.measureText(shown).width + 6;
-      if (remaining > 0) y += lineHeight;
-    }
+      context.fillText(text, 76, y);
+      cursorX = 76 + context.measureText(text).width + 6;
+      cursorY = y;
+      y += lineHeight;
+    });
     if (cursorOn) {
       context.fillStyle = SHELL;
-      context.fillRect(cursorX, y - 26, 16, 32);
+      context.fillRect(cursorX, cursorY - 26, 16, 32);
     }
     texture.needsUpdate = true;
   };
-  draw(0, true);
+  draw(SESSION.map(() => 0), true);
 
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshBasicMaterial({ map: texture }));
   return {
     mesh,
     update: (seconds) => {
-      // Type at a steady pace, hold the finished screen, then start over.
-      const typed = Math.min(TOTAL_CHARS, Math.floor((seconds % SHELL_CYCLE) * TYPE_SPEED));
-      typing = typed < TOTAL_CHARS;
+      // Each line types at a steady pace from its start; the finished
+      // screen holds until the cycle starts over. The person's hands move
+      // only while a line of theirs is being typed.
+      const t = seconds % script.cycle;
+      const shown = SESSION.map((line, i) =>
+        Math.max(0, Math.min(line.text.length, Math.floor((t - script.starts[i]!) * TYPE_SPEED))),
+      );
+      typing = SESSION.some((line, i) => line.typed === true && shown[i]! > 0 && shown[i]! < line.text.length);
       const cursorOn = Math.floor(seconds * 1.8) % 2 === 0;
-      const key = `${typed}:${cursorOn}`;
+      const key = `${shown.join(",")}:${cursorOn}`;
       if (key !== lastKey) {
         lastKey = key;
-        draw(typed, cursorOn);
+        draw(shown, cursorOn);
       }
     },
     isTyping: () => typing,
@@ -133,7 +145,7 @@ function softGlowTexture(): THREE.Texture {
 
 // A glass window: dark frame, a glass rim around the screen, and a soft
 // glow of Shell's color behind it.
-function glassWindow(width: number, height: number, title: string): { group: THREE.Group } & Omit<Terminal, "mesh"> {
+function glassWindow(width: number, height: number, title: string, script: Script): { group: THREE.Group } & Omit<Terminal, "mesh"> {
   const group = new THREE.Group();
   const frame = solid(new RoundedBoxGeometry(width + 0.3, height + 0.3, 0.14, 5, 0.12), "#141a23", 0.35, 0.4);
   const rim = new THREE.Mesh(
@@ -141,7 +153,7 @@ function glassWindow(width: number, height: number, title: string): { group: THR
     new THREE.MeshPhysicalMaterial({ color: "#bfe0ff", transparent: true, opacity: 0.18, roughness: 0.1, clearcoat: 1, depthWrite: false }),
   );
   rim.position.z = -0.02;
-  const screen = typingTerminal(width, height, title);
+  const screen = typingTerminal(width, height, title, script);
   screen.mesh.position.z = 0.075;
   const glow = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 1.9, height * 2.1),
@@ -209,7 +221,7 @@ function desk(top: number): THREE.Group {
   return group;
 }
 
-export function createShell(top: number): ShellNode {
+export function createShell(top: number, script: Script): ShellNode {
   const group = new THREE.Group();
   const face = new THREE.Group();
 
@@ -217,7 +229,7 @@ export function createShell(top: number): ShellNode {
   const emitter = projector(top + DESK_TOP, 1.0);
   emitter.position.z = 0.4;
   emitter.scale.set(0.8, 1, 0.8);
-  const panel = glassWindow(4.2, 2.8, "forge614 · shell");
+  const panel = glassWindow(4.2, 2.8, "forge614 · shell", script);
   panel.group.position.set(0, top + DESK_TOP + 2.55, 0.35);
 
   // Toy scale, seated on an office chair and typing on the desk keyboard,

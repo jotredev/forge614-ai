@@ -7,10 +7,17 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 //   - "inserting": standing, lifting one arm to a slot in front; `reach`
 //     (0 to 1) says how far, so a scene can time it with what is moved;
 //   - "walking": legs and arms swing while `busy`; with `reach` above zero
-//     one arm holds something in front.
+//     one arm holds something in front;
+//   - "holding": standing, both hands holding something at the chest (put
+//     it in `hold`); while `busy`, the right hand taps it.
 
-export type Pose = "typing" | "inserting" | "walking";
-export type Character = { group: THREE.Group; update(seconds: number, busy: boolean, reach?: number): void };
+export type Pose = "typing" | "inserting" | "walking" | "holding";
+export type Character = {
+  group: THREE.Group;
+  // Where a held object goes, between the hands; it moves with them.
+  hold: THREE.Group;
+  update(seconds: number, busy: boolean, reach?: number): void;
+};
 
 const SKIN = "#e8b98f";
 const HAIR = "#2b2320";
@@ -109,6 +116,12 @@ export function createCharacter(shirt: string, pose: Pose): Character {
     return arm.pivot;
   });
 
+  // Between the hands when both arms reach forward (arms 0.535 long, swung
+  // 0.95 forward and tilted 0.15 inward).
+  const hold = new THREE.Group();
+  hold.position.set(0, shoulders - 0.28, 0.46);
+  group.add(hold);
+
   const update = (seconds: number, busy: boolean, reach = 0): void => {
     if (seated) {
       // Forearms reach forward to the keyboard; while busy, the hands tap
@@ -119,6 +132,17 @@ export function createCharacter(shirt: string, pose: Pose): Character {
         arm.rotation.z = (i === 0 ? -1 : 1) * 0.12;
       });
       head.rotation.x = busy ? 0.08 + Math.sin(seconds * 3) * 0.03 : 0.02;
+    } else if (pose === "holding") {
+      // Both forearms forward holding the object, which sways gently; while
+      // busy, the right hand taps it and the head looks down at it.
+      const sway = Math.sin(seconds * 1.3) * 0.04;
+      arms.forEach((arm, i) => {
+        arm.rotation.x = -0.95 + sway;
+        arm.rotation.z = (i === 0 ? 1 : -1) * 0.15;
+      });
+      if (busy) arms[1]!.rotation.x += Math.max(0, Math.sin(seconds * 9)) * -0.18;
+      hold.position.y = shoulders - 0.28 + sway * 0.3;
+      head.rotation.x = busy ? 0.3 : 0.18;
     } else if (pose === "inserting") {
       // The near arm lifts up to the slot; the other rests.
       arms[0]!.rotation.x = THREE.MathUtils.lerp(-0.2, -1.5, reach);
@@ -141,5 +165,5 @@ export function createCharacter(shirt: string, pose: Pose): Character {
   };
   update(0, false);
 
-  return { group, update };
+  return { group, hold, update };
 }
