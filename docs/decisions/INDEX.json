@@ -225,6 +225,15 @@
       "date": "2026-09-22",
       "session": "forge614-ai-bd590adc-2026-09-21",
       "file": "0025-contrato-del-ecosistema-v2.md"
+    },
+    {
+      "number": "0026",
+      "slug": "bun-version-unica-del-ecosistema",
+      "title": "Bun 1.4.2 como versión única del ecosistema",
+      "status": "aceptada",
+      "date": "2026-09-23",
+      "session": "forge614-ai-2026-09-22-fase-0-1-tarea-10-b",
+      "file": "0026-bun-version-unica-del-ecosistema.md"
     }
   ]
 }

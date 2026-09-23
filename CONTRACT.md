@@ -21,7 +21,7 @@ Publicar el Estándar de Nodo y los contratos del ecosistema Forge614, y verific
 ## Dependencias
 | Nodo o binario | Cómo se consume | Versión mínima |
 | --- | --- | --- |
-| Bun | Runtime y ejecutor de scripts (`bun run`, `bun test`); fijado en `.github/workflows/*.yml` | 1.3.8 |
+| Bun | Runtime y ejecutor de scripts (`bun run`, `bun test`); fijado en `.github/workflows/*.yml` (acta 0026) | 1.4.2 |
 | TypeScript | `devDependency`; `bun run typecheck` (`tsc --noEmit`) en modo estricto | 5.9.3 |
 | zod | Dependencia; esquemas de argumentos, contratos y archivos de datos | 4.6.5 |
 | yaml | Dependencia; lectura de `.github/workflows/*.yml` | 2.8.1 |
