@@ -136,7 +136,9 @@ Los esquemas solo crecen: se agregan campos, nunca se renombran ni se quitan (ac
 | `bun run map:check` | Falla si `data/` no está al día o si algún recibo dejó de ser válido |
 | `bun run map:dev` | Sirve la oficina en el navegador con recarga automática |
 | `bun run map:build` | Genera la carpeta estática para compartir |
-| `bun test` | Pruebas del extractor y los esquemas |
+| `bun run test` | Pruebas del extractor y los esquemas |
+
+Las pruebas del mapa usan el sufijo `.check.ts` para que el `bun test` de la raíz de forge614-ai no las recoja.
 
 Todos se ejecutan dentro de `tools/ecosystem-map/`. Salidas y errores siguen la convención de contratos de máquina (acta 0013): JSON con `schemaVersion` por stdout, errores `{schemaVersion, code, error}` por stderr y códigos de salida 0, 1 y 2.
 
@@ -167,7 +169,7 @@ El extractor y los esquemas crecen junto con los pasos. El paso 2 introduce solo
 
 ## 9. Verificación
 
-- **Pruebas automáticas** (`bun test`): esquemas, validación de recibos, detección de citas desaparecidas y cálculo de hallazgos automáticos.
+- **Pruebas automáticas** (`bun run test`): esquemas, validación de recibos, detección de citas desaparecidas y cálculo de hallazgos automáticos.
 - **Revisión visual automatizada:** un navegador automatizado abre la oficina, recorre los nodos y toma capturas para confirmar que se ve y responde. Complementa la revisión del propietario en cada paso, no la sustituye.
 - **Sin validaciones inventadas:** un paso se declara listo solo con la salida real de estos comandos y la captura correspondiente.
 

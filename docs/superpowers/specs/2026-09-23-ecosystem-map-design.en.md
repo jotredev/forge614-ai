@@ -153,7 +153,9 @@ Schemas only grow: fields are added, never renamed or removed (decision 0024).
 | `bun run map:check` | Fails if `data/` is out of date or any receipt is no longer valid |
 | `bun run map:dev` | Serves the office in the browser with live reload |
 | `bun run map:build` | Produces the static folder for sharing |
-| `bun test` | Extractor and schema tests |
+| `bun run test` | Extractor and schema tests |
+
+Map tests use the `.check.ts` suffix so the forge614-ai root `bun test` does not pick them up.
 
 All commands run inside `tools/ecosystem-map/`. Output and errors follow the machine contract convention (decision 0013):
 
@@ -195,7 +197,7 @@ The full extractor is never built before something is visible on screen.
 
 ## 9. Verification
 
-- **Automated tests** (`bun test`) cover:
+- **Automated tests** (`bun run test`) cover:
   - schemas;
   - receipt validation;
   - detection of vanished quotes;
