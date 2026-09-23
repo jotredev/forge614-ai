@@ -23,3 +23,11 @@ test.skipIf(onWindows)(`run forwards stdin when provided${WINDOWS_REASON}`, () =
   expect(r.stdout).toBe("from-stdin");
   expect(r.exitCode).toBe(0);
 });
+
+test("run honours a custom env instead of inheriting the parent's", () => {
+  const env: Record<string, string> = { FORGE614_TEST_X: "1" };
+  if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+  const r = run(["bun", "-e", 'console.log(process.env.FORGE614_TEST_X ?? "")'], { env });
+  expect(r.stdout.trim()).toBe("1");
+  expect(r.exitCode).toBe(0);
+});
