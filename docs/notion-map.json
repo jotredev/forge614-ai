@@ -33,15 +33,15 @@
     {
       "es": "docs/es/04-verificacion-y-empaquetado.md",
       "en": "docs/en/04-verification-and-packaging.md",
-      "sha256Es": "ce6560c2f6a8b0769b90341cd12c1ee165556e3d0412c9cf1a836f7b01fb64f9",
-      "sha256En": "39dab6079d2153c7f96afcff06b3fe530c6980a8afbd9b3028f83b9b76cdd9a6",
+      "sha256Es": "2032cf616753bd1a71462a6309fee4877fac4ff69eb801b3dbc2b802e806320a",
+      "sha256En": "895d205aeff9a759f8de459853637e01a3de7a5107a8f9c01639c1378d515a0b",
       "notionPageId": null
     },
     {
       "es": "docs/es/05-workflows.md",
       "en": "docs/en/05-workflows.md",
-      "sha256Es": "b708b286b6c18c3c9ca3f0ab9212203cb5eb4cff727eed60332370bf3acfb52f",
-      "sha256En": "9a630c8e7a8b9183ee36d03691385af355a5e680677cd566366f02b5884dc31b",
+      "sha256Es": "3d1f7d83fdf48df5ec8885de8f09c2e02546e339ff19372a06c40438f673e7c6",
+      "sha256En": "9fbd3506614a8cdf7b103781fdd4f17029a3fd34776b09ebc46dc51025557d97",
       "notionPageId": null
     }
   ]

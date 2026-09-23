@@ -5,6 +5,20 @@ import { run } from "../../infrastructure/process";
 const CLI = resolve(import.meta.dir, "standard-release.ts");
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 
+// The CLI reads GITHUB_REF_NAME from the environment, which `run` otherwise
+// inherits from the test runner's own process. A CI runner sets that
+// variable (to the branch or the merge ref), so tests that need it absent or
+// pinned to a specific value must build their own env instead of relying on
+// whatever happens to be inherited.
+function envWithout(...omit: string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined || omit.includes(key)) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
 test("an unknown flag fails with INVALID_ARGUMENTS and exit 2", () => {
   const r = run(["bun", "run", CLI, "--tag", "standard-v1.0.0", "--dry-rn"], { cwd: REPO_ROOT });
   expect(r.exitCode).toBe(2);
@@ -12,9 +26,17 @@ test("an unknown flag fails with INVALID_ARGUMENTS and exit 2", () => {
 });
 
 test("without --tag and without GITHUB_REF_NAME it fails with INVALID_ARGUMENTS", () => {
-  const r = run(["bun", "run", CLI, "--dry-run"], { cwd: REPO_ROOT });
+  const r = run(["bun", "run", CLI, "--dry-run"], { cwd: REPO_ROOT, env: envWithout("GITHUB_REF_NAME") });
   expect(r.exitCode).toBe(2);
   expect(JSON.parse(r.stderr.trim())).toMatchObject({ schemaVersion: 1, code: "INVALID_ARGUMENTS" });
+});
+
+test("--tag overrides GITHUB_REF_NAME when both are present", () => {
+  const env = { ...envWithout("GITHUB_REF_NAME"), GITHUB_REF_NAME: "standard-v9.9.9" };
+  const r = run(["bun", "run", CLI, "--tag", "standard-v1.0.0", "--dry-run"], { cwd: REPO_ROOT, env });
+  expect(r.exitCode).toBe(0);
+  const out: unknown = JSON.parse(r.stdout.trim());
+  expect(out).toMatchObject({ schemaVersion: 1, ok: true, version: "1.0.0", published: false });
 });
 
 test("--dry-run with --tag prints the plan and exits 0 without publishing", () => {

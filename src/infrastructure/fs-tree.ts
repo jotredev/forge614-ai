@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { FileTree } from "../modules/standard/file-tree";
 
-const DEFAULT_IGNORE = ["node_modules", "dist", ".git", ".superpowers"];
+const DEFAULT_IGNORE = ["node_modules", "dist", ".git", ".superpowers", ".claude"];
 
 // Extensions treated as text. A file with no extension (or a dotfile such as
 // `.gitignore`) is treated as text too, so tooling artifacts without a suffix
