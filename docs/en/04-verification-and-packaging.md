@@ -99,6 +99,8 @@ It prints `{ schemaVersion: 1, version, archive, sha256, tarSha256, entries }`: 
 | `1` | `STANDARD_PACK_FAILED` | Unexpected read or write error; the message leaves in the envelope, never as a stack trace |
 | `2` | `INVALID_ARGUMENTS` | Unknown flag or positional argument |
 
+Publication: the tag `standard-v<version>` triggers `standard-release.yml`, which checks the pointer and publishes the release with the package and its fingerprint (document 05). That release is what Sentinel downloads.
+
 ## Relation to `forge614-sentinel check`
 
 Sentinel is the node that judges and never does (record 0007): it receives something and returns `pass`, `caution` or `fail` with evidence. The validators in this repository are its first layer, the one that uses no AI: pure functions over a file tree that return findings with rule, verdict and evidence. Today they run only here, through `bun run verify`. `forge614-sentinel check`, which will run these same checks on any repository in the ecosystem by reading its `forge614.node.json`, arrives in phase 0.2 and does not exist in this tree.

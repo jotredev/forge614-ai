@@ -35,6 +35,7 @@ Publicar el Estándar de Nodo y los contratos del ecosistema Forge614, y verific
 | `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Título]` | `{ node, out, written: string[] }`; escribe los quince archivos de `DESTINATIONS` en `<dir>` | `1` | `0` escrito; `1` `STANDARD_RENDER_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, tarSha256, entries }`; con `--check`: `{ ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }`; escribe `dist/` y, con `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` o `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:check` | Sin argumentos (alias de `standard:pack --check`; es el paso del job `parity`) | Igual que `standard:pack --check` | `1` | Igual que `standard:pack --check` |
+| `bun run standard:release` | `[--tag standard-vX.Y.Z] [--dry-run]` (sin `--tag` usa `GITHUB_REF_NAME`) | `{ ok: true, version, sha256, tarSha256, assets, command, published }`; publica la release de GitHub del estándar; con `--dry-run` igual construye `dist/` (ignorado por Git) pero no publica nada | `1` | `0`; `1` `STANDARD_RELEASE_TAG_MISMATCH`, `STANDARD_PACK_DRIFT` o `STANDARD_RELEASE_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:check` | Sin argumentos | `{ verdict, findings: Finding[] }` | `1` | `0` veredicto `pass`; `1` en otro caso o `WORKFLOWS_CHECK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:run` | `[--workflow <nombre>]` (por defecto `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` todo en `0`; `1` paso fallido, `WORKFLOW_NOT_FOUND` o `WORKFLOWS_RUN_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run decisions:index` | `[--check]` | `{ ok: true, records }`; sin `--check` escribe `docs/decisions/INDEX.json` (`decisions-index.schema.json`) | `1` | `0`; `1` `DECISIONS_INDEX_INVALID`, `DECISIONS_INDEX_FAILED` o, con `--check`, `DECISIONS_INDEX_DRIFT`; `2` `INVALID_ARGUMENTS` |
@@ -47,7 +48,7 @@ Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; to
 ## Códigos de error
 | Código | Significado |
 | --- | --- |
-| `INVALID_ARGUMENTS` | Argumento, flag o valor no admitido por el comando; salida `2`. Los tres comandos con analizador de pares `--clave valor` (`verify`, `standard:render`, `workflows:run`) rechazan un flag desconocido solo cuando lleva valor e ignoran argumentos posicionales sueltos; todos los demás (`standard:pack`, `standard:check`, `decisions:index`, `schemas:generate`, `workflows:check`, `notion-map:build`, `not-implemented`) tienen conjunto estricto de flags y rechazan cualquier flag desconocido o argumento posicional |
+| `INVALID_ARGUMENTS` | Argumento, flag o valor no admitido por el comando; salida `2`. Los tres comandos con analizador de pares `--clave valor` (`verify`, `standard:render`, `workflows:run`) rechazan un flag desconocido solo cuando lleva valor e ignoran argumentos posicionales sueltos; todos los demás (`standard:pack`, `standard:check`, `standard:release`, `decisions:index`, `schemas:generate`, `workflows:check`, `notion-map:build`, `not-implemented`) tienen conjunto estricto de flags y rechazan cualquier flag desconocido o argumento posicional |
 | `VERIFY_STEP_FAILED` | Un paso de `verify` (typecheck, test, índice de actas, workflows, esquemas, mapa de Notion) terminó con salida distinta de `0` |
 | `VERIFY_FAILED` | `verify`: error inesperado (lectura del árbol o de `standard/VERSION`) fuera de los pasos y validadores |
 | `DECISIONS_INDEX_FAILED` | `decisions:index`: error inesperado de lectura o escritura |
@@ -63,6 +64,8 @@ Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; to
 | `STANDARD_INVALID` | `standard:pack`: algún validador del estándar falla, no se empaqueta |
 | `STANDARD_PACK_DRIFT` | `standard:pack --check`: la huella fresca no coincide con `forge614.node.json` o con `dist/SHA256SUMS` |
 | `STANDARD_PACK_FAILED` | `standard:pack`: error inesperado de lectura o escritura |
+| `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: el tag no nombra la versión de `standard/VERSION` |
+| `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` no pudo ejecutarse o la release no se creó (por ejemplo, ya existía) |
 | `NOTION_MAP_FAILED` | `notion-map:build`: mapa previo inválido, `package.json` ilegible o error de escritura |
 | `NOT_IMPLEMENTED` | `build:target`, `smoke:target`, `release:publish`: llegan en la fase 0.4 (`bun release` compartido) |
 | `SCHEMA_UNSUPPORTED` | Reservado por el estándar (§4) para un consumidor que recibe un `schemaVersion` que no conoce; ningún comando de este repositorio lo emite hoy |

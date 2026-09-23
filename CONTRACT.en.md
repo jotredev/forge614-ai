@@ -35,6 +35,7 @@ Publish the Node Standard and the contracts of the Forge614 ecosystem, and verif
 | `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Title]` | `{ node, out, written: string[] }`; writes the fifteen `DESTINATIONS` files into `<dir>` | `1` | `0` written; `1` `STANDARD_RENDER_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, tarSha256, entries }`; with `--check`: `{ ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }`; writes `dist/` and, with `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` or `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:check` | No arguments (alias of `standard:pack --check`; it is the step of the `parity` job) | Same as `standard:pack --check` | `1` | Same as `standard:pack --check` |
+| `bun run standard:release` | `[--tag standard-vX.Y.Z] [--dry-run]` (without `--tag` it uses `GITHUB_REF_NAME`) | `{ ok: true, version, sha256, tarSha256, assets, command, published }`; publishes the standard's GitHub release; with `--dry-run` it still builds `dist/` (git-ignored) but publishes nothing | `1` | `0`; `1` `STANDARD_RELEASE_TAG_MISMATCH`, `STANDARD_PACK_DRIFT` or `STANDARD_RELEASE_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:check` | No arguments | `{ verdict, findings: Finding[] }` | `1` | `0` verdict `pass`; `1` otherwise or `WORKFLOWS_CHECK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:run` | `[--workflow <name>]` (default `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` everything in `0`; `1` a step failed, `WORKFLOW_NOT_FOUND` or `WORKFLOWS_RUN_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run decisions:index` | `[--check]` | `{ ok: true, records }`; without `--check` writes `docs/decisions/INDEX.json` (`decisions-index.schema.json`) | `1` | `0`; `1` `DECISIONS_INDEX_INVALID`, `DECISIONS_INDEX_FAILED` or, with `--check`, `DECISIONS_INDEX_DRIFT`; `2` `INVALID_ARGUMENTS` |
@@ -47,7 +48,7 @@ Every data output is a single JSON object on stdout with `schemaVersion: 1`; eve
 ## Error codes
 | Code | Meaning |
 | --- | --- |
-| `INVALID_ARGUMENTS` | Argument, flag or value the command does not accept; exit `2`. The three commands with a `--key value` pair parser (`verify`, `standard:render`, `workflows:run`) reject an unknown flag only when it carries a value and ignore stray positionals; every other command (`standard:pack`, `standard:check`, `decisions:index`, `schemas:generate`, `workflows:check`, `notion-map:build`, `not-implemented`) has a strict flag set and rejects any unknown flag or positional |
+| `INVALID_ARGUMENTS` | Argument, flag or value the command does not accept; exit `2`. The three commands with a `--key value` pair parser (`verify`, `standard:render`, `workflows:run`) reject an unknown flag only when it carries a value and ignore stray positionals; every other command (`standard:pack`, `standard:check`, `standard:release`, `decisions:index`, `schemas:generate`, `workflows:check`, `notion-map:build`, `not-implemented`) has a strict flag set and rejects any unknown flag or positional |
 | `VERIFY_STEP_FAILED` | A `verify` step (typecheck, test, decisions index, workflows, schemas, Notion map) ended with a non-`0` exit |
 | `VERIFY_FAILED` | `verify`: unexpected error (reading the tree or `standard/VERSION`) outside the steps and validators |
 | `DECISIONS_INDEX_FAILED` | `decisions:index`: unexpected read or write error |
@@ -63,6 +64,8 @@ Every data output is a single JSON object on stdout with `schemaVersion: 1`; eve
 | `STANDARD_INVALID` | `standard:pack`: some standard validator fails, nothing is packed |
 | `STANDARD_PACK_DRIFT` | `standard:pack --check`: the fresh fingerprint does not match `forge614.node.json` or `dist/SHA256SUMS` |
 | `STANDARD_PACK_FAILED` | `standard:pack`: unexpected read or write error |
+| `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: the tag does not name `standard/VERSION`'s version |
+| `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` could not run or the release was not created (for example, it already existed) |
 | `NOTION_MAP_FAILED` | `notion-map:build`: invalid previous map, unreadable `package.json` or write error |
 | `NOT_IMPLEMENTED` | `build:target`, `smoke:target`, `release:publish`: they arrive in phase 0.4 (shared `bun release`) |
 | `SCHEMA_UNSUPPORTED` | Reserved by the standard (§4) for a consumer that receives a `schemaVersion` it does not know; no command in this repository emits it today |
