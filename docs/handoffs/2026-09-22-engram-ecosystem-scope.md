@@ -1,12 +1,43 @@
-# Traspaso — Engram: ámbito `ecosystem` (memoria compartida entre repositorios relacionados)
+# Traspaso — Engram: v1.5.3 (Verify en rojo en Linux) + ámbito `ecosystem` (memoria compartida entre repositorios relacionados)
 
 **Fecha:** 2026-09-22 · **Repositorio destino:** `forge614-engram` · **Ejecuta:** el propietario, en una sesión dentro de ese repo · **Revisa:** forge614-ai (coordinador)
-**Prioridad:** P1 de producto · **Acta:** 0022 (aceptada) · **Precondición:** la corrección de `startup-context` (traspaso 2026-09-22-engram-startup-context-unbound) ya publicada.
+**Prioridad:** P1 (Parte A: main con Verify en rojo; Parte B: producto) · **Actas:** 0019, 0022, 0023, 0024 · **Precondición:** v1.5.2 publicada (sí). Un solo prompt con dos partes secuenciales: la Parte B no empieza hasta que v1.5.3 esté revisada y publicada.
 
 ## Prompt para la sesión en `forge614-engram`
 
 ```
 REGLA DE GIT (no negociable): NO hagas commit, merge, tag, push ni publicación en ningún momento, ni siquiera al final ni "para dejar limpio". La revisión de forge614-ai es PREVIA al commit; si terminas, reportas y esperas. Un commit sin revisión incumple este traspaso.
+
+Este traspaso tiene DOS PARTES en orden. Termina la Parte A, reporta y ESPERA la revisión y la
+publicación de v1.5.3 antes de empezar la Parte B (que será la 1.6.0).
+
+=== PARTE A — v1.5.3: cuelgue intermitente de la CLI en Linux (Verify en rojo) ===
+
+Verify falló en ubuntu-latest tras publicar v1.5.2 (run 35793823992): el test "all projects and working
+directories share exactly one workspace configuration" (src/interfaces/cli/__tests__/cli.e2e.test.ts)
+tardó 10 143 ms —el timeout de 10 s del lanzador se disparó: una invocación de la CLI se bloquea en
+Linux— y excedió el timeout por defecto de bun test (5 000 ms). En macOS pasó. main no puede quedar con
+Verify en rojo (acta 0019).
+Tarea (TDD; reabre el plan de release; Scope/Decisions para v1.5.3):
+1. Diagnóstico con evidencia en Linux (gh run view 35793823992 --log; si hace falta, un workflow_dispatch
+   temporal con trazas en una RAMA de trabajo): instrumenta ese test para registrar cuánto tarda CADA
+   invocación de la CLI y cuál se bloquea. Hipótesis a comprobar, no a asumir: la CLI espera stdin (no
+   TTY) en algún comando; un lock de SQLite entre procesos; una espera de red.
+2. Corrige la causa real, no solo los timeouts. Si es stdin: el lanzador de tests pasa stdin: "ignore" y
+   la CLI nunca lee stdin salvo en comandos que lo declaran.
+3. Timeout explícito por test en TODOS los e2e de CLI (tercer argumento de test(), ≥ 20 s), por encima
+   del timeout del lanzador (10 s): un fallo debe ser del producto, no del arnés.
+4. Verifica: bun test local; y ADEMÁS el workflow Verify en GitHub sobre una rama de trabajo (push de
+   rama SÍ autorizado solo para esto; main intacto) en verde en ubuntu y macOS tres veces seguidas;
+   pega los enlaces.
+5. package.json 1.5.3; CHANGELOG "1.5.3: corrección del cuelgue intermitente de la CLI en Linux;
+   timeouts por test". Impacto en el procedimiento de agentes: No.
+6. docs/notion-map.json: el commit de v1.5.2 retiró notionSyncPending de 01/08 es/en. Si las páginas de
+   Notion NO fueron sincronizadas realmente, restaura "notionSyncPending": true en esas cuatro entradas.
+7. Reporta (causa raíz probada, diff, enlaces de CI) y ESPERA. Tras la revisión, el propietario hace
+   commit, tag v1.5.3 y push; solo entonces sigue la Parte B.
+
+=== PARTE B — 1.6.0: ámbito ecosystem e identidad portátil del proyecto ===
 
 Contexto. Este repositorio es forge614-engram, el motor de memoria persistente del ecosistema Forge614.
 Rigen el Estándar de Nodo (repo forge614-ai: standard/STANDARD.md) y las actas 0001–0022 (forge614-ai/
@@ -77,7 +108,7 @@ Tarea (TDD; plan primero):
 11. Docs es/en (03 CLI, 04 SDK, 09 protocolo, 10 contexto de inicio, nuevo capítulo de ámbitos) con
     paridad y `notion-map.json`; `CONTRACT.md` si ya existe.
 12. Tests: unitarios junto al código; e2e CLI contra base temporal para: crear grupo, vincular por
-    forge614.node.json, vincular por .forge614/ecosystem.json, startup-context con y sin grupo, precedencia
+    forge614.node.json, vincular por .forge614/project.json, startup-context con y sin grupo, precedencia
     de topicKey, protocolo v1/v2 inmutables, memory-move con historial.
 13. `bun test`, `bun run typecheck`, build. NO commit ni publicación.
 
@@ -88,6 +119,7 @@ inyectar el bloque ecosystem; asistentes soportados a revalidar).
 
 ## Qué revisará forge614-ai
 
+- Parte A: causa raíz del cuelgue en Linux probada con evidencia (no solo timeouts ampliados); Verify verde 3× en ubuntu y macOS; `notionSyncPending` coherente con la realidad de Notion.
 - Vinculación automática sin preguntas y sin escrituras fuera del caso (a)/(b).
 - Protocolo v1/v2 byte-idénticos; v3 documentado.
 - Precedencia y límites por bloque; nada de SQLite expuesto.
