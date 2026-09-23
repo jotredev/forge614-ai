@@ -75,7 +75,7 @@ El comando escribe en stderr una línea por paso (`[verify] <paso>: exit N`), un
 | --- | --- | --- |
 | Escritor ustar (POSIX) | `src/modules/standard/tar.ts` | `uid` y `gid` 0, nombres de propietario vacíos, `mtime` 0; modo derivado del contenido y nunca del disco: directorio `0755`, archivo que empieza por `#!` `0755`, cualquier otro `0644` |
 | Orden de miembros | `src/app/pack-standard.ts` (`collectTarEntries`) | Recorrido en profundidad con los hijos de cada directorio ordenados por nombre, independiente del orden del sistema de archivos; los archivos ocultos se omiten |
-| Compresión | `src/infrastructure/compression.ts` | DEFLATE crudo, nivel 9, con el zlib incluido en Bun |
+| Compresión | `src/infrastructure/compression.ts` | DEFLATE crudo, nivel 9, con `fflate` 0.8.3 (versión exacta), un compresor escrito en JavaScript puro: los bytes de DEFLATE dependen del compresor y no solo de la entrada, y el zlib que Bun enlaza en Windows produjo otra huella que en Linux y macOS (PR #1); una sola implementación en JavaScript da los mismos bytes en todo sistema |
 | Contenedor gzip | `src/modules/standard/gzip.ts` | Cabecera constante de 10 bytes (`mtime` 0, XFL 2, OS 3) y CRC32 propio |
 
 Antes de empaquetar, el comando ejecuta los mismos validadores que `verify`; si alguno falla, sale con `STANDARD_INVALID` y no produce nada. Si pasan, escribe en `dist/` (ignorado por Git):
@@ -86,10 +86,10 @@ Antes de empaquetar, el comando ejecuta los mismos validadores que `verify`; si 
 | `dist/SHA256SUMS` | Una línea `<sha256>  standard-<VERSION>.tar.gz` |
 | `dist/pack-manifest.json` | Estimación de tokens (acta 0020): por cada regla del pack, `tokens` de su `RULE.md` completo, y `packIndex.tokens` del índice de una línea por regla; cada entrada lleva `estimate: true`, y ningún manifiesto de `standard/rules/` se modifica |
 
-Imprime `{ schemaVersion: 1, version, archive, sha256, entries }`. Dos flags:
+Imprime `{ schemaVersion: 1, version, archive, sha256, tarSha256, entries }`: `sha256` es la huella del paquete comprimido (la que fija `forge614.node.json`) y `tarSha256` la del tar sin comprimir, para distinguir una deriva de contenido (cambia `tarSha256`) de una de compresión (solo cambia `sha256`). Dos flags:
 
 - `--update-pointer`: además reescribe `standard.sha256` en `forge614.node.json`, validando el puntero antes y después con `NodePointerSchema`. Ese puntero es la **verdad commiteada**: hoy es la huella contra la que `standard:pack --check` compara, y la que todo nodo copia al fijar su versión; el verificador de cada nodo, previsto para la fase 0.2, la comparará contra el paquete publicado (acta 0009).
-- `--check`: empaqueta en un directorio temporal, compara la huella fresca con la del puntero y, si existe, con `dist/SHA256SUMS`; imprime `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` o falla con `STANDARD_PACK_DRIFT`. Ejecutarlo en CI en los tres sistemas operativos (job `parity`, documento 05) es la prueba de paridad: si los bytes cambiaran en alguna plataforma, la huella dejaría de coincidir con el puntero. El script `standard:check` de `package.json`, alias de `standard:pack --check`, es el que ese job invoca.
+- `--check`: empaqueta en un directorio temporal, compara la huella fresca con la del puntero y, si existe, con `dist/SHA256SUMS`; imprime `{ schemaVersion: 1, ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }` o falla con `STANDARD_PACK_DRIFT`, cuyo mensaje incluye la huella fresca del tar (`fresh tar sha256 …`) para saber si derivó el contenido o la compresión. Ejecutarlo en CI en los tres sistemas operativos (job `parity`, documento 05) es la prueba de paridad: si los bytes cambiaran en alguna plataforma, la huella dejaría de coincidir con el puntero. El script `standard:check` de `package.json`, alias de `standard:pack --check`, es el que ese job invoca.
 
 | Salida | `code` | Situación |
 | --- | --- | --- |

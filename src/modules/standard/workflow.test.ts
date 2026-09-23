@@ -33,6 +33,17 @@ describe("thin workflow rules", () => {
     expect(WorkflowSchema.safeParse({ ...good, jobs: { verify: { ...good.jobs.verify, "timeout-minutes": 2.5 } } }).success).toBe(false);
   });
 
+  // R28: a parity matrix declares `fail-fast: false` so each operating system
+  // reports its own result instead of being cancelled by the first failure.
+  test("strategy admits fail-fast next to matrix and stays strict otherwise", () => {
+    const withStrategy = (strategy: Record<string, unknown>) => ({ ...good, jobs: { verify: { ...good.jobs.verify, strategy } } });
+    expect(WorkflowSchema.safeParse(withStrategy({ matrix: { os: ["ubuntu-24.04"] } })).success).toBe(true);
+    expect(WorkflowSchema.safeParse(withStrategy({ "fail-fast": false, matrix: { os: ["ubuntu-24.04"] } })).success).toBe(true);
+    expect(WorkflowSchema.safeParse(withStrategy({ "fail-fast": "no", matrix: { os: ["ubuntu-24.04"] } })).success).toBe(false);
+    expect(WorkflowSchema.safeParse(withStrategy({ "fail-fast": false })).success).toBe(false);
+    expect(WorkflowSchema.safeParse(withStrategy({ "max-parallel": 2, matrix: { os: ["ubuntu-24.04"] } })).success).toBe(false);
+  });
+
   test("shape check: inline logic and unpinned uses are evidence", () => {
     const w = WorkflowSchema.parse({
       ...good,
