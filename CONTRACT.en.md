@@ -21,7 +21,7 @@ Publish the Node Standard and the contracts of the Forge614 ecosystem, and verif
 ## Dependencies
 | Node or binary | How it is consumed | Minimum version |
 | --- | --- | --- |
-| Bun | Runtime and script runner (`bun run`, `bun test`); pinned in `.github/workflows/*.yml` | 1.3.8 |
+| Bun | Runtime and script runner (`bun run`, `bun test`); pinned in `.github/workflows/*.yml` (record 0026) | 1.4.2 |
 | TypeScript | `devDependency`; `bun run typecheck` (`tsc --noEmit`) in strict mode | 5.9.3 |
 | zod | Dependency; schemas for arguments, contracts and data files | 4.6.5 |
 | yaml | Dependency; reading `.github/workflows/*.yml` | 2.8.1 |

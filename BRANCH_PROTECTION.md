@@ -5,7 +5,7 @@ Configuración exacta que debe tener el repositorio (Settings → Rules → Rule
 | Ajuste | Valor |
 | --- | --- |
 | Rama protegida | `main` |
-| Requiere pull request antes de fusionar | Sí; 1 aprobación mínima; descartar aprobaciones obsoletas |
+| Requiere pull request antes de fusionar | Sí; 1 aprobación mínima cuando hay más de un mantenedor; 0 cuando hay uno solo (GitHub no permite aprobar el propio PR); descartar aprobaciones obsoletas |
 | Status checks requeridos | `verify`, `parity (ubuntu-24.04)`, `parity (macos-15)` y `parity (windows-2025)` (los cuatro del workflow `verify.yml`), actualizados con la base |
 | Push directo a `main` | Prohibido para todos, incluidos administradores |
 | Force push y borrado de `main` | Prohibidos |
