@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "node": "ai",
   "kind": "product",
-  "standard": { "version": "1.0.0", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+  "standard": {
+    "version": "1.0.0",
+    "sha256": "65e7e1392d93d9c589bd6a4335b498da449d0b112a56359c07e246fcd687fccb"
+  },
   "ecosystem": "forge614"
 }

@@ -6,7 +6,7 @@
 
 **Architecture:** `forge614-ai` adopta desde el primer commit la arquitectura limpia por capas del estándar (`src/modules` puro → `src/app` casos de uso → `src/infrastructure` I/O → `src/interfaces/cli`). Los esquemas viven en `modules` como Zod y se exportan a JSON Schema; los validadores de cada regla son módulos puros que reciben un árbol de archivos en memoria y devuelven hallazgos; `app` los orquesta y `interfaces/cli` los expone (`verify`, `standard:render`, `standard:pack`). Este código es la semilla del verificador `forge614-sentinel check` de la fase 0.2: en esa fase se mueve a su propio repositorio sin cambiar contratos.
 
-**Tech Stack:** TypeScript 5.9 `strict`, Bun 1.3.x (`bun test`, `bun build`), Zod 4 (`z.toJSONSchema`), `tar` del sistema para empaquetar, `bash -n` y `pwsh` (si existe) para validar sintaxis de instaladores.
+**Tech Stack:** TypeScript 5.9 `strict`, Bun 1.3.x (`bun test`, `bun build`), Zod 4 (`z.toJSONSchema`), empaquetado ustar+gzip escrito en TypeScript (sin `tar`/`gzip` del sistema, para bytes idénticos en los tres SO), `bash -n` y `pwsh` (si existe) para validar sintaxis de instaladores.
 
 **Spec:** `docs/superpowers/specs/2026-09-22-entrega-0-estandar-de-nodo-design.md` (aprobada 2026-09-22) y actas `docs/decisions/0001`–`0019`.
 
@@ -57,7 +57,7 @@ forge614-ai/
 │   │       └── agent-checklist-impact.ts
 │   ├── infrastructure/
 │   │   ├── fs-tree.ts                      leer un directorio a FileTree
-│   │   ├── process.ts                      ejecutar comandos (typecheck, test, tar, bash -n)
+│   │   ├── process.ts                      ejecutar comandos (typecheck, test, bash -n)
 │   │   └── hashing.ts                      sha256 de archivos
 │   ├── app/
 │   │   ├── run-validators.ts               ejecuta todos los validadores sobre un árbol
