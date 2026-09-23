@@ -1,12 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { z } from "zod";
+import { checkStandardPack } from "../../app/check-standard-pack";
 import { packStandard } from "../../app/pack-standard";
 import { readRepoTree, repoRoot } from "../../app/repo";
 import { runValidators } from "../../app/run-validators";
 import { updateNodePointerSha256 } from "../../app/update-node-pointer";
-import { NodePointerSchema } from "../../modules/standard/schemas";
 import { issuesOf, parseFlags } from "./args";
 import { printError, printJson, runCli } from "./output";
 import { printVersionIfRequested } from "./version";
@@ -22,41 +21,6 @@ const Args = z
   .strict();
 
 const POINTER_PATH = resolve(repoRoot, "forge614.node.json");
-
-// Packs into a temp dir and compares the fresh sha256 against the committed
-// truth (forge614.node.json) and, when present, dist/SHA256SUMS. Meaningful
-// on a fresh checkout without dist/, which is how CI proves cross-platform
-// parity of the archive bytes.
-function check(): number {
-  const tmpOut = mkdtempSync(join(tmpdir(), "standard-pack-check-"));
-  try {
-    const fresh = packStandard(repoRoot, tmpOut);
-    const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(POINTER_PATH, "utf8")));
-    if (pointer.standard.sha256 !== fresh.sha256) {
-      printError(
-        "STANDARD_PACK_DRIFT",
-        `forge614.node.json standard.sha256 (${pointer.standard.sha256}) does not match a fresh pack (${fresh.sha256}); run 'bun run standard:pack --update-pointer'`,
-      );
-      return 1;
-    }
-
-    const sumsPath = resolve(repoRoot, "dist/SHA256SUMS");
-    let sumsChecked = false;
-    if (existsSync(sumsPath)) {
-      const expectedLine = `${fresh.sha256}  standard-${fresh.version}.tar.gz`;
-      if (!readFileSync(sumsPath, "utf8").split("\n").includes(expectedLine)) {
-        printError("STANDARD_PACK_DRIFT", `dist/SHA256SUMS does not match a fresh pack; run 'bun run standard:pack'. Fresh: ${expectedLine}`);
-        return 1;
-      }
-      sumsChecked = true;
-    }
-
-    printJson({ schemaVersion: 1, ok: true, sha256: fresh.sha256, pointerChecked: true, sumsChecked });
-    return 0;
-  } finally {
-    rmSync(tmpOut, { recursive: true, force: true });
-  }
-}
 
 function main(argv: string[]): number {
   if (printVersionIfRequested(argv)) return 0;
@@ -81,7 +45,15 @@ function main(argv: string[]): number {
     return 1;
   }
 
-  if (parsed.data.check) return check();
+  if (parsed.data.check) {
+    const result = checkStandardPack({ root: repoRoot, pointerPath: POINTER_PATH, sumsPath: resolve(repoRoot, "dist/SHA256SUMS") });
+    if (!result.ok) {
+      printError("STANDARD_PACK_DRIFT", result.error);
+      return 1;
+    }
+    printJson({ schemaVersion: 1, ...result });
+    return 0;
+  }
 
   const result = packStandard(repoRoot, resolve(repoRoot, "dist"));
   if (parsed.data["update-pointer"]) updateNodePointerSha256(POINTER_PATH, result.sha256);

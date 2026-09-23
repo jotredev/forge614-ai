@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -107,6 +108,18 @@ test.skipIf(!hasSystemTar())("the produced archive is readable by the system tar
   expect(listed.stdout.trim().split("\n")).toEqual(r.entries);
 });
 
+// tarSha256 fingerprints the uncompressed tar so a parity failure can be
+// told apart: same tarSha256 with a different sha256 means the compressor
+// moved bytes; a different tarSha256 means the content or the headers did.
+test("tarSha256 is the sha256 of the uncompressed tar inside the archive, and differs from the archive's sha256", () => {
+  const out = mkdtempSync(join(tmpdir(), "pack-"));
+  const r = packStandard(REPO_ROOT, out);
+  const tar = gunzipSync(readFileSync(r.archive));
+  expect(r.tarSha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(r.tarSha256).toBe(createHash("sha256").update(tar).digest("hex"));
+  expect(r.tarSha256).not.toBe(r.sha256);
+});
+
 test("packing twice over the same tree produces a byte-identical archive (deterministic)", () => {
   const outA = mkdtempSync(join(tmpdir(), "pack-a-"));
   const outB = mkdtempSync(join(tmpdir(), "pack-b-"));
@@ -115,6 +128,7 @@ test("packing twice over the same tree produces a byte-identical archive (determ
   const b = packStandard(REPO_ROOT, outB);
 
   expect(a.sha256).toBe(b.sha256);
+  expect(a.tarSha256).toBe(b.tarSha256);
   const bytesA = readFileSync(a.archive);
   const bytesB = readFileSync(b.archive);
   expect(Buffer.compare(bytesA, bytesB)).toBe(0);

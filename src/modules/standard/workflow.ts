@@ -24,7 +24,13 @@ const Job = z
     "timeout-minutes": z.number().int().positive(),
     steps: z.array(StepSchema).min(1),
     needs: z.union([z.string(), z.array(z.string())]).optional(),
-    strategy: z.object({ matrix: z.record(z.string(), z.unknown()) }).strict().optional(),
+    // R28: a parity matrix declares `fail-fast: false` so every operating
+    // system reports its own result instead of being cancelled by the first
+    // failure; still strict, so no other strategy key slips through.
+    strategy: z
+      .object({ "fail-fast": z.boolean().optional(), matrix: z.record(z.string(), z.unknown()) })
+      .strict()
+      .optional(),
     permissions: z.record(z.string(), z.string()).optional(),
   })
   .strict();

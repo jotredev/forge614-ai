@@ -11,7 +11,7 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 | `verify` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run verify` on `ubuntu-24.04` | typecheck, tests, decisions index, workflows, schemas, Notion map and standard validators (document 04) | ~3 min |
 | `parity` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run standard:check` on the matrix `ubuntu-24.04`, `macos-15`, `windows-2025` | that the standard archive has, on the three operating systems, the same fingerprint as `forge614.node.json`: the bytes are identical on Linux, macOS and Windows (record 0018) | ~2 min per system |
 
-`standard:check` is the script alias of `bun run standard:pack --check` (document 04); the workflows validator only accepts `bun run <script>` steps without arguments, which is why the job does not invoke the flag directly. Every job declares `timeout-minutes` (`verify` and `parity`: 10; `build`: 20; `publish`: 10): no stage runs without a limit and `workflows:check` rejects a job that lacks it.
+`standard:check` is the script alias of `bun run standard:pack --check` (document 04); the workflows validator only accepts `bun run <script>` steps without arguments, which is why the job does not invoke the flag directly. Every job declares `timeout-minutes` (`verify` and `parity`: 10; `build`: 20; `publish`: 10): no stage runs without a limit and `workflows:check` rejects a job that lacks it. The `parity` matrix declares `fail-fast: false`: if one system fails, the other two finish and report their own result, so a parity failure shows all three verdicts instead of cancelling the ones still running.
 
 ## `release.yml`
 

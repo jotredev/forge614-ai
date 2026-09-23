@@ -25,6 +25,7 @@ Publish the Node Standard and the contracts of the Forge614 ecosystem, and verif
 | TypeScript | `devDependency`; `bun run typecheck` (`tsc --noEmit`) in strict mode | 5.9.3 |
 | zod | Dependency; schemas for arguments, contracts and data files | 4.6.5 |
 | yaml | Dependency; reading `.github/workflows/*.yml` | 2.8.1 |
+| fflate | Dependency; pure-JavaScript DEFLATE for the standard archive | 0.8.3 |
 | Other Forge614 nodes | None: `forge614-ai` is the root of the ecosystem and depends on no other node | — |
 
 ## Public commands
@@ -32,7 +33,7 @@ Publish the Node Standard and the contracts of the Forge614 ecosystem, and verif
 | --- | --- | --- | --- | --- |
 | `bun run verify` | `[--locale es\|en] [--today YYYY-MM-DD]` | `VerifyReport`: `{ standard, verdict, checks: [{ ruleId, verdict, evidence, messageKey, params, message: { es, en } }] }` | `1` | `0` everything in `pass`; `1` a step failed (`VERIFY_STEP_FAILED`), verdict other than `pass` or `VERIFY_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Title]` | `{ node, out, written: string[] }`; writes the fifteen `DESTINATIONS` files into `<dir>` | `1` | `0` written; `1` `STANDARD_RENDER_FAILED`; `2` `INVALID_ARGUMENTS` |
-| `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, entries }`; with `--check`: `{ ok: true, sha256, pointerChecked: true, sumsChecked }`; writes `dist/` and, with `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` or `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
+| `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, tarSha256, entries }`; with `--check`: `{ ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }`; writes `dist/` and, with `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` or `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:check` | No arguments (alias of `standard:pack --check`; it is the step of the `parity` job) | Same as `standard:pack --check` | `1` | Same as `standard:pack --check` |
 | `bun run workflows:check` | No arguments | `{ verdict, findings: Finding[] }` | `1` | `0` verdict `pass`; `1` otherwise or `WORKFLOWS_CHECK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:run` | `[--workflow <name>]` (default `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` everything in `0`; `1` a step failed, `WORKFLOW_NOT_FOUND` or `WORKFLOWS_RUN_FAILED`; `2` `INVALID_ARGUMENTS` |

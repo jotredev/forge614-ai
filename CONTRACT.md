@@ -25,6 +25,7 @@ Publicar el Estándar de Nodo y los contratos del ecosistema Forge614, y verific
 | TypeScript | `devDependency`; `bun run typecheck` (`tsc --noEmit`) en modo estricto | 5.9.3 |
 | zod | Dependencia; esquemas de argumentos, contratos y archivos de datos | 4.6.5 |
 | yaml | Dependencia; lectura de `.github/workflows/*.yml` | 2.8.1 |
+| fflate | Dependencia; DEFLATE en JavaScript puro para el paquete del estándar | 0.8.3 |
 | Otros nodos Forge614 | Ninguno: `forge614-ai` es la raíz del ecosistema y no depende de otro nodo | — |
 
 ## Comandos públicos
@@ -32,7 +33,7 @@ Publicar el Estándar de Nodo y los contratos del ecosistema Forge614, y verific
 | --- | --- | --- | --- | --- |
 | `bun run verify` | `[--locale es\|en] [--today YYYY-MM-DD]` | `VerifyReport`: `{ standard, verdict, checks: [{ ruleId, verdict, evidence, messageKey, params, message: { es, en } }] }` | `1` | `0` todo en `pass`; `1` paso fallido (`VERIFY_STEP_FAILED`), veredicto distinto de `pass` o `VERIFY_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Título]` | `{ node, out, written: string[] }`; escribe los quince archivos de `DESTINATIONS` en `<dir>` | `1` | `0` escrito; `1` `STANDARD_RENDER_FAILED`; `2` `INVALID_ARGUMENTS` |
-| `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, entries }`; con `--check`: `{ ok: true, sha256, pointerChecked: true, sumsChecked }`; escribe `dist/` y, con `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` o `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
+| `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, tarSha256, entries }`; con `--check`: `{ ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }`; escribe `dist/` y, con `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` o `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:check` | Sin argumentos (alias de `standard:pack --check`; es el paso del job `parity`) | Igual que `standard:pack --check` | `1` | Igual que `standard:pack --check` |
 | `bun run workflows:check` | Sin argumentos | `{ verdict, findings: Finding[] }` | `1` | `0` veredicto `pass`; `1` en otro caso o `WORKFLOWS_CHECK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run workflows:run` | `[--workflow <nombre>]` (por defecto `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` todo en `0`; `1` paso fallido, `WORKFLOW_NOT_FOUND` o `WORKFLOWS_RUN_FAILED`; `2` `INVALID_ARGUMENTS` |

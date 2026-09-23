@@ -75,7 +75,7 @@ The command writes to stderr one line per step (`[verify] <step>: exit N`), one 
 | --- | --- | --- |
 | ustar (POSIX) writer | `src/modules/standard/tar.ts` | `uid` and `gid` 0, empty owner names, `mtime` 0; mode derived from content and never from disk: directory `0755`, file starting with `#!` `0755`, any other `0644` |
 | Member order | `src/app/pack-standard.ts` (`collectTarEntries`) | Depth-first walk with each directory's children sorted by name, independent of the filesystem's order; hidden files are skipped |
-| Compression | `src/infrastructure/compression.ts` | Raw DEFLATE, level 9, with the zlib bundled in Bun |
+| Compression | `src/infrastructure/compression.ts` | Raw DEFLATE, level 9, with `fflate` 0.8.3 (exact version), a compressor written in pure JavaScript: DEFLATE bytes depend on the compressor and not only on the input, and the zlib Bun links on Windows produced a different fingerprint than on Linux and macOS (PR #1); a single JavaScript implementation yields the same bytes on every system |
 | gzip container | `src/modules/standard/gzip.ts` | Constant 10-byte header (`mtime` 0, XFL 2, OS 3) and its own CRC32 |
 
 Before packing, the command runs the same validators as `verify`; if any fails, it exits with `STANDARD_INVALID` and produces nothing. If they pass, it writes into `dist/` (ignored by Git):
@@ -86,10 +86,10 @@ Before packing, the command runs the same validators as `verify`; if any fails, 
 | `dist/SHA256SUMS` | One line `<sha256>  standard-<VERSION>.tar.gz` |
 | `dist/pack-manifest.json` | Token estimate (record 0020): for each rule in the pack, `tokens` of its full `RULE.md`, and `packIndex.tokens` of the one-line-per-rule index; every entry carries `estimate: true`, and no manifest in `standard/rules/` is modified |
 
-It prints `{ schemaVersion: 1, version, archive, sha256, entries }`. Two flags:
+It prints `{ schemaVersion: 1, version, archive, sha256, tarSha256, entries }`: `sha256` is the fingerprint of the compressed archive (the one `forge614.node.json` pins) and `tarSha256` that of the uncompressed tar, to tell a content drift (`tarSha256` changes) from a compression drift (only `sha256` changes). Two flags:
 
 - `--update-pointer`: additionally rewrites `standard.sha256` in `forge614.node.json`, validating the pointer before and after with `NodePointerSchema`. That pointer is the **committed truth**: today it is the fingerprint `standard:pack --check` compares against, and the one every node copies when pinning its version; each node's verifier, planned for phase 0.2, will compare it against the published archive (record 0009).
-- `--check`: packs into a temporary directory, compares the fresh fingerprint with the pointer's and, when present, with `dist/SHA256SUMS`; prints `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` or fails with `STANDARD_PACK_DRIFT`. Running it in CI on the three operating systems (`parity` job, document 05) is the parity proof: if the bytes changed on any platform, the fingerprint would stop matching the pointer. The `standard:check` script in `package.json`, the alias of `standard:pack --check`, is what that job invokes.
+- `--check`: packs into a temporary directory, compares the fresh fingerprint with the pointer's and, when present, with `dist/SHA256SUMS`; prints `{ schemaVersion: 1, ok: true, sha256, tarSha256, pointerChecked: true, sumsChecked }` or fails with `STANDARD_PACK_DRIFT`, whose message includes the fresh tar fingerprint (`fresh tar sha256 …`) to tell whether the content or the compression drifted. Running it in CI on the three operating systems (`parity` job, document 05) is the parity proof: if the bytes changed on any platform, the fingerprint would stop matching the pointer. The `standard:check` script in `package.json`, the alias of `standard:pack --check`, is what that job invokes.
 
 | Exit | `code` | Situation |
 | --- | --- | --- |

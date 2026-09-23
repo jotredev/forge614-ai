@@ -8,11 +8,17 @@ import { crc32, wrapGzip } from "../modules/standard/gzip";
 import { PackSchema } from "../modules/standard/schemas";
 import { buildUstarArchive, tarMode, type TarEntry } from "../modules/standard/tar";
 
+// sha256 is the archive's fingerprint (the one forge614.node.json pins);
+// tarSha256 is the fingerprint of the uncompressed tar inside it. Together
+// they tell a parity failure apart: the same tarSha256 with a different
+// sha256 means the compressor moved bytes, a different tarSha256 means the
+// content or the tar headers did (line endings, member order, modes).
 export interface PackResult {
   schemaVersion: 1;
   version: string;
   archive: string;
   sha256: string;
+  tarSha256: string;
   entries: string[];
 }
 
@@ -86,10 +92,12 @@ export function packStandard(root: string, outDir: string): PackResult {
   const version = readFileSync(join(standardDir, "VERSION"), "utf8").trim();
 
   // Archive built entirely in memory: ustar headers with pinned metadata,
-  // raw DEFLATE from Bun's bundled zlib, and a constant gzip header, so the
-  // bytes (and the sha256) are the same on every operating system.
+  // raw DEFLATE from a pure-JavaScript compressor (fflate, exact version),
+  // and a constant gzip header, so the bytes (and the sha256) are the same
+  // on every operating system.
   const tarEntries = collectTarEntries(standardDir);
   const tar = buildUstarArchive(tarEntries);
+  const tarSha256 = sha256Hex(tar);
   const archiveBytes = wrapGzip(deflateRaw(tar), crc32(tar), tar.length);
 
   mkdirSync(outDir, { recursive: true });
@@ -102,5 +110,5 @@ export function packStandard(root: string, outDir: string): PackResult {
   const manifest = buildPackManifest(standardDir, version);
   writeTextAtomic(join(outDir, "pack-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  return { schemaVersion: 1, version, archive, sha256, entries: tarEntries.map((entry) => entry.path) };
+  return { schemaVersion: 1, version, archive, sha256, tarSha256, entries: tarEntries.map((entry) => entry.path) };
 }
