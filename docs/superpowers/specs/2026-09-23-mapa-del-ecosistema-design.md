@@ -76,6 +76,9 @@ Sin servidor ni marco de interfaz. El resultado de `map:build` es una carpeta es
 - **Engram:** una red de neuronas, con una esfera central unida por hilos a esferas más pequeñas, en rosa suave (`#d98ca0`).
 - **Plataforma:** una placa delgada que flota sobre el piso, sostenida por una columna, con una línea del color del nodo bajo su orilla.
 - **Tarjeta:** sin caja. Una línea pequeña en mayúsculas con la función (`NODO · LA MEMORIA`), en el color del nodo, sobre el nombre grande con letra de estilo clásico (serif).
+- **Tipografía del nombre:** Manrope, instalada dentro del proyecto (sin depender de internet).
+- **Fondo:** piso limpio con pocas pistas de circuito sueltas y muy tenues, y un destello de luz con estela corta que viaja por cada una, como datos moviéndose. Se anima a 30 cuadros por segundo como máximo y queda quieto si el sistema pide reducir movimiento.
+- **Rendimiento:** la escena se dibuja solo cuando algo cambia (cámara o fondo animado), las sombras se calculan una vez y no se usa oclusión ambiental.
 - **Descartado:** el estilo neón de plano técnico. El fondo y la luz se quedan como en la primera versión, y las referencias visuales nuevas solo suman detalles.
 
 ### 4.1 Distribución del ecosistema

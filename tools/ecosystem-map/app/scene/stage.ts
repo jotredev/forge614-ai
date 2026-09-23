@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { createFloor } from "./floor";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
 import { theme } from "./theme";
 
@@ -83,12 +84,8 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(120, 60, theme.floorLine, theme.floorLine);
-  grid.position.y = 0.01;
-  const gridMaterial = grid.material as THREE.Material;
-  gridMaterial.transparent = true;
-  gridMaterial.opacity = 0.5;
-  scene.add(grid);
+  const pattern = createFloor();
+  scene.add(pattern.mesh);
 
   let frame = 0;
   const draw = (): void => {
@@ -106,6 +103,27 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   };
 
   controls.addEventListener("change", () => invalidate());
+
+  // The animated floor ticks at most 30 times a second. People who ask the
+  // system for less motion get the still version.
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const FRAME_MS = 1000 / 30;
+  let ambient = 0;
+  let lastTick = 0;
+  const tick = (now: number): void => {
+    ambient = requestAnimationFrame(tick);
+    if (now - lastTick < FRAME_MS) return;
+    lastTick = now;
+    pattern.setTime(now / 1000);
+    invalidate();
+  };
+  const setAmbient = (on: boolean): void => {
+    if (on && !reducedMotion && ambient === 0) ambient = requestAnimationFrame(tick);
+    if (!on && ambient !== 0) {
+      cancelAnimationFrame(ambient);
+      ambient = 0;
+    }
+  };
 
   const resize = (): void => {
     const w = container.clientWidth;
@@ -126,8 +144,12 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   return {
     scene,
     invalidate,
-    start: () => invalidate({ shadows: true }),
+    start: () => {
+      setAmbient(true);
+      invalidate({ shadows: true });
+    },
     dispose: () => {
+      setAmbient(false);
       cancelAnimationFrame(frame);
       frame = 0;
       window.removeEventListener("resize", resize);

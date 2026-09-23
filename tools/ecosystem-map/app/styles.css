@@ -70,8 +70,9 @@ html, body {
 
 .node-card__name {
   margin-top: 4px;
-  font-family: var(--font-display);
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
   font-size: 26px;
+  font-weight: 600;
   color: var(--text);
 }
 

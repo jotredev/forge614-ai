@@ -1,7 +1,7 @@
 export const theme = {
   background: "#1b1e27",
   floor: "#232733",
-  floorLine: "#2e3342",
+  floorLine: "#5d7390",
   platformSide: "#1f222c",
   testPlatform: "#5b8f7b",
   cardBackground: "#262a36",

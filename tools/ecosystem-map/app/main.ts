@@ -1,3 +1,4 @@
+import "@fontsource-variable/manrope";
 import { fatalMessage } from "./fatal";
 import { createCard } from "./scene/card";
 import { createEngram } from "./scene/nodes/engram";
@@ -17,9 +18,11 @@ try {
   const engram = createEngram(platform.top - 0.2);
   const card = createCard({ name: "Engram", role: "La memoria", accent: ENGRAM_ACCENT });
   card.position.set(0, platform.top + 7, 0);
-
   stage.scene.add(platform.group, engram, card);
+
   stage.start();
+  // Labels measure their text, so draw again once the typeface has loaded.
+  void document.fonts.ready.then(() => stage.invalidate());
 } catch (error) {
   const message = document.createElement("pre");
   message.className = "fatal";
