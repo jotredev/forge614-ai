@@ -76,25 +76,6 @@ html, body {
   color: var(--text);
 }
 
-.node-card__status {
-  margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-}
-
-.node-card__status--alone::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #8fbf7a;
-  vertical-align: middle;
-}
-
 .fatal {
   margin: 80px auto;
   max-width: 560px;

@@ -32,13 +32,14 @@ const SESSION: Line[] = [
   { prefix: "›", prefixColor: "#e0b458", text: "preparando proyecto…" },
 ];
 
-// Typing rhythm of the terminal, shared so other scenes can time events to
-// it: characters per second, one full loop (typing plus a 4 s pause), and
-// the moment the "engram listo" line starts appearing.
+// Typing rhythm of the terminal, shared so the whole map follows it:
+// characters per second, one full loop (typing plus a pause while the
+// memories travel), and the moment "forge614 prepare" is entered.
 const TYPE_SPEED = 14;
 const TOTAL_CHARS = SESSION.reduce((sum, line) => sum + line.text.length, 0);
-export const SHELL_CYCLE = TOTAL_CHARS / TYPE_SPEED + 4;
-export const ENGRAM_READY_AT = SESSION[0]!.text.length / TYPE_SPEED;
+export const SHELL_CYCLE = TOTAL_CHARS / TYPE_SPEED + 7;
+export const PREPARE_ENTERED_AT = SESSION.slice(0, 4).reduce((sum, line) => sum + line.text.length, 0) / TYPE_SPEED;
+export const TYPED_AT = TOTAL_CHARS / TYPE_SPEED;
 
 type Terminal = { mesh: THREE.Mesh; update(seconds: number): void; isTyping(): boolean };
 

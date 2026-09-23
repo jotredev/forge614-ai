@@ -16,11 +16,15 @@ function solid(geometry: THREE.BufferGeometry, color: string, roughness: number,
   return mesh;
 }
 
-export function createPlatform(accent: string, size = 7.6): Platform {
+// `floating` leaves the column out, for a plate that hangs in the air.
+export function createPlatform(accent: string, floating = false, size = 7.6): Platform {
   const group = new THREE.Group();
 
-  const column = solid(new THREE.CylinderGeometry(0.35, 0.5, 1.4, 24), COLUMN, 0.6);
-  column.position.y = 0.7;
+  if (!floating) {
+    const column = solid(new THREE.CylinderGeometry(0.35, 0.5, 1.4, 24), COLUMN, 0.6);
+    column.position.y = 0.7;
+    group.add(column);
+  }
 
   const plate = solid(new RoundedBoxGeometry(size, 0.3, size, 4, 0.12), PLATE, 0.5);
   plate.position.y = 1.55;
@@ -28,6 +32,6 @@ export function createPlatform(accent: string, size = 7.6): Platform {
   const edge = solid(new RoundedBoxGeometry(size + 0.1, 0.06, size + 0.1, 2, 0.03), accent, 0.5);
   edge.position.y = 1.42;
 
-  group.add(column, plate, edge);
+  group.add(plate, edge);
   return { group, top: 1.7 };
 }

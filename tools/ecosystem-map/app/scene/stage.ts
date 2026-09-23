@@ -20,7 +20,9 @@ export type Stage = {
 
 // The scene is static, so it is drawn only when something changes (camera
 // moves, window resizes, the scene is edited) instead of 60 times a second.
-export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE): Stage {
+// `target` is the point the camera looks at, so the view can be framed on
+// what is shown.
+export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE, target = new THREE.Vector3()): Stage {
   const width = container.clientWidth;
   const height = container.clientHeight;
 
@@ -47,14 +49,17 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
 
   const frustum = frustumFor(width / height, viewSize);
   const camera = new THREE.OrthographicCamera(frustum.left, frustum.right, frustum.top, frustum.bottom, 0.1, 500);
-  camera.position.set(...isoOffset(CAMERA_DISTANCE));
-  camera.lookAt(0, 0, 0);
+  camera.position.set(...isoOffset(CAMERA_DISTANCE)).add(target);
+  camera.lookAt(target);
 
   // The label layer sits on top, so it is the element that receives input.
   const controls = new OrbitControls(camera, labels.domElement);
   controls.enableRotate = false;
   controls.enableDamping = true;
   controls.screenSpacePanning = true;
+  controls.target.copy(target);
+  // The wheel zooms toward what the pointer is on, to look at details.
+  controls.zoomToCursor = true;
   controls.minZoom = ZOOM_LIMITS.min;
   controls.maxZoom = ZOOM_LIMITS.max;
   controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };

@@ -1,22 +1,27 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { createCharacter } from "../character";
+import { RECALL_LEAVES, RECALL_LOOKUP, SAVE_ARRIVES, STORE_TIME, since } from "../timeline";
 
-// Engram seen from afar: "la memoria", as a vault saving a memory. A person
-// takes a glowing memory card and slides it into a slot of a server rack;
-// the slot flashes, a pulse of light rises from the rack into the neuron
-// hologram above it, and the hologram brightens: the memory is saved. Then
-// it starts again with a new card.
+// Engram seen from afar: "la memoria", as a vault that works on its own,
+// on the map's shared clock. When Shell asks, the neuron hologram glows and
+// a pulse goes down the server rack and out through the fiber cable. When
+// Shell saves, the memory comes in at the foot of the rack, a pulse rises
+// into the hologram, and the hologram brightens: the memory is saved.
 
-export type EngramNode = { group: THREE.Group; update(seconds: number): void };
+export type EngramNode = {
+  group: THREE.Group;
+  // Where incoming memories plug in, relative to the node's center.
+  inlet: THREE.Vector3;
+  // Where recalled memories leave for Shell, relative to the node's center.
+  outlet: THREE.Vector3;
+  update(seconds: number): void;
+};
+type Hologram = { group: THREE.Group; update(seconds: number): void; flash(amount: number): void };
 
 const ENGRAM = "#d98ca0";
 const ENGRAM_LIGHT = "#f3b7c6";
 // Planes face +z by default; this turns them toward the isometric camera.
 const FACE_CAMERA = Math.PI / 4;
-// Seconds for one saved memory; each cycle starts as the card is taken, so
-// other scenes can hand a card over at the start of a cycle.
-export const SAVE_CYCLE = 5;
 
 function solid(geometry: THREE.BufferGeometry, color: string, roughness = 0.6, metalness = 0.1): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness, metalness }));
@@ -49,7 +54,7 @@ function glowSprite(color: string, opacity: number, size: number): THREE.Sprite 
 
 // The neuron network as a hologram: glowing translucent spheres and threads,
 // a soft halo, slow rotation, and pulses traveling along the threads.
-function neuronHologram(scale: number): EngramNode & { flash(amount: number): void } {
+function neuronHologram(scale: number): Hologram {
   const group = new THREE.Group();
   const spin = new THREE.Group();
   group.add(spin);
@@ -142,75 +147,65 @@ export function createEngram(top: number): EngramNode {
     }
   }
 
-  // The slot the card goes into, with a flash when it lands.
-  const slotY = top + 2.25;
-  const slotMouth = solid(new THREE.BoxGeometry(0.46, 0.06, 0.05), "#0b0e13", 0.6);
-  slotMouth.position.set(-0.35, slotY, 0.4);
-  const slotFlash = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.9, 0.5),
-    new THREE.MeshBasicMaterial({ map: glowTexture(), color: ENGRAM_LIGHT, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
-  );
-  slotFlash.position.set(-0.35, slotY, 0.45);
-  face.add(slotMouth, slotFlash);
+  // Two ports at the foot of the rack, on the side facing Shell: the inlet
+  // where saved memories come in, and the outlet where recalled memories
+  // leave. Each has its own cable and flashes when a memory goes through.
+  const port = (z: number): { at: THREE.Vector3; flash: THREE.Sprite } => {
+    const at = new THREE.Vector3(-0.93, top + 0.45, z);
+    const mouth = solid(new THREE.BoxGeometry(0.06, 0.3, 0.3), "#0b0e13", 0.6);
+    mouth.position.copy(at);
+    const flash = glowSprite(ENGRAM_LIGHT, 0, 1.2);
+    flash.position.copy(at).add(new THREE.Vector3(-0.1, 0, 0));
+    face.add(mouth, flash);
+    return { at, flash };
+  };
+  const { at: inletAt, flash: inletFlash } = port(-0.6);
+  const { at: outletAt, flash: outletFlash } = port(0.05);
 
-  // The memory card: a glowing pink card with a soft halo, big enough to
-  // read from the overview.
-  const card = new THREE.Group();
-  card.add(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.3), new THREE.MeshBasicMaterial({ color: ENGRAM_LIGHT })));
-  card.add(glowSprite(ENGRAM, 0.8, 1.1));
-  face.add(card);
-
-  // The pulse that rises from the rack into the hologram.
+  // The pulse that rises through the rack into the hologram.
   const pulse = glowSprite(ENGRAM_LIGHT, 0, 0.7);
   face.add(pulse);
 
   const hologram = neuronHologram(1.05);
   hologram.group.position.set(0, top + 4.6, -0.3);
 
-  // The person stands beside the rack, in profile to the camera, so the near
-  // arm, the card and the slot are in view instead of their back.
-  const slotIn = new THREE.Vector3(-0.35, slotY, 0.36);
-  const stand = new THREE.Vector3(-1.6, top, 0.65);
-  const person = createCharacter(ENGRAM, "inserting");
-  person.group.scale.setScalar(1.5);
-  person.group.position.copy(stand);
-  person.group.rotation.y = Math.atan2(slotIn.x - stand.x, slotIn.z - stand.z);
-
-  face.add(hologram.group, person.group);
+  face.add(hologram.group);
   face.rotation.y = FACE_CAMERA;
   group.add(face);
 
-  // The card starts at the person's hand, at waist height, a little ahead.
-  const toSlot = new THREE.Vector3(slotIn.x - stand.x, 0, slotIn.z - stand.z).normalize();
-  const handLow = stand.clone().addScaledVector(toSlot, 0.45).setY(top + 1.45);
   const rackTop = new THREE.Vector3(0, top + rackHeight, -0.3);
   const hologramCenter = new THREE.Vector3(0, top + 4.6, -0.3);
 
   return {
     group,
+    inlet: inletAt.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),
+    outlet: outletAt.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),
     update: (seconds) => {
-      const t = (seconds % SAVE_CYCLE) / SAVE_CYCLE;
-      // 0.05-0.35 lift the card; 0.35-0.50 slide it in; 0.50-0.62 flash;
-      // 0.55-0.80 pulse rises; 0.78-0.95 hologram glows; then rest.
-      const lift = ramp(t, 0.05, 0.35);
-      const slide = ramp(t, 0.35, 0.5);
-      const reach = t < 0.55 ? lift : 1 - ramp(t, 0.55, 0.75);
-      person.update(seconds, false, reach);
+      // Recall: Shell asked, so the hologram glows and a pulse goes down
+      // to the inlet, leaving through the cable as RECALL_LEAVES.
+      const lookup = since(seconds, RECALL_LEAVES - RECALL_LOOKUP);
+      const down = lookup >= 0 && lookup < RECALL_LOOKUP ? ramp(lookup, 0.2, RECALL_LOOKUP) : -1;
+      // Save: a memory arrives from Shell, the inlet flashes, a pulse rises
+      // into the hologram, and the hologram glows: the memory is saved.
+      const stored = since(seconds, SAVE_ARRIVES);
+      const up = stored >= 0 && stored < STORE_TIME * 0.6 ? ramp(stored, 0.1, STORE_TIME * 0.6) : -1;
 
-      card.visible = t < 0.5;
-      card.position.copy(handLow).lerp(slotIn, lift * 0.85 + slide * 0.15);
-      card.rotation.x = -lift * 1.2;
+      const fade = (at: number, length: number): number => (at >= 0 && at < length ? 1 - at / length : 0);
+      inletFlash.material.opacity = fade(stored, 0.6) * 0.9;
+      outletFlash.material.opacity = Math.max(down >= 0 ? down : 0, fade(lookup - RECALL_LOOKUP, 0.4)) * 0.9;
 
-      const flash = t >= 0.5 && t < 0.62 ? 1 - (t - 0.5) / 0.12 : 0;
-      (slotFlash.material as THREE.MeshBasicMaterial).opacity = flash * 0.9;
-
-      const rise = ramp(t, 0.55, 0.8);
-      pulse.visible = t >= 0.55 && t < 0.82;
-      pulse.position.copy(slotIn).lerp(rackTop, Math.min(rise * 2, 1)).lerp(hologramCenter, Math.max(rise * 2 - 1, 0));
+      // Along the rack: 0 = the port, 1 = hologram.
+      const height = down >= 0 ? 1 - down : up;
+      pulse.visible = height >= 0;
+      pulse.position
+        .copy(down >= 0 ? outletAt : inletAt)
+        .lerp(rackTop, Math.min(height * 2, 1))
+        .lerp(hologramCenter, Math.max(height * 2 - 1, 0));
       pulse.material.opacity = pulse.visible ? 0.9 : 0;
 
-      const glow = t >= 0.78 && t < 0.95 ? Math.sin(((t - 0.78) / 0.17) * Math.PI) : 0;
-      hologram.flash(glow);
+      const bump = (at: number, from: number, length: number): number =>
+        at >= from && at < from + length ? Math.sin(((at - from) / length) * Math.PI) : 0;
+      hologram.flash(Math.max(bump(lookup, 0, 0.5), bump(stored, STORE_TIME * 0.55, STORE_TIME * 0.45)));
       hologram.update(seconds);
 
       lights.forEach((light, i) => {
