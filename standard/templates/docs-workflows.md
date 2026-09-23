@@ -13,6 +13,8 @@
 | `build` | tag `v*` | `bun run build:target`, `bun run smoke:target` en macOS arm64/x64, Linux arm64/x64, Windows x64 | artefactos por plataforma | ~8 min |
 | `publish` | tras `build` | `bun run release:publish` | release con binarios y `SHA256SUMS` | ~1 min |
 
+Todo job declara `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10): ninguna etapa queda sin límite y `bun run workflows:check` rechaza el job que no lo lleva.
+
 **Precondición de `release.yml`:** un nodo con dependencias `file:../` a repositorios hermanos en su `package.json` no puede adoptar esta plantilla; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría contra esa dependencia de ruta. Se sustituye por la versión publicada del nodo hermano antes de adoptar la plantilla.
 
 ## Ejecutar en local

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-const LowercaseTerm = z.string().min(1).regex(/^[^A-Z]*$/, "must be lowercase");
+// \p{Lu} covers every Unicode uppercase letter, not only A-Z, so a term such
+// as "Ñandú" is rejected the same way "Vendor" is.
+const LowercaseTerm = z.string().min(1).regex(/^\P{Lu}*$/u, "must be lowercase");
 
 export const ForbiddenMentionsSchema = z
   .object({

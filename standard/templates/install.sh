@@ -24,13 +24,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$UNINSTALL" = "1" ]; then
-  if [ -x "$LAUNCHER" ]; then "$LAUNCHER" uninstall --self || die "node refused to uninstall its integrations; nothing removed"; fi
-  rm -rf "$NODE_HOME"
-  log "removed $NODE_HOME"
-  exit 0
-fi
-
 # Migración de instalaciones anteriores al estándar: instalación plana ($BIN_DIR/forge614-<node> como
 # binario real, sin prefijo versionado) y bloques PATH marcados en los perfiles de shell. Un nodo alineado
 # nunca edita PATH: solo forge614-ai crea el comando global. El perfil se respalda antes de tocarlo.
@@ -44,16 +37,30 @@ remove_path_block() {
   awk -v b="$MARK_BEGIN" -v e="$MARK_END" '$0==b{skip=1;next} $0==e{skip=0;next} !skip' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
   log "removed legacy PATH block from $file (backup kept next to it)"
 }
+remove_legacy_path_blocks() {
+  local f
+  for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile" "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"; do remove_path_block "$f"; done
+  [ -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && [ ! -s "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && rm -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"
+  return 0
+}
 migrate_legacy_install() {
   if [ -f "$LAUNCHER" ] && [ ! -L "$LAUNCHER" ]; then
     local legacy="$NODE_HOME/legacy-$(date +%Y%m%d%H%M%S)"
     mkdir -p "$legacy" && mv "$LAUNCHER" "$legacy/forge614-$NODE_NAME"
     log "moved flat install to $legacy (kept until the new version verifies)"
   fi
-  for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile" "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"; do remove_path_block "$f"; done
-  [ -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && [ ! -s "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish" ] && rm -f "$HOME/.config/fish/conf.d/forge614-$NODE_NAME.fish"
-  return 0
+  remove_legacy_path_blocks
 }
+
+# Desinstalación simétrica: integraciones primero, luego los bloques PATH que una instalación plana
+# anterior pudo dejar en los perfiles, y por último solo el directorio del nodo (nunca ~/.forge614/).
+if [ "$UNINSTALL" = "1" ]; then
+  if [ -x "$LAUNCHER" ]; then "$LAUNCHER" uninstall --self || die "node refused to uninstall its integrations; nothing removed"; fi
+  remove_legacy_path_blocks
+  rm -rf "$NODE_HOME"
+  log "removed $NODE_HOME"
+  exit 0
+fi
 
 platform() {
   local os arch
@@ -64,7 +71,7 @@ platform() {
 
 resolve_version() {
   # Sin Node ni Python: la API de releases devuelve "tag_name": "vX.Y.Z"; se extrae con sed.
-  curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest" \
+  curl -fsSL --proto '=https' --tlsv1.2 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest" \
     | sed -n 's/.*"tag_name": *"v\([0-9][0-9.]*\)".*/\1/p' | head -n1
 }
 

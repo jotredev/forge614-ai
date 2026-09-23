@@ -36,6 +36,14 @@ test("fails on stale revalidate and invalid schema", () => {
   expect(validateSupportMatrix(treeFrom({ "standard/support-matrix.json": "{}" }), opts("2026-09-22"))[0]?.verdict).toBe("fail");
 });
 
+test("a support-matrix.json that is not valid JSON is a fail finding, not a throw", () => {
+  const [finding] = validateSupportMatrix(treeFrom({ "standard/support-matrix.json": "{ not json" }), opts("2026-09-22"));
+  expect(finding?.verdict).toBe("fail");
+  expect(finding?.messageKey).toBe("dataFileInvalidJson");
+  expect(finding?.evidence).toHaveLength(1);
+  expect(finding?.evidence[0]).toStartWith("standard/support-matrix.json: invalid JSON: ");
+});
+
 test("fails when standard/support-matrix.json is missing", () => {
   const f = validateSupportMatrix(treeFrom({}), opts("2026-09-22"))[0];
   expect(f?.verdict).toBe("fail");

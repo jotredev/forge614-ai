@@ -1,24 +1,40 @@
 import { resolve } from "node:path";
+import { z } from "zod";
+import { repoRoot } from "../../app/repo";
 import { schemasDrift, writeJsonSchemas } from "../../app/write-json-schemas";
-import { printError, printJson } from "./output";
+import { issuesOf, parseFlags } from "./args";
+import { printError, printJson, runCli } from "./output";
+import { printVersionIfRequested } from "./version";
 
-const argv = process.argv.slice(2);
-const outDir = resolve(import.meta.dir, "../../../standard/schemas");
+const USAGE = "schemas-generate [--check]";
+const OUT_DIR = resolve(repoRoot, "standard/schemas");
 
-if (argv.includes("--help")) {
-  printJson({ schemaVersion: 1, usage: "schemas-generate [--check]" });
-  process.exit(0);
-}
+const Args = z.object({ help: z.literal(true).optional(), check: z.literal(true).optional() }).strict();
 
-if (argv.includes("--check")) {
-  const drifted = schemasDrift(outDir);
-  if (drifted.length > 0) {
-    printError("SCHEMAS_DRIFT", `standard/schemas is out of date; run 'bun run schemas:generate': ${drifted.join(", ")}`);
-    process.exit(1);
+function main(argv: string[]): number {
+  if (printVersionIfRequested(argv)) return 0;
+  const parsed = Args.safeParse(parseFlags(argv));
+  if (!parsed.success) {
+    printError("INVALID_ARGUMENTS", issuesOf(parsed.error));
+    return 2;
   }
-  printJson({ schemaVersion: 1, ok: true });
-  process.exit(0);
+  if (parsed.data.help) {
+    printJson({ schemaVersion: 1, usage: USAGE });
+    return 0;
+  }
+
+  if (parsed.data.check) {
+    const drifted = schemasDrift(OUT_DIR);
+    if (drifted.length > 0) {
+      printError("SCHEMAS_DRIFT", `standard/schemas is out of date; run 'bun run schemas:generate': ${drifted.join(", ")}`);
+      return 1;
+    }
+    printJson({ schemaVersion: 1, ok: true });
+    return 0;
+  }
+
+  printJson({ schemaVersion: 1, written: writeJsonSchemas(OUT_DIR) });
+  return 0;
 }
 
-const written = writeJsonSchemas(outDir);
-printJson({ schemaVersion: 1, written });
+process.exit(runCli("SCHEMAS_GENERATE_FAILED", () => main(process.argv.slice(2))));

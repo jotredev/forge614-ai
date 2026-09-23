@@ -1,7 +1,7 @@
 # 0025 — Contrato del ecosistema v2
 
 **Fecha:** 2026-09-22
-**Estado:** propuesta
+**Estado:** aceptada
 **Sesión:** forge614-ai-bd590adc-2026-09-21
 
 ## Contexto

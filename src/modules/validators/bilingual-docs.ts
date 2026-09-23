@@ -10,8 +10,20 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["standard/FORGE614_ECOSYSTEM_CONTRACT.md", "standard/FORGE614_ECOSYSTEM_CONTRACT.en.md"],
 ];
 
+// A line inside a fenced code block (``` ... ```) is never a heading, even
+// when it starts with '#': shell comments and sample Markdown in the docs
+// would otherwise be counted and break the es/en parity check.
 function headingLines(text: string): string[] {
-  return text.split("\n").filter((l) => /^#{1,6}\s/.test(l));
+  const out: string[] = [];
+  let fenced = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (!fenced && /^#{1,6}\s/.test(line)) out.push(line);
+  }
+  return out;
 }
 
 function headings(text: string): number {

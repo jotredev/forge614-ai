@@ -119,6 +119,8 @@ During first-time memory initialization, Engram needs only these decisions:
 | Creating or selecting projects | Not part of initialization |
 | Writing `.forge614/project.json` when binding a project | Always, silent and idempotent |
 
+Binding a project (writing `.forge614/project.json`) happens after `init`, when a project is created or selected: binding is not initializing.
+
 ## 7. Forge614 Atlas
 
 Atlas is the deep-contextualization orchestrator. It works behind Engram; it is neither the memory store nor the visual workspace. Plans 1–5 implemented, v1.0.0 published; optional initial project contextualization.

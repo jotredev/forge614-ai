@@ -13,7 +13,7 @@
       "items": {
         "type": "string",
         "minLength": 1,
-        "pattern": "^[^A-Z]*$"
+        "pattern": "^\\P{Lu}*$"
       }
     },
     "excludePaths": {

@@ -4,7 +4,7 @@
 
 ## What `bun run verify` checks
 
-`bun run verify [--locale es|en] [--today YYYY-MM-DD]` runs in two stages over this repository. First, five steps in order; if one fails, it stops with `VERIFY_STEP_FAILED` and exit `1`:
+`bun run verify [--locale es|en] [--today YYYY-MM-DD]` runs in two stages over this repository. First, six steps in order; if one fails, it stops with `VERIFY_STEP_FAILED` and exit `1`:
 
 | Step | Command | What it ensures |
 | --- | --- | --- |
@@ -13,6 +13,7 @@
 | 3 | `bun run decisions:index --check` | `docs/decisions/INDEX.json` is up to date (`DECISIONS_INDEX_DRIFT` otherwise) |
 | 4 | `bun run workflows:check` | Thin, pinned and documented workflows (document 05) |
 | 5 | `bun run schemas:generate --check` | `standard/schemas/*.json` equal to the Zod schemas (`SCHEMAS_DRIFT` otherwise) |
+| 6 | `bun run notion-map:build --check` | `docs/notion-map.json` carries the current fingerprints of every document pair (`NOTION_MAP_DRIFT` otherwise) |
 
 Then `runValidators` (`src/app/run-validators.ts`) reads the repository tree (without `node_modules`, `dist`, `.git` or `.superpowers`) and runs the validators. A **validator** is a pure function over that tree that returns findings carrying the identifier of the rule it reports under:
 

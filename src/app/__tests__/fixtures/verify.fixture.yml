@@ -3,6 +3,7 @@ on: { pull_request: {} }
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11a390a9f2f37d3e4bb0e8a0a8bb
       - run: bun install --frozen-lockfile

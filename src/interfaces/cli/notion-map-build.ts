@@ -1,26 +1,20 @@
 import { resolve } from "node:path";
 import { z } from "zod";
-import { buildNotionMapForTree, NOTION_MAP_PATH, writeNotionMap } from "../../app/build-notion-map";
+import { buildNotionMapForTree, NOTION_MAP_PATH, notionMapIsCurrent, writeNotionMap } from "../../app/build-notion-map";
 import { readRepoTree, repoRoot } from "../../app/repo";
-import { printError, printJson } from "./output";
+import { issuesOf, parseFlags } from "./args";
+import { printError, printJson, runCli } from "./output";
+import { printVersionIfRequested } from "./version";
 
-const USAGE = "notion-map-build";
+const USAGE = "notion-map-build [--check]";
 
-const Args = z.object({ help: z.literal(true).optional() }).strict();
-
-// Every argument becomes a key so the strict schema rejects anything it does
-// not know: a misspelled flag or a stray positional argument fails loudly
-// instead of being ignored.
-function parseArgs(argv: string[]): Record<string, true> {
-  const out: Record<string, true> = {};
-  for (const arg of argv) out[arg.startsWith("--") ? arg.slice(2) : arg] = true;
-  return out;
-}
+const Args = z.object({ help: z.literal(true).optional(), check: z.literal(true).optional() }).strict();
 
 function main(argv: string[]): number {
-  const parsed = Args.safeParse(parseArgs(argv));
+  if (printVersionIfRequested(argv)) return 0;
+  const parsed = Args.safeParse(parseFlags(argv));
   if (!parsed.success) {
-    printError("INVALID_ARGUMENTS", parsed.error.issues.map((issue) => (issue.path.length > 0 ? `${issue.path.join(".")}: ${issue.message}` : issue.message)).join("; "));
+    printError("INVALID_ARGUMENTS", issuesOf(parsed.error));
     return 2;
   }
   if (parsed.data.help) {
@@ -28,19 +22,20 @@ function main(argv: string[]): number {
     return 0;
   }
 
-  const map = buildNotionMapForTree(readRepoTree());
+  const tree = readRepoTree();
+  if (parsed.data.check) {
+    if (!notionMapIsCurrent(tree)) {
+      printError("NOTION_MAP_DRIFT", `${NOTION_MAP_PATH} is out of date; run 'bun run notion-map:build'`);
+      return 1;
+    }
+    printJson({ schemaVersion: 1, ok: true, path: NOTION_MAP_PATH });
+    return 0;
+  }
+
+  const map = buildNotionMapForTree(tree);
   writeNotionMap(map, resolve(repoRoot, NOTION_MAP_PATH));
   printJson({ schemaVersion: 1, path: NOTION_MAP_PATH, pages: map.pages.length });
   return 0;
 }
 
-// Any unexpected failure (invalid previous map, unreadable package.json,
-// write error) leaves through the error envelope, never as a raw stack trace.
-let exitCode: number;
-try {
-  exitCode = main(process.argv.slice(2));
-} catch (error) {
-  printError("NOTION_MAP_FAILED", error instanceof Error ? error.message : String(error));
-  exitCode = 1;
-}
-process.exit(exitCode);
+process.exit(runCli("NOTION_MAP_FAILED", () => main(process.argv.slice(2))));

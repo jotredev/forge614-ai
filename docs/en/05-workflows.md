@@ -8,10 +8,10 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 
 | Job | Trigger | What it runs | What it validates | Expected duration |
 | --- | --- | --- | --- | --- |
-| `verify` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run verify` on `ubuntu-24.04` | typecheck, tests, decisions index, workflows, schemas and standard validators (document 04) | ~3 min |
+| `verify` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run verify` on `ubuntu-24.04` | typecheck, tests, decisions index, workflows, schemas, Notion map and standard validators (document 04) | ~3 min |
 | `parity` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run standard:check` on the matrix `ubuntu-24.04`, `macos-15`, `windows-2025` | that the standard archive has, on the three operating systems, the same fingerprint as `forge614.node.json`: the bytes are identical on Linux, macOS and Windows (record 0018) | ~2 min per system |
 
-`standard:check` is the script alias of `bun run standard:pack --check` (document 04); the workflows validator only accepts `bun run <script>` steps without arguments, which is why the job does not invoke the flag directly.
+`standard:check` is the script alias of `bun run standard:pack --check` (document 04); the workflows validator only accepts `bun run <script>` steps without arguments, which is why the job does not invoke the flag directly. Every job declares `timeout-minutes` (`verify` and `parity`: 10; `build`: 20; `publish`: 10): no stage runs without a limit and `workflows:check` rejects a job that lacks it.
 
 ## `release.yml`
 
@@ -26,7 +26,7 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 
 ## Validating before integrating
 
-`bun run workflows:check` reads every YAML in `.github/workflows/`, validates it against `WorkflowSchema` (unknown fields are an error), requires every `uses` to be pinned to a 40-character hexadecimal SHA, every `run` to be `bun install --frozen-lockfile`, `bun test` or `bun run <script>` with a script that exists in `package.json`, and every job to appear in the first column of the tables in this document (it looks for the rows under a header starting with `| Job |`). It prints `{ schemaVersion: 1, verdict, findings }` and exits with `1` if the verdict is not `pass`. It is part of `bun run verify`. With no files in `.github/workflows/` it reports `pass` with "no workflows to validate".
+`bun run workflows:check` reads every YAML in `.github/workflows/`, validates it against `WorkflowSchema` (unknown fields are an error and `timeout-minutes` is mandatory in every job), requires every `uses` to be pinned to a 40-character hexadecimal SHA, every `run` to be `bun install --frozen-lockfile`, `bun test` or `bun run <script>` with a script that exists in `package.json`, and every job to appear in the first column of the tables in this document (it looks for the rows under a header starting with `| Job |`). It prints `{ schemaVersion: 1, verdict, findings }` and exits with `1` if the verdict is not `pass`. It is part of `bun run verify`. With no files in `.github/workflows/` it reports `pass` with "no workflows to validate".
 
 ## Running locally
 

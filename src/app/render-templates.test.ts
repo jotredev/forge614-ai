@@ -7,6 +7,11 @@ import { run } from "../infrastructure/process";
 import { placeholdersOf } from "../modules/standard/template";
 import { renderNodeFiles } from "./render-templates";
 
+// `bash` is not available on a default Windows runner: the tests that run
+// the rendered install.sh through it are skipped there with a reason.
+const onWindows = process.platform === "win32";
+const WINDOWS_REASON = onWindows ? " (skipped: bash is not available on Windows)" : "";
+
 const vars = { NODE_NAME: "demo", NODE_TITLE: "Demo", REPO: "jotredev/forge614-demo", ASSET_PREFIX: "forge614-demo", STANDARD_VERSION: "1.0.0" };
 
 test("renders every template with no placeholder left and expected destinations", () => {
@@ -33,14 +38,14 @@ test("renders every template with no placeholder left and expected destinations"
   expect(files["install.sh"]).toContain('NODE_NAME="demo"');
 });
 
-test("rendered install.sh passes bash -n", () => {
+test.skipIf(onWindows)(`rendered install.sh passes bash -n${WINDOWS_REASON}`, () => {
   const files = renderNodeFiles(readTree("standard/templates"), vars);
   const dir = mkdtempSync(join(tmpdir(), "render-"));
   writeFileSync(join(dir, "install.sh"), files["install.sh"] ?? "");
   expect(run(["bash", "-n", join(dir, "install.sh")]).exitCode).toBe(0);
 });
 
-test("install.sh migrates a flat install and removes the legacy PATH block with a backup", () => {
+test.skipIf(onWindows)(`install.sh migrates a flat install and removes the legacy PATH block with a backup${WINDOWS_REASON}`, () => {
   const files = renderNodeFiles(readTree("standard/templates"), vars);
   const home = mkdtempSync(join(tmpdir(), "home-"));
   const nodeHome = join(home, ".forge614", "demo");
@@ -54,10 +59,10 @@ test("install.sh migrates a flat install and removes the legacy PATH block with 
   // Only the migration part is executed: everything up to (not including) the
   // `platform()` function is the shared setup (vars, log/die, arg parsing,
   // the migration functions themselves) with no network calls. It is
-  // extracted into its own harness file and sourced directly (not through
-  // process substitution: `source <(...)` silently fails to define functions
-  // in the calling shell under the bash 3.2 that macOS ships, so a real file
-  // is used instead for a result that is correct on every bash).
+  // written to its own bash harness file and run with `bash <file>` (not
+  // through process substitution: `source <(...)` silently fails to define
+  // functions under the bash 3.2 that macOS ships, so a real file is used
+  // for a result that is correct on every bash).
   const platformIdx = installSh.split("\n").findIndex((l) => l.startsWith("platform()"));
   const setupAndMigration = installSh.split("\n").slice(0, platformIdx).join("\n");
   const harness = join(home, "migration-harness.sh");
@@ -68,6 +73,28 @@ test("install.sh migrates a flat install and removes the legacy PATH block with 
   expect(readdirSync(home).some((n) => n.startsWith(".zshrc.forge614-backup-"))).toBe(true);
   expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
   expect(readdirSync(nodeHome).some((n) => n.startsWith("legacy-"))).toBe(true);
+});
+
+test.skipIf(onWindows)(`install.sh --uninstall also removes the legacy PATH block a flat install left behind${WINDOWS_REASON}`, () => {
+  const files = renderNodeFiles(readTree("standard/templates"), vars);
+  const home = mkdtempSync(join(tmpdir(), "home-uninstall-"));
+  const nodeHome = join(home, ".forge614", "demo");
+  mkdirSync(nodeHome, { recursive: true });
+  writeFileSync(join(home, ".zshrc"), "export A=1\n# >>> forge614-demo PATH >>>\nexport PATH=\"$HOME/.forge614/demo/bin:$PATH\"\n# <<< forge614-demo PATH <<<\n");
+  const installSh = files["install.sh"] ?? "";
+  // The uninstall branch sits in the same setup slice (before `platform()`),
+  // so the harness is the setup itself and `--uninstall` is passed as a real
+  // argument to its argument parser; nothing after the branch runs.
+  const platformIdx = installSh.split("\n").findIndex((l) => l.startsWith("platform()"));
+  const setup = installSh.split("\n").slice(0, platformIdx).join("\n");
+  const harness = join(home, "uninstall-harness.sh");
+  writeFileSync(harness, `HOME='${home}'\nFORGE614_HOME='${home}/.forge614'\nexport HOME FORGE614_HOME\n${setup}\n`);
+  const r = run(["bash", harness, "--uninstall"]);
+  expect(r.exitCode, r.stderr).toBe(0);
+  expect(r.stderr).toContain("removed legacy PATH block");
+  expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("export A=1\n");
+  expect(existsSync(nodeHome)).toBe(false);
+  expect(existsSync(join(home, ".forge614"))).toBe(true);
 });
 
 // `pwsh` is not installed in every environment (it is not installed in the

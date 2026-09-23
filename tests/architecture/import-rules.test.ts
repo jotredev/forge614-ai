@@ -27,12 +27,34 @@ function layerOf(file: string): Layer {
   throw new Error(`file outside a known layer: ${file}`);
 }
 
-const IMPORT_RE = /^\s*(?:import|export)\s[^'"]*from\s+["']([^"']+)["']/gm;
+// Three shapes of module reference, each capturing the specifier in its own
+// group: `import/export ... from "x"` (including multi-line and `type`
+// imports), a side-effect `import "x"`, and a dynamic `import("x")`.
+const IMPORT_RE = /^\s*(?:import|export)\s[^'"]*?from\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/gm;
+
+function specifiersOf(text: string): string[] {
+  return [...text.matchAll(IMPORT_RE)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
 
 function importsOf(file: string): string[] {
-  const text = readFileSync(file, "utf8");
-  return [...text.matchAll(IMPORT_RE)].map((m) => m[1] ?? "");
+  return specifiersOf(readFileSync(file, "utf8"));
 }
+
+describe("IMPORT_RE", () => {
+  test("covers from-imports, re-exports, side-effect imports and dynamic import()", () => {
+    const sample = [
+      'import { a } from "./a";',
+      "import type { B } from './b';",
+      'export { c } from "./c";',
+      'export type { D } from "./d";',
+      'import "./side-effect";',
+      'const e = await import("./e");',
+      'import {\n  f,\n} from "./f";',
+      'const notAnImport = "from \'./x\'";',
+    ].join("\n");
+    expect(specifiersOf(sample)).toEqual(["./a", "./b", "./c", "./d", "./side-effect", "./e", "./f"]);
+  });
+});
 
 describe("layer import rules (spec §4.2)", () => {
   const files = walk(SRC);

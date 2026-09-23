@@ -36,6 +36,19 @@ test("catalog: manifest valid, folder = manifest.name, RULE.md + RULE.en.md, val
   );
 });
 
+test("catalog: a manifest.json that is not valid JSON is a fail finding, not a throw", () => {
+  const tree = treeFrom({
+    "standard/rules/forge614-rule-x/manifest.json": "{ not json",
+    "standard/rules/forge614-rule-x/RULE.md": "# r",
+    "standard/rules/forge614-rule-x/RULE.en.md": "# r",
+  });
+  const findings = validateRulesCatalog(tree);
+  const invalid = findings.find((f) => f.messageKey === "dataFileInvalidJson");
+  expect(invalid?.verdict).toBe("fail");
+  expect(invalid?.evidence).toHaveLength(1);
+  expect(invalid?.evidence[0]).toStartWith("standard/rules/forge614-rule-x/manifest.json: invalid JSON: ");
+});
+
 test("catalog: missing manifest.json is reported", () => {
   const tree = treeFrom({ "standard/rules/forge614-rule-z/RULE.md": "# r" });
   const f = validateRulesCatalog(tree)[0];
