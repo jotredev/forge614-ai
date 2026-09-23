@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.1.0",
+  "pages": [
+    {
+      "es": "docs/es/00-resumen-y-guia-rapida.md",
+      "en": "docs/en/00-summary-and-quickstart.md",
+      "sha256Es": "b12763bcbcfb93edc88d36bab5def4ff2c663e97dd81e564cce6c9a4d3e65453",
+      "sha256En": "9859bf9474609dd5bfff7bf9fa3aad84a688fc74095662a283cb8ed566719490",
+      "notionPageId": null
+    },
+    {
+      "es": "docs/es/01-estandar-de-nodo.md",
+      "en": "docs/en/01-node-standard.md",
+      "sha256Es": "d69b0ff671e46ade7380c299984eb4f3f4c9257c221bb7cab0476373c7e90185",
+      "sha256En": "1a8f6f962d5de73873a81c9913de9b49e72687a9c910ec8ecd12f9a1c1821cd4",
+      "notionPageId": null
+    },
+    {
+      "es": "docs/es/02-reglas-y-packs.md",
+      "en": "docs/en/02-rules-and-packs.md",
+      "sha256Es": "bcfc8c61f6151e03a1255e95e00ed87111befcd9bf8b5a0535241b8bd109adb3",
+      "sha256En": "62e2590cf31a961cd64d56e3fcc75a91c3294bbfed1274fde817a2a4999613ad",
+      "notionPageId": null
+    },
+    {
+      "es": "docs/es/03-plantillas-y-render.md",
+      "en": "docs/en/03-templates-and-rendering.md",
+      "sha256Es": "f8312cf750ee8f2ae310864e227f801e360146d920c4f16c6ba225454a8c7421",
+      "sha256En": "3bf920cd5a47b316e22b5d0bc109282784c3e7e94efc8473f13745511ca0d797",
+      "notionPageId": null
+    },
+    {
+      "es": "docs/es/04-verificacion-y-empaquetado.md",
+      "en": "docs/en/04-verification-and-packaging.md",
+      "sha256Es": "e65f65c8357df9486d9d8487b8d08e2995d74414ac91f6cee46569463df5e054",
+      "sha256En": "8baf38f2c2cab3736cf664968716fc7763e13058dd1a475083d19991d1377bb8",
+      "notionPageId": null
+    },
+    {
+      "es": "docs/es/05-workflows.md",
+      "en": "docs/en/05-workflows.md",
+      "sha256Es": "022d6260d2ffde1844b30dbccc1d7f779094527428dc48a8eaaa6866d0c6722a",
+      "sha256En": "6fbe85669f7aef6a50ffd9497530862520af83218c8051032af5aaccbd176266",
+      "notionPageId": null
+    }
+  ]
+}
