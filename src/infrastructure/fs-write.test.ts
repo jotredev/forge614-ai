@@ -34,3 +34,13 @@ test("overwrites an existing file atomically", () => {
   expect(existsSync(target)).toBe(true);
   expect(readFileSync(target, "utf8")).toBe("second");
 });
+
+test("writeBytesAtomic writes binary content verbatim and leaves no temp file behind", async () => {
+  const { writeBytesAtomic } = await import("./fs-write");
+  dir = mkdtempSync(join(tmpdir(), "fs-write-"));
+  const target = join(dir, "nested", "blob.bin");
+  const bytes = new Uint8Array([0x1f, 0x8b, 0x00, 0xff, 0x80, 0x7f]);
+  writeBytesAtomic(target, bytes);
+  expect(new Uint8Array(readFileSync(target))).toEqual(bytes);
+  expect(readdirSync(join(dir, "nested"))).toEqual(["blob.bin"]);
+});
