@@ -32,6 +32,14 @@ const SESSION: Line[] = [
   { prefix: "›", prefixColor: "#e0b458", text: "preparando proyecto…" },
 ];
 
+// Typing rhythm of the terminal, shared so other scenes can time events to
+// it: characters per second, one full loop (typing plus a 4 s pause), and
+// the moment the "engram listo" line starts appearing.
+const TYPE_SPEED = 14;
+const TOTAL_CHARS = SESSION.reduce((sum, line) => sum + line.text.length, 0);
+export const SHELL_CYCLE = TOTAL_CHARS / TYPE_SPEED + 4;
+export const ENGRAM_READY_AT = SESSION[0]!.text.length / TYPE_SPEED;
+
 type Terminal = { mesh: THREE.Mesh; update(seconds: number): void; isTyping(): boolean };
 
 // A terminal screen: a title bar with the three dots and the window name,
@@ -47,7 +55,6 @@ function typingTerminal(width: number, height: number, title: string): Terminal 
   texture.anisotropy = 4;
   const bar = 64;
   const lineHeight = 52;
-  const totalChars = SESSION.reduce((sum, line) => sum + line.text.length, 0);
   let lastKey = "";
   let typing = false;
 
@@ -96,9 +103,8 @@ function typingTerminal(width: number, height: number, title: string): Terminal 
     mesh,
     update: (seconds) => {
       // Type at a steady pace, hold the finished screen, then start over.
-      const cycle = totalChars / 14 + 4;
-      const typed = Math.min(totalChars, Math.floor((seconds % cycle) * 14));
-      typing = typed < totalChars;
+      const typed = Math.min(TOTAL_CHARS, Math.floor((seconds % SHELL_CYCLE) * TYPE_SPEED));
+      typing = typed < TOTAL_CHARS;
       const cursorOn = Math.floor(seconds * 1.8) % 2 === 0;
       const key = `${typed}:${cursorOn}`;
       if (key !== lastKey) {

@@ -76,6 +76,50 @@ html, body {
   color: var(--text);
 }
 
+.node-card__status {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.node-card__status--alone::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #8fbf7a;
+  vertical-align: middle;
+}
+
+/* What travels along a link, in the middle of its trace; hovering it shows
+   where the contract says so. */
+.link-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.link-label__source {
+  display: none;
+  font-size: 9px;
+  color: #6f7f93;
+}
+
+.link-label:hover .link-label__source { display: block; }
+
 .fatal {
   margin: 80px auto;
   max-width: 560px;
