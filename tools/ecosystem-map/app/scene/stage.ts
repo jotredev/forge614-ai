@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { createFloor } from "./floor";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
 import { theme } from "./theme";
 
@@ -13,6 +12,8 @@ export type Stage = {
   // Ask for a new frame after changing the scene. Pass `shadows` when
   // something moved, so the shadow map is recomputed too.
   invalidate(options?: { shadows?: boolean }): void;
+  // Run something on every animation tick (at most 30 times a second).
+  onTick(listener: (seconds: number) => void): void;
   start(): void;
   dispose(): void;
 };
@@ -84,9 +85,6 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const pattern = createFloor();
-  scene.add(pattern.object);
-
   let frame = 0;
   const draw = (): void => {
     frame = 0;
@@ -104,17 +102,18 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
 
   controls.addEventListener("change", () => invalidate());
 
-  // The animated floor ticks at most 30 times a second. People who ask the
-  // system for less motion get the still version.
+  // Animations tick at most 30 times a second. People who ask the system for
+  // less motion get the still version.
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const FRAME_MS = 1000 / 30;
+  const tickListeners: Array<(seconds: number) => void> = [];
   let ambient = 0;
   let lastTick = 0;
   const tick = (now: number): void => {
     ambient = requestAnimationFrame(tick);
     if (now - lastTick < FRAME_MS) return;
     lastTick = now;
-    pattern.setTime(now / 1000);
+    for (const listener of tickListeners) listener(now / 1000);
     invalidate();
   };
   const setAmbient = (on: boolean): void => {
@@ -144,6 +143,9 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   return {
     scene,
     invalidate,
+    onTick: (listener) => {
+      tickListeners.push(listener);
+    },
     start: () => {
       setAmbient(true);
       invalidate({ shadows: true });

@@ -72,8 +72,11 @@ function lineOf(points: THREE.Vector2[], opacity: number): THREE.Line {
 
 export type Floor = { object: THREE.Object3D; setTime(seconds: number): void };
 
-export function createFloor(): Floor {
+// Every node gets the same circuit around it; `phase` shifts its signal so
+// the lights of different nodes do not move in step.
+export function createFloor(center = new THREE.Vector2(0, 0), phase = 0): Floor {
   const group = new THREE.Group();
+  group.position.set(center.x, 0, center.y);
   const rand = random(614);
   const padGeometry = new THREE.RingGeometry(0.1, 0.17, 20);
   const padMaterial = new THREE.MeshBasicMaterial({ color: TRACE, transparent: true, opacity: BRANCH_OPACITY * 1.8 });
@@ -134,7 +137,7 @@ export function createFloor(): Floor {
 
   // The loop is closed, so the signal simply keeps going around it.
   const setTime = (seconds: number): void => {
-    const front = seconds * SPEED;
+    const front = seconds * SPEED + phase;
     for (let i = 0; i < TAIL_POINTS; i++) {
       const k = i / (TAIL_POINTS - 1);
       const p = pointAt(front - TAIL * (1 - k));
