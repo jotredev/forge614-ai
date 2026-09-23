@@ -3,8 +3,8 @@ import * as THREE from "three";
 // Floor decoration: one complete, connected circuit drawn very faintly. A
 // closed loop runs around the center with 45° corners like board traces,
 // branches leave it inward and outward ending in small pads, and an outer
-// ring fills the rest of the floor. A single light travels the loop without
-// ever stopping, leaving a short fading tail.
+// ring fills the rest of the floor. A single signal travels the loop without
+// ever stopping: a short stretch of the wire brightens and fades behind.
 
 const TRACE = new THREE.Color("#6b8cb3");
 const LIGHT = new THREE.Color("#b8dcff");
@@ -13,8 +13,9 @@ const LOOP_OPACITY = 0.09;
 const BRANCH_OPACITY = 0.07;
 const OUTER_OPACITY = 0.05;
 const SPEED = 3.2; // world units per second
-const TAIL = 4; // world units
-const TAIL_POINTS = 28;
+const TAIL = 5; // world units
+const TAIL_POINTS = 40;
+const SIGNAL_OPACITY = 0.45;
 const KEEP_CLEAR = 6.5; // nothing inside this radius, where the nodes stand
 
 // Small deterministic random generator, so the layout is the same on every
@@ -69,21 +70,6 @@ function lineOf(points: THREE.Vector2[], opacity: number): THREE.Line {
   return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: TRACE, transparent: true, opacity }));
 }
 
-function glowTexture(): THREE.Texture {
-  const size = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d")!;
-  const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.25, "rgba(255,255,255,0.55)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
-}
-
 export type Floor = { object: THREE.Object3D; setTime(seconds: number): void };
 
 export function createFloor(): Floor {
@@ -130,36 +116,31 @@ export function createFloor(): Floor {
     return loop[i - 1]!.clone().lerp(loop[i]!, span === 0 ? 0 : (d - lengths[i - 1]!) / span);
   };
 
-  // The traveling light: a comet of soft glowing dots, largest and brightest
-  // at the head and fading along the tail. Drawn over the floor so the glow
-  // is never cut by it.
-  const glow = glowTexture();
-  const comet = Array.from({ length: TAIL_POINTS }, (_, i) => {
+  // The traveling signal: the wire itself brightens along a short stretch
+  // and fades out behind, like current running through it. No glow blob.
+  const signalPositions = new Float32Array(TAIL_POINTS * 3);
+  const signalColors = new Float32Array(TAIL_POINTS * 4);
+  for (let i = 0; i < TAIL_POINTS; i++) {
     const k = i / (TAIL_POINTS - 1); // 0 at the end of the tail, 1 at the head
-    const sprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glow,
-        color: LIGHT,
-        transparent: true,
-        opacity: 0.85 * k * k,
-        depthTest: false,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    sprite.scale.setScalar(0.2 + k * k * 0.7);
-    sprite.renderOrder = 10;
-    group.add(sprite);
-    return { sprite, k };
-  });
+    signalColors.set([LIGHT.r, LIGHT.g, LIGHT.b, SIGNAL_OPACITY * k * k], i * 4);
+  }
+  const signalGeometry = new THREE.BufferGeometry();
+  signalGeometry.setAttribute("position", new THREE.BufferAttribute(signalPositions, 3));
+  signalGeometry.setAttribute("color", new THREE.BufferAttribute(signalColors, 4));
+  const signal = new THREE.Line(signalGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true }));
+  signal.frustumCulled = false;
+  signal.renderOrder = 1;
+  group.add(signal);
 
-  // The loop is closed, so the light simply keeps going around it.
+  // The loop is closed, so the signal simply keeps going around it.
   const setTime = (seconds: number): void => {
     const front = seconds * SPEED;
-    for (const { sprite, k } of comet) {
+    for (let i = 0; i < TAIL_POINTS; i++) {
+      const k = i / (TAIL_POINTS - 1);
       const p = pointAt(front - TAIL * (1 - k));
-      sprite.position.set(p.x, Y + 0.05, p.y);
+      signalPositions.set([p.x, Y + 0.005, p.y], i * 3);
     }
+    signalGeometry.attributes.position!.needsUpdate = true;
   };
 
   setTime(0);
