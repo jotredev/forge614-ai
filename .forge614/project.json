@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "42007e73-ab93-4b4e-9e1a-a699e48674c1",
+    "name": "forge614-ai"
+  },
+  "ecosystem": {
+    "id": "e0b3e1c9-ffbb-4b6b-8a55-79fbf3e8f0b4",
+    "name": "forge614"
+  }
+}
