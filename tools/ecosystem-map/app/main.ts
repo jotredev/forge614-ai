@@ -4,6 +4,7 @@ import { fatalMessage } from "./fatal";
 import { createCard } from "./scene/card";
 import { createFloor } from "./scene/floor";
 import { createEngram } from "./scene/nodes/engram";
+import { createShell } from "./scene/nodes/shell";
 import { createPlatform } from "./scene/platform";
 import { createStage } from "./scene/stage";
 
@@ -33,14 +34,21 @@ try {
     platform.group.position.set(center.x, 0, center.y);
     stage.scene.add(platform.group);
 
+    // Each node's signature object, so it reads before any label does.
     if (node.id === "engram") {
       const engram = createEngram(platform.top - 0.2);
       engram.position.set(center.x, 0, center.y);
       stage.scene.add(engram);
     }
+    if (node.id === "shell") {
+      const shell = createShell(platform.top);
+      shell.group.position.set(center.x, 0, center.y);
+      stage.scene.add(shell.group);
+      stage.onTick((seconds) => shell.update(seconds));
+    }
 
     const card = createCard({ name: node.name, role: node.role, accent: node.accent });
-    card.position.set(center.x, platform.top + 7, center.y);
+    card.position.set(center.x, platform.top + (node.id === "shell" ? 8.5 : 7), center.y);
     stage.scene.add(card);
   });
 

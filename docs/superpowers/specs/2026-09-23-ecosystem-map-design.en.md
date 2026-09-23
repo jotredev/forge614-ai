@@ -80,6 +80,8 @@ There is no server and no UI framework. `map:build` outputs a static folder that
 
 - **Each node is recognized by a signature object** that shows what it is without reading anything. From afar you see that object; up close, its real pieces.
 - **Engram:** a network of neurons, a central sphere joined by threads to smaller spheres, in soft pink (`#d98ca0`).
+- **Shell ("la terminal"):** a toy person seated on an office chair at a light wooden desk, with a keyboard, a mouse and a mug. Behind it, a holographic screen floats above a small projector and types real commands by itself (`forge614 status`, `forge614 prepare`); the person types while the screen types. Its color is soft blue (`#7fb2d9`).
+- **Each node has its own circuit** (the same floor pattern, with its own signal), and nodes sit far enough apart that the circuits do not overlap.
 - **Platform:** a thin plate floating above the floor, held by a column, with a line of the node's color under its edge.
 - **Card:** no box. A small uppercase line with the role (`NODO · LA MEMORIA`) in the node's color, above the large name in a classic serif typeface.
 - **Name typeface:** Manrope, bundled inside the project (no internet dependency).

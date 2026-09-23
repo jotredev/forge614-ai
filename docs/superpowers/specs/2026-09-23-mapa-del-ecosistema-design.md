@@ -74,6 +74,8 @@ Sin servidor ni marco de interfaz. El resultado de `map:build` es una carpeta es
 
 - **Cada nodo se reconoce por un objeto protagonista** que dice lo que es sin leer nada. De lejos se ve ese objeto; de cerca, sus piezas reales.
 - **Engram:** una red de neuronas, con una esfera central unida por hilos a esferas más pequeñas, en rosa suave (`#d98ca0`).
+- **Shell ("la terminal"):** una persona de juguete sentada en una silla de oficina frente a un escritorio de madera clara, con teclado, mouse y taza. Detrás, una pantalla holográfica flota sobre un pequeño proyector y escribe sola comandos reales (`forge614 status`, `forge614 prepare`); la persona teclea mientras la pantalla escribe. Su color es azul suave (`#7fb2d9`).
+- **Cada nodo tiene su propio circuito** (el mismo patrón del fondo, con su propia señal), y los nodos se separan lo suficiente para que los circuitos no se encimen.
 - **Plataforma:** una placa delgada que flota sobre el piso, sostenida por una columna, con una línea del color del nodo bajo su orilla.
 - **Tarjeta:** sin caja. Una línea pequeña en mayúsculas con la función (`NODO · LA MEMORIA`), en el color del nodo, sobre el nombre grande con letra de estilo clásico (serif).
 - **Tipografía del nombre:** Manrope, instalada dentro del proyecto (sin depender de internet).

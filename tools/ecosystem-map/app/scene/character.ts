@@ -1,0 +1,159 @@
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+
+// A toy-like person built from simple shapes: round head with hair, capsule
+// body and limbs. Used to show who works at each node. `update` receives
+// the time and whether the person is busy (typing), so hands move only
+// while there is something happening on screen.
+
+export type Pose = "typing" | "pointing";
+// Where a seated person sits, and whether they bring their own floating
+// keyboard (when there is no desk with one).
+export type Seating = { seat: "stool" | "chair"; ownKeyboard: boolean };
+export type Character = { group: THREE.Group; update(seconds: number, busy: boolean): void };
+
+const SKIN = "#e8b98f";
+const HAIR = "#2b2320";
+const PANTS = "#2f3542";
+const SEAT = "#3a4152";
+
+function part(geometry: THREE.BufferGeometry, color: string, roughness = 0.65): THREE.Mesh {
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness }));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// A limb hanging from a pivot, so it can swing around its joint.
+function limb(length: number, radius: number, color: string): { pivot: THREE.Group; tip: THREE.Group } {
+  const pivot = new THREE.Group();
+  const mesh = part(new THREE.CapsuleGeometry(radius, length, 6, 12), color);
+  mesh.position.y = -length / 2;
+  const tip = new THREE.Group();
+  tip.position.y = -length - radius;
+  pivot.add(mesh, tip);
+  return { pivot, tip };
+}
+
+// An office chair: seat, backrest, gas post and a five-spoke base with
+// small wheels.
+function officeChair(seatHeight: number): THREE.Group {
+  const chair = new THREE.Group();
+  const seat = part(new RoundedBoxGeometry(0.72, 0.1, 0.66, 3, 0.05), SEAT, 0.55);
+  seat.position.y = seatHeight;
+  const back = part(new RoundedBoxGeometry(0.66, 0.7, 0.08, 3, 0.04), SEAT, 0.55);
+  back.position.set(0, seatHeight + 0.45, -0.34);
+  back.rotation.x = -0.12;
+  const post = part(new THREE.CylinderGeometry(0.04, 0.04, seatHeight - 0.12, 10), "#8a93a6", 0.3);
+  post.position.y = (seatHeight - 0.12) / 2 + 0.08;
+  chair.add(seat, back, post);
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
+    const spoke = part(new THREE.BoxGeometry(0.05, 0.04, 0.38), "#8a93a6", 0.3);
+    spoke.position.set(Math.sin(angle) * 0.19, 0.1, Math.cos(angle) * 0.19);
+    spoke.rotation.y = angle;
+    const wheel = part(new THREE.SphereGeometry(0.05, 10, 8), "#1b1f29", 0.5);
+    wheel.position.set(Math.sin(angle) * 0.38, 0.05, Math.cos(angle) * 0.38);
+    chair.add(spoke, wheel);
+  }
+  return chair;
+}
+
+export function createCharacter(
+  shirt: string,
+  pose: Pose,
+  seating: Seating = { seat: "stool", ownKeyboard: true },
+): Character {
+  const group = new THREE.Group();
+  const seated = pose === "typing";
+  const hip = seated ? 0.62 : 1.02;
+
+  // Legs: bent over a stool when seated, straight when standing.
+  if (seated) {
+    if (seating.seat === "chair") {
+      group.add(officeChair(0.5));
+    } else {
+      const stool = part(new THREE.CylinderGeometry(0.34, 0.3, 0.08, 24), SEAT, 0.5);
+      stool.position.y = 0.5;
+      const leg = part(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 10), SEAT);
+      leg.position.y = 0.25;
+      group.add(stool, leg);
+    }
+    for (const side of [-1, 1]) {
+      const thigh = part(new THREE.CapsuleGeometry(0.1, 0.34, 6, 10), PANTS);
+      thigh.rotation.x = Math.PI / 2;
+      thigh.position.set(side * 0.13, hip, 0.22);
+      const shin = part(new THREE.CapsuleGeometry(0.09, 0.4, 6, 10), PANTS);
+      shin.position.set(side * 0.13, hip - 0.3, 0.42);
+      group.add(thigh, shin);
+    }
+  } else {
+    for (const side of [-1, 1]) {
+      const leg = part(new THREE.CapsuleGeometry(0.1, 0.72, 6, 10), PANTS);
+      leg.position.set(side * 0.13, 0.46, 0);
+      group.add(leg);
+    }
+  }
+
+  const body = part(new THREE.CapsuleGeometry(0.27, 0.42, 8, 16), shirt);
+  body.position.y = hip + 0.38;
+  const neck = part(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 10), SKIN);
+  neck.position.y = hip + 0.86;
+  const head = part(new THREE.SphereGeometry(0.3, 24, 18), SKIN);
+  head.position.y = hip + 1.1;
+  // Hair: a cap over the top and back of the head.
+  const hair = part(new THREE.SphereGeometry(0.315, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58), HAIR, 0.8);
+  hair.position.y = hip + 1.12;
+  hair.rotation.x = -0.35;
+  group.add(body, neck, head, hair);
+
+  // Arms hang from the shoulders; the pose decides where they point.
+  const shoulders = hip + 0.68;
+  const arms = [-1, 1].map((side) => {
+    const arm = limb(0.46, 0.075, shirt);
+    arm.pivot.position.set(side * 0.33, shoulders, 0);
+    const hand = part(new THREE.SphereGeometry(0.085, 12, 10), SKIN);
+    arm.tip.add(hand);
+    group.add(arm.pivot);
+    return arm.pivot;
+  });
+
+  let keyboard: THREE.Group | undefined;
+  if (seated && seating.ownKeyboard) {
+    // A small keyboard of light floating at hand height.
+    keyboard = new THREE.Group();
+    const plate = part(new RoundedBoxGeometry(0.9, 0.04, 0.34, 2, 0.02), "#1b2230", 0.4);
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.95, 0.38),
+      new THREE.MeshBasicMaterial({ color: shirt, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.025;
+    keyboard.add(plate, glow);
+    keyboard.position.set(0, hip + 0.4, 0.62);
+    group.add(keyboard);
+  }
+
+  const update = (seconds: number, busy: boolean): void => {
+    if (seated) {
+      // Forearms reach forward to the keyboard; while busy, the hands tap
+      // one after the other.
+      arms.forEach((arm, i) => {
+        const tap = busy ? Math.sin(seconds * 18 + i * Math.PI) * 0.12 : 0;
+        arm.rotation.x = -1.15 + tap;
+        arm.rotation.z = (i === 0 ? -1 : 1) * 0.12;
+      });
+      head.rotation.x = busy ? 0.08 + Math.sin(seconds * 3) * 0.03 : 0.02;
+    } else {
+      // One arm points up at the screen and sways a little; the other rests.
+      arms[1]!.rotation.x = -2.3 + Math.sin(seconds * 1.4) * 0.08;
+      arms[1]!.rotation.z = 0.15;
+      arms[0]!.rotation.x = 0.1;
+      head.rotation.x = -0.18;
+    }
+    hair.rotation.x = -0.35 + head.rotation.x;
+  };
+  update(0, false);
+
+  return { group, update };
+}
