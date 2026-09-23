@@ -70,17 +70,6 @@ Sin servidor ni marco de interfaz. El resultado de `map:build` es una carpeta es
 - **Movimiento.** La cámara vuela con aceleración y frenado suaves. Solo se anima lo que aporta información, y se respeta la preferencia del sistema de reducir movimiento.
 - **Rendimiento.** Objetivo de 60 cuadros por segundo en una laptop de gama media.
 
-### 4.0 Concepto visual: la forja digital
-
-Revisión del paso 1 a pedido del propietario (2026-09-23), pendiente de su visto bueno. El estilo toma el nombre del ecosistema, la forja, y lo lleva a una interfaz de tecnología:
-
-- **Dos colores con significado.** Cian eléctrico para la información y la memoria. Naranja brasa para el trabajo en marcha, con chispas que suben donde se "forja" algo. El resto de la escena es casi negro para que ambos brillen.
-- **Piso de plano técnico.** Cuadrícula fina y gruesa con marcas en las intersecciones, que se desvanece hacia los bordes, y polvo flotando en el aire.
-- **Plataformas.** Losas de metal oscuro con bordes de neón del color del nodo, una cuadrícula tenue en la superficie, una línea de escaneo que la recorre y un halo de luz proyectado en el piso.
-- **Conexiones.** Líneas de energía punteadas con un pulso de luz que viaja del origen al destino, para que la dirección del flujo siempre se lea.
-- **Interfaz tipo HUD.** Marcos en las esquinas, tarjetas con esquinas recortadas, viñeta, líneas de monitor muy sutiles y lectura en vivo de la cámara. Solo datos reales.
-- **Brillo real.** Posprocesado de resplandor (bloom) sobre los elementos de neón.
-
 ### 4.1 Distribución del ecosistema
 
 | Elemento | Representación |
