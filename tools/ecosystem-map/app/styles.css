@@ -1,5 +1,5 @@
 :root {
-  --bg: #1b1e27;
+  --bg: #0e1015;
   --card-bg: rgba(38, 42, 54, 0.92);
   --card-border: #3a4052;
   --text: #e8e6df;
@@ -33,7 +33,7 @@ html, body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--card-border);
-  background: linear-gradient(var(--bg), rgba(27, 30, 39, 0.6));
+  background: linear-gradient(var(--bg), rgba(14, 16, 21, 0.6));
   pointer-events: none;
 }
 

@@ -1,6 +1,6 @@
 export const theme = {
-  background: "#1b1e27",
-  floor: "#232733",
+  background: "#0e1015",
+  floor: "#13151b",
   floorLine: "#5d7390",
   platformSide: "#1f222c",
   testPlatform: "#5b8f7b",
