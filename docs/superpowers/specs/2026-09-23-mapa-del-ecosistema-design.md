@@ -73,7 +73,8 @@ Sin servidor ni marco de interfaz. El resultado de `map:build` es una carpeta es
 ### 4.0 Decisiones del propietario (2026-09-23)
 
 - **Cada nodo se reconoce por un objeto protagonista** que dice lo que es sin leer nada. De lejos se ve ese objeto; de cerca, sus piezas reales.
-- **Engram:** una red de neuronas, con una esfera central unida por hilos a esferas más pequeñas, en rosa suave (`#d98ca0`).
+- **Engram ("la memoria"):** una bóveda que guarda recuerdos. Una persona de juguete, de perfil junto a un rack de servidores con luces que parpadean, mete una tarjeta de memoria brillante en una ranura. La ranura destella, un pulso de luz sube del rack a un holograma de la red de neuronas (la idea original de Engram), y el holograma brilla: el recuerdo quedó guardado. El ciclo se repite cada 5 segundos. Su color es rosa suave (`#d98ca0`).
+- **Cada nodo muestra a alguien haciendo el trabajo de ese nodo**, no solo un objeto. Es el nivel de detalle de referencia para los demás nodos.
 - **Shell ("la terminal"):** una persona de juguete sentada en una silla de oficina frente a un escritorio de madera clara, con teclado, mouse y taza. Detrás, una pantalla holográfica flota sobre un pequeño proyector y escribe sola comandos reales (`forge614 status`, `forge614 prepare`); la persona teclea mientras la pantalla escribe. Su color es azul suave (`#7fb2d9`).
 - **Cada nodo tiene su propio circuito** (el mismo patrón del fondo, con su propia señal), y los nodos se separan lo suficiente para que los circuitos no se encimen.
 - **Plataforma:** una placa delgada que flota sobre el piso, sostenida por una columna, con una línea del color del nodo bajo su orilla.

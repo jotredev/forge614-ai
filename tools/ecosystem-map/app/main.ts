@@ -11,13 +11,16 @@ import { createStage } from "./scene/stage";
 const container = document.getElementById("office");
 if (!container) throw new Error("missing #office container");
 
+// Each node's signature scene, so it reads before any label does.
+const SCENES = { shell: createShell, engram: createEngram } as const;
+
 // Nodes shown so far. They sit far apart along the screen's horizontal axis
 // so each node's circuit has room and they never overlap.
 const SPACING = 22;
 const NODES = [
   { id: "shell", name: "Shell", role: "La terminal", accent: "#7fb2d9", offset: -1 },
   { id: "engram", name: "Engram", role: "La memoria", accent: "#d98ca0", offset: 1 },
-];
+] as const;
 
 try {
   const stage = createStage(container, 40);
@@ -34,21 +37,13 @@ try {
     platform.group.position.set(center.x, 0, center.y);
     stage.scene.add(platform.group);
 
-    // Each node's signature object, so it reads before any label does.
-    if (node.id === "engram") {
-      const engram = createEngram(platform.top - 0.2);
-      engram.position.set(center.x, 0, center.y);
-      stage.scene.add(engram);
-    }
-    if (node.id === "shell") {
-      const shell = createShell(platform.top);
-      shell.group.position.set(center.x, 0, center.y);
-      stage.scene.add(shell.group);
-      stage.onTick((seconds) => shell.update(seconds));
-    }
+    const scene = SCENES[node.id](platform.top);
+    scene.group.position.set(center.x, 0, center.y);
+    stage.scene.add(scene.group);
+    stage.onTick((seconds) => scene.update(seconds));
 
     const card = createCard({ name: node.name, role: node.role, accent: node.accent });
-    card.position.set(center.x, platform.top + (node.id === "shell" ? 8.5 : 7), center.y);
+    card.position.set(center.x, platform.top + 8.5, center.y);
     stage.scene.add(card);
   });
 

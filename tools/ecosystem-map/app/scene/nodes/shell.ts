@@ -215,7 +215,7 @@ export function createShell(top: number): ShellNode {
 
   // Toy scale, seated on an office chair and typing on the desk keyboard,
   // facing the screen so the camera sees their back, like someone at work.
-  const person = createCharacter(SHELL, "typing", { seat: "chair", ownKeyboard: false });
+  const person = createCharacter(SHELL, "typing");
   person.group.scale.setScalar(1.55);
   person.group.position.set(0, top, 2.75);
   person.group.rotation.y = Math.PI;

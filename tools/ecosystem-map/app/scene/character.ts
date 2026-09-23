@@ -2,15 +2,13 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 // A toy-like person built from simple shapes: round head with hair, capsule
-// body and limbs. Used to show who works at each node. `update` receives
-// the time and whether the person is busy (typing), so hands move only
-// while there is something happening on screen.
+// body and limbs. Used to show who works at each node:
+//   - "typing": seated on an office chair; hands tap while `busy`;
+//   - "inserting": standing, lifting one arm to a slot in front; `reach`
+//     (0 to 1) says how far, so a scene can time it with what is moved.
 
-export type Pose = "typing" | "pointing";
-// Where a seated person sits, and whether they bring their own floating
-// keyboard (when there is no desk with one).
-export type Seating = { seat: "stool" | "chair"; ownKeyboard: boolean };
-export type Character = { group: THREE.Group; update(seconds: number, busy: boolean): void };
+export type Pose = "typing" | "inserting";
+export type Character = { group: THREE.Group; update(seconds: number, busy: boolean, reach?: number): void };
 
 const SKIN = "#e8b98f";
 const HAIR = "#2b2320";
@@ -59,26 +57,14 @@ function officeChair(seatHeight: number): THREE.Group {
   return chair;
 }
 
-export function createCharacter(
-  shirt: string,
-  pose: Pose,
-  seating: Seating = { seat: "stool", ownKeyboard: true },
-): Character {
+export function createCharacter(shirt: string, pose: Pose): Character {
   const group = new THREE.Group();
   const seated = pose === "typing";
   const hip = seated ? 0.62 : 1.02;
 
-  // Legs: bent over a stool when seated, straight when standing.
+  // Legs: bent over an office chair when seated, straight when standing.
   if (seated) {
-    if (seating.seat === "chair") {
-      group.add(officeChair(0.5));
-    } else {
-      const stool = part(new THREE.CylinderGeometry(0.34, 0.3, 0.08, 24), SEAT, 0.5);
-      stool.position.y = 0.5;
-      const leg = part(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 10), SEAT);
-      leg.position.y = 0.25;
-      group.add(stool, leg);
-    }
+    group.add(officeChair(0.5));
     for (const side of [-1, 1]) {
       const thigh = part(new THREE.CapsuleGeometry(0.1, 0.34, 6, 10), PANTS);
       thigh.rotation.x = Math.PI / 2;
@@ -118,23 +104,7 @@ export function createCharacter(
     return arm.pivot;
   });
 
-  let keyboard: THREE.Group | undefined;
-  if (seated && seating.ownKeyboard) {
-    // A small keyboard of light floating at hand height.
-    keyboard = new THREE.Group();
-    const plate = part(new RoundedBoxGeometry(0.9, 0.04, 0.34, 2, 0.02), "#1b2230", 0.4);
-    const glow = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.95, 0.38),
-      new THREE.MeshBasicMaterial({ color: shirt, transparent: true, opacity: 0.35, depthWrite: false }),
-    );
-    glow.rotation.x = -Math.PI / 2;
-    glow.position.y = 0.025;
-    keyboard.add(plate, glow);
-    keyboard.position.set(0, hip + 0.4, 0.62);
-    group.add(keyboard);
-  }
-
-  const update = (seconds: number, busy: boolean): void => {
+  const update = (seconds: number, busy: boolean, reach = 0): void => {
     if (seated) {
       // Forearms reach forward to the keyboard; while busy, the hands tap
       // one after the other.
@@ -145,11 +115,11 @@ export function createCharacter(
       });
       head.rotation.x = busy ? 0.08 + Math.sin(seconds * 3) * 0.03 : 0.02;
     } else {
-      // One arm points up at the screen and sways a little; the other rests.
-      arms[1]!.rotation.x = -2.3 + Math.sin(seconds * 1.4) * 0.08;
-      arms[1]!.rotation.z = 0.15;
-      arms[0]!.rotation.x = 0.1;
-      head.rotation.x = -0.18;
+      // The near arm lifts up to the slot; the other rests.
+      arms[0]!.rotation.x = THREE.MathUtils.lerp(-0.2, -1.5, reach);
+      arms[0]!.rotation.z = -0.08;
+      arms[1]!.rotation.x = 0.1;
+      head.rotation.x = THREE.MathUtils.lerp(0.15, -0.05, reach);
     }
     hair.rotation.x = -0.35 + head.rotation.x;
   };

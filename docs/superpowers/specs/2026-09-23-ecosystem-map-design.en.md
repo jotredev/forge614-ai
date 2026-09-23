@@ -79,7 +79,8 @@ There is no server and no UI framework. `map:build` outputs a static folder that
 ### 4.0 Owner decisions (2026-09-23)
 
 - **Each node is recognized by a signature object** that shows what it is without reading anything. From afar you see that object; up close, its real pieces.
-- **Engram:** a network of neurons, a central sphere joined by threads to smaller spheres, in soft pink (`#d98ca0`).
+- **Engram ("la memoria"):** a vault that saves memories. A toy person, in profile beside a server rack with blinking lights, slides a glowing memory card into a slot. The slot flashes, a pulse of light rises from the rack to a hologram of the neuron network (Engram's original idea), and the hologram brightens: the memory is saved. The cycle repeats every 5 seconds. Its color is soft pink (`#d98ca0`).
+- **Each node shows someone doing that node's job**, not just an object. This is the reference level of detail for the remaining nodes.
 - **Shell ("la terminal"):** a toy person seated on an office chair at a light wooden desk, with a keyboard, a mouse and a mug. Behind it, a holographic screen floats above a small projector and types real commands by itself (`forge614 status`, `forge614 prepare`); the person types while the screen types. Its color is soft blue (`#7fb2d9`).
 - **Each node has its own circuit** (the same floor pattern, with its own signal), and nodes sit far enough apart that the circuits do not overlap.
 - **Platform:** a thin plate floating above the floor, held by a column, with a line of the node's color under its edge.
