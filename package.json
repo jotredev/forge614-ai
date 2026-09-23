@@ -13,6 +13,7 @@
     "standard:render": "bun run src/interfaces/cli/standard-render.ts",
     "standard:pack": "bun run src/interfaces/cli/standard-pack.ts",
     "standard:check": "bun run src/interfaces/cli/standard-pack.ts --check",
+    "standard:release": "bun run src/interfaces/cli/standard-release.ts",
     "schemas:generate": "bun run src/interfaces/cli/schemas-generate.ts",
     "notion-map:build": "bun run src/interfaces/cli/notion-map-build.ts",
     "workflows:check": "bun run src/interfaces/cli/workflows-check.ts",
