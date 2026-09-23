@@ -13,8 +13,9 @@ import { LINE_LENGTHS, TYPE_SPEED } from "./nodes/shell";
 //    Engines applies only that and reports back (contract, section 5).
 // 5. Shell asks whether to contextualize the project; the person says yes
 //    and Atlas starts: it asks Engines for the engines and Engram for saved
-//    progress, hands out tasks to its workers one at a time, checks each
-//    report, writes the checked knowledge in Engram and reports to Shell.
+//    progress, hands out tasks to its workers one at a time, sends each
+//    report to Sentinel and, with its record, checks it off, writes the
+//    checked knowledge in Engram and reports to Shell.
 // 6. Shell saves what it did in Engram; Engram stores it (a pulse rises into
 //    the hologram, which glows) and right after copies it to the cloud.
 
@@ -77,16 +78,31 @@ export const WORKER_COUNT = 3;
 export const FOLDERS_PER_TASK = 8;
 export const CHECK_PER_FOLDER = 0.12; // seconds Atlas takes to check a folder
 export const WORK_TIME = 1.2; // seconds a worker takes for a task
+// Each report goes on to Sentinel before Atlas takes it (acta 0004):
+// Sentinel checks it against the rulebook and sends back its record; only
+// then does Atlas check those folders off with its lens.
+export const SENTINEL_PASS = 2.0; // seconds Sentinel takes for one report
 export const TASK_LEAVES: number[] = [];
 export const REPORT_LEAVES: number[] = [];
 export const REPORT_ARRIVES: number[] = [];
+export const CHECK_ASK_LEAVES: number[] = [];
+export const CHECK_ASK_ARRIVES: number[] = [];
+export const VERDICT_LEAVES: number[] = [];
+export const VERDICT_ARRIVES: number[] = [];
 for (let i = 0; i < WORKER_COUNT; i++) {
   const leaves = i === 0 ? ATLAS_PROGRESS_LEAVES + 0.2 : REPORT_ARRIVES[i - 1]! + 0.2;
   TASK_LEAVES.push(leaves);
   REPORT_LEAVES.push(leaves + TRAVEL + WORK_TIME);
-  REPORT_ARRIVES.push(leaves + TRAVEL + WORK_TIME + TRAVEL);
+  const reportArrives = leaves + TRAVEL + WORK_TIME + TRAVEL;
+  REPORT_ARRIVES.push(reportArrives);
+  // Sentinel checks one report at a time.
+  const askLeaves = Math.max(reportArrives + 0.1, i === 0 ? 0 : VERDICT_LEAVES[i - 1]! + 0.1);
+  CHECK_ASK_LEAVES.push(askLeaves);
+  CHECK_ASK_ARRIVES.push(askLeaves + TRAVEL);
+  VERDICT_LEAVES.push(askLeaves + TRAVEL + SENTINEL_PASS);
+  VERDICT_ARRIVES.push(askLeaves + TRAVEL + SENTINEL_PASS + TRAVEL);
 }
-const checked = REPORT_ARRIVES[WORKER_COUNT - 1]! + FOLDERS_PER_TASK * CHECK_PER_FOLDER;
+const checked = VERDICT_ARRIVES[WORKER_COUNT - 1]! + FOLDERS_PER_TASK * CHECK_PER_FOLDER;
 // Atlas writes the checked knowledge in Engram, which stores it, answers
 // and copies it to the cloud; then Atlas gives Shell its final report.
 export const ATLAS_CARD_AT = checked + 0.2;

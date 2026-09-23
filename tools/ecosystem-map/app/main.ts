@@ -8,6 +8,7 @@ import { type Sync, type Trip, createSync } from "./scene/sync";
 import { ATLAS, createAtlas } from "./scene/nodes/atlas";
 import { createEngram } from "./scene/nodes/engram";
 import { ENGINES, createEngines } from "./scene/nodes/engines";
+import { SENTINEL, createSentinel } from "./scene/nodes/sentinel";
 import { WORKERS, createWorker } from "./scene/nodes/worker";
 import {
   APPLY_LEAVES,
@@ -21,6 +22,7 @@ import {
   ATLAS_START_LEAVES,
   ATLAS_STORED_AT,
   ATLAS_WRITE_LEAVES,
+  CHECK_ASK_LEAVES,
   COPY_LEAVES,
   CYCLE,
   ENGINES_ASK_LEAVES,
@@ -33,10 +35,12 @@ import {
   SAVE_LEAVES,
   TASK_LEAVES,
   TRAVEL,
+  VERDICT_LEAVES,
   WORKER_COUNT,
 } from "./scene/timeline";
 
 const ATLAS_LIGHT = "#c4ecd6";
+const SENTINEL_LIGHT = "#bdeef0";
 const WORKERS_LIGHT = "#f2c3b4";
 import { createShell } from "./scene/nodes/shell";
 import { createPlatform } from "./scene/platform";
@@ -54,6 +58,7 @@ const NODES = [
   { id: "engram", name: "Engram", role: "La memoria", accent: "#d98ca0", across: 22, down: 0 },
   { id: "engines", name: "Engines", role: "Los motores", accent: ENGINES, across: 0, down: 38 },
   { id: "atlas", name: "Atlas", role: "Orquestador de contexto", accent: ATLAS, across: 44, down: 38 },
+  { id: "sentinel", name: "Sentinel", role: "El verificador", accent: SENTINEL, across: 66, down: 0 },
 ] as const;
 
 type NodeId = (typeof NODES)[number]["id"];
@@ -67,15 +72,20 @@ function centerOf(id: NodeId): THREE.Vector2 {
 
 try {
   // Framed so every node, the workers and the floating data center fit.
-  const stage = createStage(container, 84, new THREE.Vector3(31, 3, 6));
+  const stage = createStage(container, 84, new THREE.Vector3(35, 3, 4));
 
   // Direction on the floor from one node to another.
   const toward = (from: NodeId, to: NodeId): THREE.Vector2 => centerOf(to).sub(centerOf(from)).normalize();
   const engramScene = createEngram(PLATE_TOP);
   const enginesScene = createEngines(PLATE_TOP, [toward("engines", "shell"), toward("engines", "atlas")]);
   const shellScene = createShell(PLATE_TOP, { starts: LINE_STARTS, cycle: CYCLE });
-  const atlasScene = createAtlas(PLATE_TOP, [toward("atlas", "shell"), toward("atlas", "engines"), toward("atlas", "engram")], WORKER_COUNT);
-  const scenes = { shell: shellScene, engram: engramScene, engines: enginesScene, atlas: atlasScene };
+  const atlasScene = createAtlas(
+    PLATE_TOP,
+    [toward("atlas", "shell"), toward("atlas", "engines"), toward("atlas", "engram"), toward("atlas", "sentinel")],
+    WORKER_COUNT,
+  );
+  const sentinelScene = createSentinel(PLATE_TOP);
+  const scenes = { shell: shellScene, engram: engramScene, engines: enginesScene, atlas: atlasScene, sentinel: sentinelScene };
 
   NODES.forEach((node, index) => {
     const center = centerOf(node.id);
@@ -324,6 +334,17 @@ try {
     { color: "#f3b7c6", leaves: [ATLAS_LOOKUP_REPLY_LEAVES] },
   );
 
+  // Atlas and Sentinel (acta 0004): each worker's report goes to Sentinel,
+  // which checks it against the rulebook and sends back its record. The
+  // cables leave a network box on Sentinel's floor, by the start of its
+  // belt. Sentinel's light is turquoise.
+  const atlasSentinel = pair(
+    atlasEnd(3),
+    networkBox("sentinel", faceTurn(-2.4, PLATE_TOP + 0.25, 1.3), "atlas"),
+    { color: ATLAS_LIGHT, leaves: CHECK_ASK_LEAVES },
+    { color: SENTINEL_LIGHT, leaves: VERDICT_LEAVES },
+  );
+
   // Atlas' workers, one small plate each, fanned out below Atlas; no circuit
   // of their own, since they are part of Workers. Two cables each: the task
   // comes from Atlas through one, and the raw report goes back through the
@@ -354,7 +375,7 @@ try {
     );
   }).flat();
 
-  for (const c of [save, recall, ...shellEngines, ...shellAtlas, ...atlasEngines, ...atlasEngram, ...workerCables]) {
+  for (const c of [save, recall, ...shellEngines, ...shellAtlas, ...atlasEngines, ...atlasEngram, ...atlasSentinel, ...workerCables]) {
     stage.scene.add(c.group);
     stage.onTick((seconds) => c.update(seconds));
   }

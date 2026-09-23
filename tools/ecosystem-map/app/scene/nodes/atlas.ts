@@ -7,7 +7,7 @@ import {
   ATLAS_WRITE_LEAVES,
   CHECK_PER_FOLDER,
   FOLDERS_PER_TASK,
-  REPORT_ARRIVES,
+  VERDICT_ARRIVES,
   TASK_LEAVES,
   since,
 } from "../timeline";
@@ -17,7 +17,8 @@ import { glowSprite } from "./datacenter";
 // project (acta 0004), drawn as a cartographer who hands out the work and checks
 // everything. Above a drafting table floats a holographic city of the
 // repository, one building per folder. Atlas sends each task to one of its
-// workers; when a worker's report comes back, a holographic lens hops over
+// workers; when a worker's report comes back, Atlas sends it to Sentinel,
+// and once Sentinel's record is back, a holographic lens hops over
 // that part of the city, folder by folder, and each checked building turns
 // solid with a green light on top and the streets light up, while the
 // person draws the map of what is already checked on the sheet and a
@@ -252,11 +253,11 @@ export function createAtlas(top: number, towards: THREE.Vector2[], workers: numb
   const cityCenter = new THREE.Vector3(0, top + 3.9, -0.5);
 
   // Folders checked so far: each report is checked folder by folder from
-  // the moment it arrives.
+  // the moment Sentinel's record for it arrives.
   const checkedFolders = (seconds: number): { done: number; checking: number } => {
     let done = 0;
     let checking = -1;
-    for (const at of REPORT_ARRIVES) {
+    for (const at of VERDICT_ARRIVES) {
       const s = since(seconds, at);
       if (s < 0) continue;
       const n = Math.min(FOLDERS_PER_TASK, Math.floor(s / CHECK_PER_FOLDER));
