@@ -2,7 +2,7 @@
 
 > Como la lista de control de un vuelo: cada paso está escrito, se ejecuta igual en tierra (local) que en el aire (CI), y nadie despega sin completarla.
 
-Un **workflow** es un archivo YAML de `.github/workflows/` que la integración continua (CI) ejecuta ante un evento; un **job** es cada unidad de trabajo dentro de él, con su propia máquina. En este repositorio los workflows son delgados (acta 0019): cada paso llama un script de `package.json`, así que `bun run workflows:run` reproduce en local exactamente lo que corre en CI. Los dos archivos se generan desde `standard/templates/verify.yml` y `release.yml` y se agregan al repositorio en esta fase 0.1; `verify.yml` suma un job propio, `parity`, que la plantilla no lleva.
+Un **workflow** es un archivo YAML de `.github/workflows/` que la integración continua (CI) ejecuta ante un evento; un **job** es cada unidad de trabajo dentro de él, con su propia máquina. En este repositorio los workflows son delgados (acta 0019): cada paso llama un script de `package.json`, así que `bun run workflows:run` reproduce en local exactamente lo que corre en CI. Los dos archivos están generados desde `standard/templates/verify.yml` y `release.yml`; `verify.yml` suma un job propio, `parity`, que la plantilla no lleva.
 
 ## `verify.yml`
 
@@ -20,7 +20,7 @@ Un **workflow** es un archivo YAML de `.github/workflows/` que la integración c
 | `build` | tag `v*` | `bun install --frozen-lockfile`, `bun run build:target`, `bun run smoke:target` en macOS arm64/x64, Linux arm64/x64, Windows x64 | artefactos por plataforma (`dist/release/*`) | ~8 min |
 | `publish` | tras `build` | `bun install --frozen-lockfile`, `bun run release:publish` | release con binarios y `SHA256SUMS` | ~1 min |
 
-`build:target`, `smoke:target` y `release:publish` son stubs: scripts de `package.json` que terminan con `NOT_IMPLEMENTED` hasta que el `bun release` compartido llegue en la fase 0.4. Hasta entonces un tag `v*` falla de forma deliberada; hoy esos scripts no existen en `package.json` y se agregan junto con los workflows.
+`build:target`, `smoke:target` y `release:publish` son stubs: scripts de `package.json` que terminan con `NOT_IMPLEMENTED` hasta que el `bun release` compartido llegue en la fase 0.4. Hasta entonces un tag `v*` falla de forma deliberada: los tres scripts llaman a `src/interfaces/cli/not-implemented.ts`, que sale con `1` y ese código.
 
 **Precondición de `release.yml`:** un nodo con dependencias `file:../` a repositorios hermanos en su `package.json` no puede adoptar esta plantilla; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría contra esa dependencia de ruta. Se sustituye por la versión publicada del nodo hermano antes de adoptar la plantilla.
 

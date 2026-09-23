@@ -11,10 +11,14 @@
     "decisions:index": "bun run src/interfaces/cli/decisions-index.ts",
     "standard:render": "bun run src/interfaces/cli/standard-render.ts",
     "standard:pack": "bun run src/interfaces/cli/standard-pack.ts",
+    "standard:check": "bun run src/interfaces/cli/standard-pack.ts --check",
     "schemas:generate": "bun run src/interfaces/cli/schemas-generate.ts",
     "notion-map:build": "bun run src/interfaces/cli/notion-map-build.ts",
     "workflows:check": "bun run src/interfaces/cli/workflows-check.ts",
-    "workflows:run": "bun run src/interfaces/cli/workflows-run.ts"
+    "workflows:run": "bun run src/interfaces/cli/workflows-run.ts",
+    "build:target": "bun run src/interfaces/cli/not-implemented.ts build:target",
+    "smoke:target": "bun run src/interfaces/cli/not-implemented.ts smoke:target",
+    "release:publish": "bun run src/interfaces/cli/not-implemented.ts release:publish"
   },
   "devDependencies": {
     "@types/bun": "1.3.8",
