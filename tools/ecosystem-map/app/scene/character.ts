@@ -5,9 +5,11 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 // body and limbs. Used to show who works at each node:
 //   - "typing": seated on an office chair; hands tap while `busy`;
 //   - "inserting": standing, lifting one arm to a slot in front; `reach`
-//     (0 to 1) says how far, so a scene can time it with what is moved.
+//     (0 to 1) says how far, so a scene can time it with what is moved;
+//   - "walking": legs and arms swing while `busy`; with `reach` above zero
+//     one arm holds something in front.
 
-export type Pose = "typing" | "inserting";
+export type Pose = "typing" | "inserting" | "walking";
 export type Character = { group: THREE.Group; update(seconds: number, busy: boolean, reach?: number): void };
 
 const SKIN = "#e8b98f";
@@ -73,13 +75,16 @@ export function createCharacter(shirt: string, pose: Pose): Character {
       shin.position.set(side * 0.13, hip - 0.3, 0.42);
       group.add(thigh, shin);
     }
-  } else {
-    for (const side of [-1, 1]) {
-      const leg = part(new THREE.CapsuleGeometry(0.1, 0.72, 6, 10), PANTS);
-      leg.position.set(side * 0.13, 0.46, 0);
-      group.add(leg);
-    }
   }
+  // Standing legs hang from the hip, so they can swing when walking.
+  const legs = seated
+    ? []
+    : [-1, 1].map((side) => {
+        const leg = limb(0.72, 0.1, PANTS);
+        leg.pivot.position.set(side * 0.13, 0.92, 0);
+        group.add(leg.pivot);
+        return leg.pivot;
+      });
 
   const body = part(new THREE.CapsuleGeometry(0.27, 0.42, 8, 16), shirt);
   body.position.y = hip + 0.38;
@@ -114,12 +119,23 @@ export function createCharacter(shirt: string, pose: Pose): Character {
         arm.rotation.z = (i === 0 ? -1 : 1) * 0.12;
       });
       head.rotation.x = busy ? 0.08 + Math.sin(seconds * 3) * 0.03 : 0.02;
-    } else {
+    } else if (pose === "inserting") {
       // The near arm lifts up to the slot; the other rests.
       arms[0]!.rotation.x = THREE.MathUtils.lerp(-0.2, -1.5, reach);
       arms[0]!.rotation.z = -0.08;
       arms[1]!.rotation.x = 0.1;
       head.rotation.x = THREE.MathUtils.lerp(0.15, -0.05, reach);
+    } else {
+      // Walking while `busy`: legs and the free arm swing in step. `reach`
+      // above zero means carrying something, so the other arm holds it in
+      // front instead of swinging.
+      const step = busy ? Math.sin(seconds * 7) : 0;
+      legs[0]!.rotation.x = step * 0.45;
+      legs[1]!.rotation.x = -step * 0.45;
+      arms[1]!.rotation.x = step * 0.4;
+      arms[0]!.rotation.x = reach > 0 ? -1.0 : -step * 0.4;
+      head.rotation.x = 0.05;
+      group.position.y = busy ? Math.abs(Math.cos(seconds * 7)) * 0.04 : 0;
     }
     hair.rotation.x = -0.35 + head.rotation.x;
   };

@@ -14,7 +14,9 @@ const ENGRAM = "#d98ca0";
 const ENGRAM_LIGHT = "#f3b7c6";
 // Planes face +z by default; this turns them toward the isometric camera.
 const FACE_CAMERA = Math.PI / 4;
-const SAVE_CYCLE = 5; // seconds for one saved memory
+// Seconds for one saved memory; each cycle starts as the card is taken, so
+// other scenes can hand a card over at the start of a cycle.
+export const SAVE_CYCLE = 5;
 
 function solid(geometry: THREE.BufferGeometry, color: string, roughness = 0.6, metalness = 0.1): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness, metalness }));
