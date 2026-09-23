@@ -83,7 +83,7 @@ There is no server and no UI framework. `map:build` outputs a static folder that
 - **Platform:** a thin plate floating above the floor, held by a column, with a line of the node's color under its edge.
 - **Card:** no box. A small uppercase line with the role (`NODO · LA MEMORIA`) in the node's color, above the large name in a classic serif typeface.
 - **Name typeface:** Manrope, bundled inside the project (no internet dependency).
-- **Background:** a clean floor with a few loose, very faint circuit traces, and a light comet with a short tail traveling along each, like data moving. It animates at 30 frames per second at most and stays still when the system asks for reduced motion.
+- **Background:** one complete, connected circuit drawn very faintly. A closed loop around the center with 45° corners, branches leaving it inward and outward and ending in a pad, and an even fainter outer ring. A single light with a tail travels the loop without stopping, like data moving. It animates at 30 frames per second at most and stays still when the system asks for reduced motion.
 - **Performance:** the scene is drawn only when something changes (camera or animated floor), shadows are computed once, and no ambient occlusion is used.
 - **Discarded:** the neon blueprint style. Background and lighting stay as in the first version, and new visual references only add details.
 

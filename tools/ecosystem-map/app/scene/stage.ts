@@ -85,7 +85,7 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   scene.add(floor);
 
   const pattern = createFloor();
-  scene.add(pattern.mesh);
+  scene.add(pattern.object);
 
   let frame = 0;
   const draw = (): void => {

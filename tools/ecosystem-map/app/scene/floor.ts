@@ -1,96 +1,167 @@
 import * as THREE from "three";
 
-// Floor pattern: a few loose, faint circuit traces scattered over a clean
-// floor, each with a small comet of light traveling along it, like data
-// moving through the system. Drawn by a shader on a transparent layer just
-// above the real floor, so the floor keeps receiving shadows.
+// Floor decoration: one complete, connected circuit drawn very faintly. A
+// closed loop runs around the center with 45° corners like board traces,
+// branches leave it inward and outward ending in small pads, and an outer
+// ring fills the rest of the floor. A single light travels the loop without
+// ever stopping, leaving a short fading tail.
 
-const vertexShader = /* glsl */ `
-  varying vec2 vWorld;
-  void main() {
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    vWorld = world.xz;
-    gl_Position = projectionMatrix * viewMatrix * world;
-  }
-`;
+const TRACE = new THREE.Color("#6b8cb3");
+const LIGHT = new THREE.Color("#b8dcff");
+const Y = 0.02;
+const LOOP_OPACITY = 0.09;
+const BRANCH_OPACITY = 0.07;
+const OUTER_OPACITY = 0.05;
+const SPEED = 3.2; // world units per second
+const TAIL = 4; // world units
+const TAIL_POINTS = 28;
+const KEEP_CLEAR = 6.5; // nothing inside this radius, where the nodes stand
 
-const fragmentShader = /* glsl */ `
-  uniform float uTime;
-  varying vec2 vWorld;
+// Small deterministic random generator, so the layout is the same on every
+// load.
+function random(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-  const vec3 TRACE = vec3(0.42, 0.55, 0.70);
-  const vec3 LIGHT = vec3(0.70, 0.86, 1.0);
+// Joins two points the way board traces do: a 45° run for the shared part
+// of the move, then a straight run for the rest.
+function octilinear(a: THREE.Vector2, b: THREE.Vector2): THREE.Vector2[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const diagonal = Math.min(Math.abs(dx), Math.abs(dy));
+  const corner = new THREE.Vector2(a.x + Math.sign(dx) * diagonal, a.y + Math.sign(dy) * diagonal);
+  return corner.distanceTo(a) < 1e-3 || corner.distanceTo(b) < 1e-3 ? [b] : [corner, b];
+}
 
-  // Lanes are 3 units apart; each lane is split into 18-unit chunks and only
-  // a few chunks hold a trace, so most of the floor stays clean.
-  const float LANE = 3.0;
-  const float CHUNK = 18.0;
-  const float DENSITY = 0.14;
+// A closed loop: points around a ring, with a little random wobble, joined
+// octilinearly. The last point connects back to the first.
+function ringLoop(rand: () => number, radius: number, wobble: number, count: number): THREE.Vector2[] {
+  const anchors = Array.from({ length: count }, (_, i) => {
+    const angle = (i / count) * Math.PI * 2 + rand() * 0.15;
+    const r = radius + (rand() - 0.5) * wobble;
+    return new THREE.Vector2(Math.round(Math.cos(angle) * r * 2) / 2, Math.round(Math.sin(angle) * r * 2) / 2);
+  });
+  const path = [anchors[0]!.clone()];
+  for (let i = 0; i < count; i++) path.push(...octilinear(anchors[i]!, anchors[(i + 1) % count]!));
+  return path;
+}
 
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// A short branch leaving `from` toward (outward) or away from (inward) the
+// center, with one bend, ending in a pad.
+function branch(rand: () => number, from: THREE.Vector2, outward: boolean): THREE.Vector2[] {
+  const radial = from.clone().normalize().multiplyScalar(outward ? 1 : -1);
+  const length = 2 + rand() * 3;
+  const side = new THREE.Vector2(-radial.y, radial.x).multiplyScalar((rand() - 0.5) * 3);
+  let end = from.clone().addScaledVector(radial, length).add(side);
+  if (!outward && end.length() < KEEP_CLEAR) end = end.setLength(KEEP_CLEAR);
+  end.set(Math.round(end.x * 2) / 2, Math.round(end.y * 2) / 2);
+  return [from.clone(), ...octilinear(from, end)];
+}
 
-  // Anti-aliased line of a given half width (in pixels) around distance 0.
-  float stroke(float distance, float halfWidthPx) {
-    float px = abs(distance) / max(fwidth(distance), 1e-5);
-    return 1.0 - smoothstep(halfWidthPx - 0.5, halfWidthPx + 0.5, px);
-  }
+function lineOf(points: THREE.Vector2[], opacity: number): THREE.Line {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(p.x, Y, p.y)));
+  return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: TRACE, transparent: true, opacity }));
+}
 
-  // One family of traces running along "along", stacked across "across".
-  // Returns (trace, pad, comet).
-  vec3 traces(float along, float across, float seed) {
-    float lane = floor(across / LANE + 0.5);
-    float offset = across - lane * LANE;
-    float chunk = floor(along / CHUNK);
-    vec2 id = vec2(lane, chunk + seed);
-    if (hash(id) > DENSITY) return vec3(0.0);
+function glowTexture(): THREE.Texture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d")!;
+  const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.25, "rgba(255,255,255,0.55)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
 
-    float start = chunk * CHUNK + 1.0 + hash(id + 1.3) * 4.0;
-    float end = (chunk + 1.0) * CHUNK - 1.0 - hash(id + 2.7) * 4.0;
-    float inside = step(start, along) * step(along, end);
-    float trace = stroke(offset, 0.6) * inside;
-
-    float pad = max(
-      stroke(length(vec2(along - start, offset)) - 0.14, 0.7),
-      stroke(length(vec2(along - end, offset)) - 0.14, 0.7)
-    );
-
-    // The comet: a bright head with a short fading tail, looping along the trace.
-    float speed = 0.08 + hash(id + 4.1) * 0.06;
-    float head = mix(start, end, fract(uTime * speed + hash(id + 5.9)));
-    float behind = head - along;
-    float tail = (1.0 - smoothstep(0.0, 2.2, behind)) * step(0.0, behind) * inside;
-    float comet = stroke(offset, 1.2) * tail;
-    return vec3(trace, pad, comet);
-  }
-
-  void main() {
-    vec3 horizontal = traces(vWorld.x, vWorld.y, 0.0);
-    vec3 vertical = traces(vWorld.y, vWorld.x, 91.0);
-    vec3 t = max(horizontal, vertical);
-    float fade = 1.0 - smoothstep(20.0, 60.0, length(vWorld));
-    float alpha = max(max(t.x * 0.1, t.y * 0.2), t.z * 0.85) * fade;
-    vec3 color = t.z > 0.05 ? LIGHT : TRACE;
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
-export type Floor = { mesh: THREE.Mesh; setTime(seconds: number): void };
+export type Floor = { object: THREE.Object3D; setTime(seconds: number): void };
 
 export function createFloor(): Floor {
-  const material = new THREE.ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    transparent: true,
-    depthWrite: false,
-    uniforms: { uTime: { value: 0 } },
-  });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), material);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.01;
-  return {
-    mesh,
-    setTime: (seconds) => {
-      material.uniforms.uTime!.value = seconds;
-    },
+  const group = new THREE.Group();
+  const rand = random(614);
+  const padGeometry = new THREE.RingGeometry(0.1, 0.17, 20);
+  const padMaterial = new THREE.MeshBasicMaterial({ color: TRACE, transparent: true, opacity: BRANCH_OPACITY * 1.8 });
+  const addPad = (p: THREE.Vector2): void => {
+    const pad = new THREE.Mesh(padGeometry, padMaterial);
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.set(p.x, Y, p.y);
+    group.add(pad);
   };
+
+  // The main loop the light travels, and a wider, fainter outer ring.
+  const loop = ringLoop(rand, 11, 3, 12);
+  group.add(lineOf(loop, LOOP_OPACITY));
+  const outer = ringLoop(rand, 21, 4, 18);
+  group.add(lineOf(outer, OUTER_OPACITY));
+
+  // Branches off every other corner of the loop, alternating in and out, so
+  // the whole pattern stays connected.
+  for (let i = 0; i < loop.length - 1; i += 2) {
+    const trace = branch(rand, loop[i]!, i % 4 === 0);
+    group.add(lineOf(trace, BRANCH_OPACITY));
+    addPad(trace[trace.length - 1]!);
+  }
+  // Short spurs off the outer ring toward the edge of the floor.
+  for (let i = 0; i < outer.length - 1; i += 3) {
+    const trace = branch(rand, outer[i]!, true);
+    group.add(lineOf(trace, OUTER_OPACITY));
+    addPad(trace[trace.length - 1]!);
+  }
+
+  // Cumulative lengths along the loop, so any distance maps to a point.
+  const lengths = [0];
+  for (let i = 1; i < loop.length; i++) lengths.push(lengths[i - 1]! + loop[i]!.distanceTo(loop[i - 1]!));
+  const total = lengths[lengths.length - 1]!;
+  const pointAt = (distance: number): THREE.Vector2 => {
+    const d = ((distance % total) + total) % total;
+    let i = 1;
+    while (i < loop.length - 1 && d > lengths[i]!) i++;
+    const span = lengths[i]! - lengths[i - 1]!;
+    return loop[i - 1]!.clone().lerp(loop[i]!, span === 0 ? 0 : (d - lengths[i - 1]!) / span);
+  };
+
+  // The traveling light: a comet of soft glowing dots, largest and brightest
+  // at the head and fading along the tail. Drawn over the floor so the glow
+  // is never cut by it.
+  const glow = glowTexture();
+  const comet = Array.from({ length: TAIL_POINTS }, (_, i) => {
+    const k = i / (TAIL_POINTS - 1); // 0 at the end of the tail, 1 at the head
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glow,
+        color: LIGHT,
+        transparent: true,
+        opacity: 0.85 * k * k,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    sprite.scale.setScalar(0.2 + k * k * 0.7);
+    sprite.renderOrder = 10;
+    group.add(sprite);
+    return { sprite, k };
+  });
+
+  // The loop is closed, so the light simply keeps going around it.
+  const setTime = (seconds: number): void => {
+    const front = seconds * SPEED;
+    for (const { sprite, k } of comet) {
+      const p = pointAt(front - TAIL * (1 - k));
+      sprite.position.set(p.x, Y + 0.05, p.y);
+    }
+  };
+
+  setTime(0);
+  return { object: group, setTime };
 }
