@@ -65,8 +65,9 @@ Tarea (TDD; plan primero):
 Reporte para revisión: archivos, tests, render de texto de la pantalla en sus tres variantes, evidencia de
 que el bloque ecosystem llega al asistente saneado, y sección "Impacto en el procedimiento de agentes"
 (esperado: Sí — todo asistente de chat debe inyectar los tres ámbitos; celdas de Shell a revalidar).
-Enlaces de CI en verde (ubuntu y macOS) sobre la rama de trabajo. Empieza el reporte con el prefijo
-"Shell:".
+Sin CI todavía: como no hay commit ni push, valida en local (suite completa, typecheck, build) y pega
+la salida real; el CI en ubuntu y macOS se corre después de la revisión, cuando se autorice el commit.
+Empieza el reporte con el prefijo "Shell:".
 ```
 
 ## Qué revisará forge614-ai
