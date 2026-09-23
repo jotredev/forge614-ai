@@ -24,6 +24,14 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 
 **Precondition of `release.yml`:** a node with `file:../` dependencies to sibling repositories in its `package.json` cannot adopt this template; the workflow checks out a single repository, so `bun install --frozen-lockfile` would fail against that path dependency. Replace it with the published version of the sibling node before adopting the template.
 
+## `standard-release.yml`
+
+| Job | Trigger | What it runs | What it publishes | Expected duration |
+| --- | --- | --- | --- | --- |
+| `standard-release` | tag `standard-v*` | `bun install --frozen-lockfile`, `bun run standard:check`, `bun run standard:release` on `ubuntu-24.04` | GitHub release with `standard-<version>.tar.gz`, `SHA256SUMS` and `pack-manifest.json`; the tag must match `standard/VERSION` and the pointer must match the tree | ~2 min |
+
+It is the minimum publication mechanism for the standard (phase 0.2 spec, §5.1): Sentinel downloads that release's package and checks its fingerprint. An existing release is not replaced: publishing the same version twice fails.
+
 ## Validating before integrating
 
 `bun run workflows:check` reads every YAML in `.github/workflows/`, validates it against `WorkflowSchema` (unknown fields are an error and `timeout-minutes` is mandatory in every job), requires every `uses` to be pinned to a 40-character hexadecimal SHA, every `run` to be `bun install --frozen-lockfile`, `bun test` or `bun run <script>` with a script that exists in `package.json`, and every job to appear in the first column of the tables in this document (it looks for the rows under a header starting with `| Job |`). It prints `{ schemaVersion: 1, verdict, findings }` and exits with `1` if the verdict is not `pass`. It is part of `bun run verify`. With no files in `.github/workflows/` it reports `pass` with "no workflows to validate".

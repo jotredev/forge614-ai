@@ -24,6 +24,14 @@ Un **workflow** es un archivo YAML de `.github/workflows/` que la integración c
 
 **Precondición de `release.yml`:** un nodo con dependencias `file:../` a repositorios hermanos en su `package.json` no puede adoptar esta plantilla; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría contra esa dependencia de ruta. Se sustituye por la versión publicada del nodo hermano antes de adoptar la plantilla.
 
+## `standard-release.yml`
+
+| Job | Disparador | Qué ejecuta | Qué publica | Duración esperada |
+| --- | --- | --- | --- | --- |
+| `standard-release` | tag `standard-v*` | `bun install --frozen-lockfile`, `bun run standard:check`, `bun run standard:release` en `ubuntu-24.04` | release de GitHub con `standard-<versión>.tar.gz`, `SHA256SUMS` y `pack-manifest.json`; el tag debe coincidir con `standard/VERSION` y el puntero con el árbol | ~2 min |
+
+Es el mecanismo mínimo de publicación del reglamento (spec de la fase 0.2, §5.1): Sentinel descarga el paquete de esa release y comprueba su huella. Una release existente no se reemplaza: publicar la misma versión dos veces falla.
+
 ## Validar antes de integrar
 
 `bun run workflows:check` lee cada YAML de `.github/workflows/`, lo valida contra `WorkflowSchema` (campos desconocidos son error y `timeout-minutes` es obligatorio en cada job), exige que cada `uses` esté fijado a un SHA de 40 caracteres hexadecimales, que cada `run` sea `bun install --frozen-lockfile`, `bun test` o `bun run <script>` con un script que exista en `package.json`, y que cada job aparezca en la primera columna de las tablas de este documento (busca las filas bajo un encabezado que empiece por `| Job |`). Imprime `{ schemaVersion: 1, verdict, findings }` y sale con `1` si el veredicto no es `pass`. Forma parte de `bun run verify`. Sin archivos en `.github/workflows/` informa `pass` con "sin workflows que validar".
