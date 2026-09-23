@@ -1,9 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
 import { theme } from "./theme";
@@ -11,8 +7,17 @@ import { theme } from "./theme";
 const DEFAULT_VIEW_SIZE = 24;
 const CAMERA_DISTANCE = 60;
 
-export type Stage = { scene: THREE.Scene; start(): void; dispose(): void };
+export type Stage = {
+  scene: THREE.Scene;
+  // Ask for a new frame after changing the scene. Pass `shadows` when
+  // something moved, so the shadow map is recomputed too.
+  invalidate(options?: { shadows?: boolean }): void;
+  start(): void;
+  dispose(): void;
+};
 
+// The scene is static, so it is drawn only when something changes (camera
+// moves, window resizes, the scene is edited) instead of 60 times a second.
 export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE): Stage {
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -24,6 +29,9 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // Shadows are baked once and refreshed only on request.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   container.appendChild(renderer.domElement);
 
   // Labels are HTML on top of the canvas so text stays sharp at any zoom.
@@ -82,12 +90,22 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   gridMaterial.opacity = 0.5;
   scene.add(grid);
 
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(clampPixelRatio(window.devicePixelRatio));
-  composer.setSize(width, height);
-  composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new GTAOPass(scene, camera, width, height));
-  composer.addPass(new OutputPass());
+  let frame = 0;
+  const draw = (): void => {
+    frame = 0;
+    // While the camera is still gliding (damping), keep asking for frames.
+    const moving = controls.update();
+    renderer.render(scene, camera);
+    labels.render(scene, camera);
+    if (moving) invalidate();
+  };
+
+  const invalidate = (options?: { shadows?: boolean }): void => {
+    if (options?.shadows) renderer.shadowMap.needsUpdate = true;
+    if (frame === 0) frame = requestAnimationFrame(draw);
+  };
+
+  controls.addEventListener("change", () => invalidate());
 
   const resize = (): void => {
     const w = container.clientWidth;
@@ -100,30 +118,20 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
     camera.bottom = f.bottom;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
-    composer.setSize(w, h);
     labels.setSize(w, h);
+    invalidate();
   };
   window.addEventListener("resize", resize);
 
-  let frame = 0;
-  const loop = (): void => {
-    frame = requestAnimationFrame(loop);
-    controls.update();
-    composer.render();
-    labels.render(scene, camera);
-  };
-
   return {
     scene,
-    start: () => {
-      if (frame === 0) loop();
-    },
+    invalidate,
+    start: () => invalidate({ shadows: true }),
     dispose: () => {
       cancelAnimationFrame(frame);
       frame = 0;
       window.removeEventListener("resize", resize);
       controls.dispose();
-      composer.dispose();
       renderer.dispose();
       container.replaceChildren();
     },
