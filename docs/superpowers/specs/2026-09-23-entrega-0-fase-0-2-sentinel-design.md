@@ -173,7 +173,7 @@ Secuencia del arranque circular (revisión humana hasta que exista Sentinel 0.1)
 1. `forge614-ai` publica el reglamento 1.0.0 (tag `standard-v1.0.0`) con el workflow de §5.1.
 2. Sentinel se construye desde las plantillas 1.0.0; sus PR pasan `verify` propio (typecheck, tests) y revisión independiente.
 3. Sentinel 0.1 se revisa a sí mismo con su `check`, pasa, y se publica.
-4. `forge614-ai` adopta Sentinel en `verify`, borra `src/modules/validators/` y `src/app/run-validators.ts`, conserva `standard:render`, `standard:pack`, `schemas:generate`, `decisions:index`, `notion-map:build`, y publica el estándar 1.1.0 (plantilla `verify.yml` con Sentinel, `layout.json`, `secret-patterns.json`, aclaración del acta 0024 en la regla de evolución aditiva, `BRANCH_PROTECTION` ya actualizado).
+4. `forge614-ai` adopta Sentinel en `verify`, borra `src/modules/validators/` y `src/app/run-validators.ts`, conserva `standard:render`, `standard:pack`, `schemas:generate`, `decisions:index`, `notion-map:build`, y publica el estándar 1.1.0 (plantilla `verify.yml` con Sentinel, `layout.json`, `stack.json`, `secret-patterns.json`, aclaración del acta 0024 en la regla de evolución aditiva, `BRANCH_PROTECTION` ya actualizado).
 5. Los nodos adoptan Sentinel en su siguiente release (fase 0.4).
 
 Un nodo puede declarar 1.0.0 mientras Sentinel ya conoce 1.1.0: Sentinel revisa con la versión declarada y añade en el informe `standard.latestKnown`.
