@@ -64,7 +64,7 @@ The command writes to stderr one line per step (`[verify] <step>: exit N`), one 
 | `0` | Every step and validator in `pass` | — |
 | `1` | A step failed | `VERIFY_STEP_FAILED` |
 | `1` | The overall verdict is not `pass` (`caution` or `fail`); the report is still printed to stdout | — |
-| `2` | Invalid argument: `--today` not in `YYYY-MM-DD` format, `--locale` other than `es`/`en`, unknown flag with a value (the parser reads `--key value` pairs) | `INVALID_ARGS` |
+| `2` | Invalid argument: `--today` not in `YYYY-MM-DD` format, `--locale` other than `es`/`en`, unknown flag with a value (the parser reads `--key value` pairs) | `INVALID_ARGUMENTS` |
 
 ## `standard:pack` and `SHA256SUMS`
 
@@ -88,7 +88,7 @@ Before packing, the command runs the same validators as `verify`; if any fails, 
 It prints `{ schemaVersion: 1, version, archive, sha256, entries }`. Two flags:
 
 - `--update-pointer`: additionally rewrites `standard.sha256` in `forge614.node.json`, validating the pointer before and after with `NodePointerSchema`. That pointer is the **committed truth**: today it is the fingerprint `standard:pack --check` compares against, and the one every node copies when pinning its version; each node's verifier, planned for phase 0.2, will compare it against the published archive (record 0009).
-- `--check`: packs into a temporary directory, compares the fresh fingerprint with the pointer's and, when present, with `dist/SHA256SUMS`; prints `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` or fails with `STANDARD_PACK_DRIFT`. Running it in CI on the three operating systems (`parity` job, document 05) is the parity proof: if the bytes changed on any platform, the fingerprint would stop matching the pointer. The `standard:check` script, the alias of `standard:pack --check` that job invokes, arrives together with this repository's workflows (phase 0.1); today it is not in `package.json`.
+- `--check`: packs into a temporary directory, compares the fresh fingerprint with the pointer's and, when present, with `dist/SHA256SUMS`; prints `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` or fails with `STANDARD_PACK_DRIFT`. Running it in CI on the three operating systems (`parity` job, document 05) is the parity proof: if the bytes changed on any platform, the fingerprint would stop matching the pointer. The `standard:check` script in `package.json`, the alias of `standard:pack --check`, is what that job invokes.
 
 | Exit | `code` | Situation |
 | --- | --- | --- |

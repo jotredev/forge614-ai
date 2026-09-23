@@ -34,7 +34,7 @@ if (argv.includes("--help")) {
 
 const parsed = Args.safeParse(parseArgs(argv));
 if (!parsed.success) {
-  printError("INVALID_ARGS", parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "));
+  printError("INVALID_ARGUMENTS", parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "));
   process.exit(2);
 }
 

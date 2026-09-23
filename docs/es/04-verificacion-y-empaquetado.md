@@ -64,7 +64,7 @@ El comando escribe en stderr una línea por paso (`[verify] <paso>: exit N`), un
 | `0` | Todos los pasos y validadores en `pass` | — |
 | `1` | Un paso falló | `VERIFY_STEP_FAILED` |
 | `1` | El veredicto global no es `pass` (`caution` o `fail`); el reporte se imprime igual en stdout | — |
-| `2` | Argumento inválido: `--today` sin formato `YYYY-MM-DD`, `--locale` distinto de `es`/`en`, flag desconocido con valor (el analizador lee pares `--clave valor`) | `INVALID_ARGS` |
+| `2` | Argumento inválido: `--today` sin formato `YYYY-MM-DD`, `--locale` distinto de `es`/`en`, flag desconocido con valor (el analizador lee pares `--clave valor`) | `INVALID_ARGUMENTS` |
 
 ## `standard:pack` y `SHA256SUMS`
 
@@ -88,7 +88,7 @@ Antes de empaquetar, el comando ejecuta los mismos validadores que `verify`; si 
 Imprime `{ schemaVersion: 1, version, archive, sha256, entries }`. Dos flags:
 
 - `--update-pointer`: además reescribe `standard.sha256` en `forge614.node.json`, validando el puntero antes y después con `NodePointerSchema`. Ese puntero es la **verdad commiteada**: hoy es la huella contra la que `standard:pack --check` compara, y la que todo nodo copia al fijar su versión; el verificador de cada nodo, previsto para la fase 0.2, la comparará contra el paquete publicado (acta 0009).
-- `--check`: empaqueta en un directorio temporal, compara la huella fresca con la del puntero y, si existe, con `dist/SHA256SUMS`; imprime `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` o falla con `STANDARD_PACK_DRIFT`. Ejecutarlo en CI en los tres sistemas operativos (job `parity`, documento 05) es la prueba de paridad: si los bytes cambiaran en alguna plataforma, la huella dejaría de coincidir con el puntero. El script `standard:check`, alias de `standard:pack --check` que ese job invoca, llega junto con los workflows de este repositorio (fase 0.1); hoy no está en `package.json`.
+- `--check`: empaqueta en un directorio temporal, compara la huella fresca con la del puntero y, si existe, con `dist/SHA256SUMS`; imprime `{ schemaVersion: 1, ok: true, sha256, pointerChecked: true, sumsChecked }` o falla con `STANDARD_PACK_DRIFT`. Ejecutarlo en CI en los tres sistemas operativos (job `parity`, documento 05) es la prueba de paridad: si los bytes cambiaran en alguna plataforma, la huella dejaría de coincidir con el puntero. El script `standard:check` de `package.json`, alias de `standard:pack --check`, es el que ese job invoca.
 
 | Salida | `code` | Situación |
 | --- | --- | --- |
