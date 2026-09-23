@@ -22,3 +22,12 @@ test("readTree includes extensionless text files and ignores .superpowers by def
   const keys = [...readTree(root).files.keys()].sort();
   expect(keys).toEqual(["hooks/pre-push"]);
 });
+
+test("readTree ignores .claude by default", () => {
+  const root = mkdtempSync(join(tmpdir(), "tree-"));
+  mkdirSync(join(root, ".claude/worktrees/ecosystem-map"), { recursive: true });
+  writeFileSync(join(root, ".claude/anything.md"), "ignored");
+  writeFileSync(join(root, "a.md"), "yes");
+  const keys = [...readTree(root).files.keys()].sort();
+  expect(keys).toEqual(["a.md"]);
+});

@@ -11,7 +11,7 @@ Un **workflow** es un archivo YAML de `.github/workflows/` que la integración c
 | `verify` | push a `main`, pull request | `bun install --frozen-lockfile`, `bun run verify` en `ubuntu-24.04` | typecheck, tests, índice de actas, workflows, esquemas, mapa de Notion y validadores del estándar (documento 04) | ~3 min |
 | `parity` | push a `main`, pull request | `bun install --frozen-lockfile`, `bun run standard:check` en la matriz `ubuntu-24.04`, `macos-15`, `windows-2025` | que el paquete del estándar tiene en los tres sistemas operativos la misma huella que `forge614.node.json`: los bytes son idénticos en Linux, macOS y Windows (acta 0018) | ~2 min por sistema |
 
-`standard:check` es el alias de script de `bun run standard:pack --check` (documento 04); el validador de workflows solo admite pasos `bun run <script>` sin argumentos, por eso el job no invoca el flag directamente. Todo job declara `timeout-minutes` (`verify` y `parity`: 10; `build`: 20; `publish`: 10): ninguna etapa queda sin límite y `workflows:check` rechaza el job que no lo lleva. La matriz de `parity` declara `fail-fast: false`: si un sistema falla, los otros dos terminan y reportan su propio resultado, así que un fallo de paridad muestra los tres veredictos en lugar de cancelar los que faltaban.
+`standard:check` es el alias de script de `bun run standard:pack --check` (documento 04); el validador de workflows solo admite pasos `bun run <script>` sin argumentos, por eso el job no invoca el flag directamente. Todo job declara `timeout-minutes` (`verify` y `parity`: 10; `build`: 20; `publish`: 10; `standard-release`: 10): ninguna etapa queda sin límite y `workflows:check` rechaza el job que no lo lleva. La matriz de `parity` declara `fail-fast: false`: si un sistema falla, los otros dos terminan y reportan su propio resultado, así que un fallo de paridad muestra los tres veredictos en lugar de cancelar los que faltaban.
 
 ## `release.yml`
 
@@ -28,7 +28,7 @@ Un **workflow** es un archivo YAML de `.github/workflows/` que la integración c
 
 | Job | Disparador | Qué ejecuta | Qué publica | Duración esperada |
 | --- | --- | --- | --- | --- |
-| `standard-release` | tag `standard-v*` | `bun install --frozen-lockfile`, `bun run standard:check`, `bun run standard:release` en `ubuntu-24.04` | release de GitHub con `standard-<versión>.tar.gz`, `SHA256SUMS` y `pack-manifest.json`; el tag debe coincidir con `standard/VERSION` y el puntero con el árbol | ~2 min |
+| `standard-release` | tag `standard-v*` | `bun install --frozen-lockfile`, `bun run standard:check`, `bun run standard:release` en `ubuntu-24.04` (el paso recibe el token del workflow vía `GH_TOKEN: ${{ github.token }}`) | release de GitHub con `standard-<versión>.tar.gz`, `SHA256SUMS` y `pack-manifest.json`; el tag debe coincidir con `standard/VERSION` y el puntero con el árbol | ~2 min |
 
 Es el mecanismo mínimo de publicación del reglamento (spec de la fase 0.2, §5.1): Sentinel descarga el paquete de esa release y comprueba su huella. Una release existente no se reemplaza: publicar la misma versión dos veces falla.
 

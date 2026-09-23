@@ -2,6 +2,7 @@ export interface RunOptions {
   cwd?: string;
   stdin?: string;
   timeoutMs?: number;
+  env?: Record<string, string>;
 }
 
 export interface RunResult {
@@ -13,6 +14,7 @@ export interface RunResult {
 export function run(cmd: string[], options: RunOptions = {}): RunResult {
   const proc = Bun.spawnSync(cmd, {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.env === undefined ? {} : { env: options.env }),
     stdin: options.stdin === undefined ? "ignore" : new TextEncoder().encode(options.stdin),
     stdout: "pipe",
     stderr: "pipe",

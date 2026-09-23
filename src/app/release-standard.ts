@@ -40,6 +40,9 @@ export function releaseStandard(options: ReleaseStandardOptions): ReleaseStandar
   if (!check.ok) return { ok: false, code: "STANDARD_PACK_DRIFT", error: check.error };
 
   const result = packStandard(options.root, options.outDir);
+  if (result.sha256 !== check.sha256) {
+    return { ok: false, code: "STANDARD_PACK_DRIFT", error: "fresh pack differs from the checked pack" };
+  }
   const assets = [
     join(options.outDir, `standard-${result.version}.tar.gz`),
     join(options.outDir, "SHA256SUMS"),

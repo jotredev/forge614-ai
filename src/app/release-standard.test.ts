@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { NodePointerSchema } from "../modules/standard/schemas";
 import { releaseStandard, STANDARD_TAG_PATTERN } from "./release-standard";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
@@ -33,6 +34,8 @@ test("dry run packs, verifies the pointer and returns the gh command without exe
     expect(r.command.slice(0, 4)).toEqual(["gh", "release", "create", "standard-v1.0.0"]);
     expect(r.assets).toEqual([join(out, "standard-1.0.0.tar.gz"), join(out, "SHA256SUMS"), join(out, "pack-manifest.json")]);
     expect(readFileSync(join(out, "SHA256SUMS"), "utf8")).toContain(r.sha256);
+    const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(join(REPO_ROOT, "forge614.node.json"), "utf8")));
+    expect(r.sha256).toBe(pointer.standard.sha256);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -56,7 +59,7 @@ test("a pointer that does not match the tree fails with STANDARD_PACK_DRIFT befo
   const calls: Call[] = [];
   try {
     cpSync(join(REPO_ROOT, "standard"), join(root, "standard"), { recursive: true });
-    const pointer = JSON.parse(readFileSync(join(REPO_ROOT, "forge614.node.json"), "utf8")) as { standard: { sha256: string } };
+    const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(join(REPO_ROOT, "forge614.node.json"), "utf8")));
     pointer.standard.sha256 = "0".repeat(64);
     writeFileSync(join(root, "forge614.node.json"), `${JSON.stringify(pointer, null, 2)}\n`);
     const r = releaseStandard({ root, tag: "standard-v1.0.0", outDir: join(root, "dist"), exec: fakeExec(calls), dryRun: false });

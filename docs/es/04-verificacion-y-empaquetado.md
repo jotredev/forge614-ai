@@ -15,7 +15,7 @@
 | 5 | `bun run schemas:generate --check` | `standard/schemas/*.json` iguales a los esquemas Zod (`SCHEMAS_DRIFT` si no) |
 | 6 | `bun run notion-map:build --check` | `docs/notion-map.json` con las huellas actuales de cada par de documentos (`NOTION_MAP_DRIFT` si no) |
 
-Después, `runValidators` (`src/app/run-validators.ts`) lee el árbol del repositorio (sin `node_modules`, `dist`, `.git` ni `.superpowers`) y ejecuta los validadores. Un **validador** es una función pura sobre ese árbol que devuelve hallazgos con el identificador de la regla que informa:
+Después, `runValidators` (`src/app/run-validators.ts`) lee el árbol del repositorio (sin `node_modules`, `dist`, `.git`, `.superpowers` ni `.claude`) y ejecuta los validadores. Un **validador** es una función pura sobre ese árbol que devuelve hallazgos con el identificador de la regla que informa:
 
 | Regla | Validador | Qué comprueba |
 | --- | --- | --- |
