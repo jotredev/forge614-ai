@@ -26,7 +26,8 @@ type Line = { prefix: string; prefixColor: string; text: string; typed?: boolean
 // The commands are the real global commands of the ecosystem; the outputs
 // are neutral confirmations, not invented numbers. After "prepare", Shell
 // shows Engines' preview, the person confirms it, and Engines applies it
-// (contract, section 5).
+// (contract, section 5); then Shell asks whether to contextualize the
+// project and shows Atlas' progress and final report (acta 0004).
 const SESSION: Line[] = [
   { prefix: "$", prefixColor: SHELL, text: "forge614 status", typed: true },
   { prefix: "✓", prefixColor: "#8fbf7a", text: "engram   listo" },
@@ -36,11 +37,16 @@ const SESSION: Line[] = [
   { prefix: "›", prefixColor: "#e0b458", text: "vista previa: 1 cambio (motor 3)" },
   { prefix: "?", prefixColor: SHELL, text: "¿aplicar cambios? (s/n) s", typed: true },
   { prefix: "✓", prefixColor: "#8fbf7a", text: "cambios aplicados" },
+  { prefix: "?", prefixColor: SHELL, text: "¿contextualizar el proyecto? (s/n) s", typed: true },
+  { prefix: "›", prefixColor: "#e0b458", text: "atlas: revisando repositorio…" },
+  { prefix: "✓", prefixColor: "#8fbf7a", text: "contexto guardado en engram" },
 ];
+// Lines that fit on the screen; older ones scroll up and out.
+const VISIBLE_LINES = 8;
 
 // Typing speed and each line's length, so the map's clock can work out
 // when each line starts and ends.
-export const TYPE_SPEED = 14; // characters per second
+export const TYPE_SPEED = 20; // characters per second
 export const LINE_LENGTHS = SESSION.map((line) => line.text.length);
 
 // When each line starts in the cycle, in seconds, and how long a cycle is.
@@ -86,9 +92,11 @@ function typingTerminal(width: number, height: number, title: string, script: Sc
     let y = bar + 56;
     let cursorX = 76;
     let cursorY = y;
+    const started = SESSION.flatMap((_, i) => (shown[i]! > 0 ? [i] : []));
+    const firstVisible = started[Math.max(0, started.length - VISIBLE_LINES)] ?? 0;
     SESSION.forEach((line, i) => {
       const count = shown[i]!;
-      if (count <= 0) return;
+      if (count <= 0 || i < firstVisible) return;
       const text = line.text.slice(0, count);
       context.fillStyle = line.prefixColor;
       context.fillText(line.prefix, 40, y);

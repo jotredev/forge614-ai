@@ -4,12 +4,23 @@ import { fatalMessage } from "./fatal";
 import { createCard } from "./scene/card";
 import { createFloor } from "./scene/floor";
 import { CLOUD, createDataCenter } from "./scene/nodes/datacenter";
-import { type Sync, createSync } from "./scene/sync";
+import { type Sync, type Trip, createSync } from "./scene/sync";
+import { ATLAS, createAtlas } from "./scene/nodes/atlas";
 import { createEngram } from "./scene/nodes/engram";
 import { ENGINES, createEngines } from "./scene/nodes/engines";
+import { WORKERS, createWorker } from "./scene/nodes/worker";
 import {
   APPLY_LEAVES,
   APPLY_REPLY_LEAVES,
+  ATLAS_ENGINES_ASK_LEAVES,
+  ATLAS_ENGINES_REPLY_LEAVES,
+  ATLAS_LOOKUP_LEAVES,
+  ATLAS_LOOKUP_REPLY_LEAVES,
+  ATLAS_PROGRESS_LEAVES,
+  ATLAS_REPORT_LEAVES,
+  ATLAS_START_LEAVES,
+  ATLAS_STORED_AT,
+  ATLAS_WRITE_LEAVES,
   COPY_LEAVES,
   CYCLE,
   ENGINES_ASK_LEAVES,
@@ -18,8 +29,15 @@ import {
   PREVIEW_ASK_LEAVES,
   PREVIEW_REPLY_LEAVES,
   RECALL_LEAVES,
+  REPORT_LEAVES,
   SAVE_LEAVES,
+  TASK_LEAVES,
+  TRAVEL,
+  WORKER_COUNT,
 } from "./scene/timeline";
+
+const ATLAS_LIGHT = "#c4ecd6";
+const WORKERS_LIGHT = "#f2c3b4";
 import { createShell } from "./scene/nodes/shell";
 import { createPlatform } from "./scene/platform";
 import { createStage } from "./scene/stage";
@@ -29,12 +47,13 @@ if (!container) throw new Error("missing #office container");
 
 // Nodes shown so far. They sit far apart, 44 units from each other, so each
 // node's circuit has room and they never overlap: Shell and Engram side by
-// side, Engines below, centered between them.
+// side, Engines and Atlas in the row below.
 const PLATE_TOP = 1.7; // top of every node plate, where cables rest on them
 const NODES = [
   { id: "shell", name: "Shell", role: "La terminal", accent: "#7fb2d9", across: -22, down: 0 },
   { id: "engram", name: "Engram", role: "La memoria", accent: "#d98ca0", across: 22, down: 0 },
   { id: "engines", name: "Engines", role: "Los motores", accent: ENGINES, across: 0, down: 38 },
+  { id: "atlas", name: "Atlas", role: "Orquestador de contexto", accent: ATLAS, across: 44, down: 38 },
 ] as const;
 
 type NodeId = (typeof NODES)[number]["id"];
@@ -47,13 +66,16 @@ function centerOf(id: NodeId): THREE.Vector2 {
 }
 
 try {
-  // Framed so the three nodes and the floating data center fit.
-  const stage = createStage(container, 66, new THREE.Vector3(15, 3, 8));
+  // Framed so every node, the workers and the floating data center fit.
+  const stage = createStage(container, 84, new THREE.Vector3(31, 3, 6));
 
+  // Direction on the floor from one node to another.
+  const toward = (from: NodeId, to: NodeId): THREE.Vector2 => centerOf(to).sub(centerOf(from)).normalize();
   const engramScene = createEngram(PLATE_TOP);
-  const enginesScene = createEngines(PLATE_TOP, [centerOf("shell").sub(centerOf("engines")).normalize()]);
+  const enginesScene = createEngines(PLATE_TOP, [toward("engines", "shell"), toward("engines", "atlas")]);
   const shellScene = createShell(PLATE_TOP, { starts: LINE_STARTS, cycle: CYCLE });
-  const scenes = { shell: shellScene, engram: engramScene, engines: enginesScene };
+  const atlasScene = createAtlas(PLATE_TOP, [toward("atlas", "shell"), toward("atlas", "engines"), toward("atlas", "engram")], WORKER_COUNT);
+  const scenes = { shell: shellScene, engram: engramScene, engines: enginesScene, atlas: atlasScene };
 
   NODES.forEach((node, index) => {
     const center = centerOf(node.id);
@@ -128,7 +150,7 @@ try {
     route: [outOfPlug, onPlate, alongPlate, engramEdge, cloudEdge, cloud3.clone().add(inlet).add(faceTurn(0, 0, 0.6)).setY(onCloud)],
     clips: [alongPlate.clone().setY(onEngram), engramEdge.clone().setY(onEngram), cloudEdge.clone().setY(onCloud)],
     inlet,
-    trips: [{ color: "#e6c9f0", leaves: COPY_LEAVES, onArrive: (amount) => dataCenter.flash(amount) }],
+    trips: [ATLAS_STORED_AT, COPY_LEAVES].map((leaves) => ({ color: "#e6c9f0", leaves, onArrive: (amount: number) => dataCenter.flash(amount) })),
   });
   stage.scene.add(sync.group);
   stage.onTick((seconds) => sync.update(seconds));
@@ -178,101 +200,163 @@ try {
     inlet: deskPlug(1.25),
     trips: [{ color: "#f3b7c6", leaves: RECALL_LEAVES }],
   });
-  // Shell and Engines (contract, sections 5 and 11) talk through two cables,
-  // one per direction, from a small network box on Shell's floor, right of
-  // the desk, into two ports on Engines' projector base. Through the blue
-  // one Shell asks, in turn, for the AI engines installed, for a preview of
-  // the change, and to apply it once the person confirms; through the amber
-  // one Engines answers each.
-  const enginesAt = centerOf("engines");
-  const engines3 = new THREE.Vector3(enginesAt.x, 0, enginesAt.y);
-  const linkToEngines = (
-    node3: THREE.Vector3,
-    // The node's ends of both cables (relative to its center) and the
-    // direction they come out of.
-    ends: { ask: THREE.Vector3; reply: THREE.Vector3; outward: THREE.Vector3 },
-    ports: { inlet: THREE.Vector3; outlet: THREE.Vector3 },
-    ask: { color: string; leaves: number[] },
-    replies: number[],
-  ): Sync[] => {
-    const toEngines = engines3.clone().sub(node3).normalize();
-    const across = new THREE.Vector3(-toEngines.z, 0, toEngines.x);
-    // Just inside a plate's edge, toward the other node, moved sideways.
-    const edge = (center: THREE.Vector3, toward: THREE.Vector3, side: number): THREE.Vector3 =>
-      center
+  // Every other cable is laid the same way: out of its plug, down onto the
+  // plate, to the plate's edge facing the other node, taut across the air,
+  // and the same on the other side into its port. A pair of nodes that talk
+  // both ways get two cables side by side, one per direction; a single
+  // cable can also carry both ways.
+  type End = {
+    center: THREE.Vector3; // the node's center on the floor
+    plugs: THREE.Vector3[]; // plug positions, relative to the center
+    outward: THREE.Vector3 | undefined; // direction cables leave in; away from the center if none
+    half: number; // half the plate's size
+  };
+  const endOf = (id: NodeId, plugs: THREE.Vector3[], outward?: THREE.Vector3, half = 3.8): End => {
+    const at = centerOf(id);
+    return { center: new THREE.Vector3(at.x, 0, at.y), plugs, outward, half };
+  };
+  const outwardOf = (end: End, plug: THREE.Vector3): THREE.Vector3 => end.outward ?? plug.clone().setY(0).normalize();
+  const cable = (
+    a: End,
+    aPlug: THREE.Vector3,
+    b: End,
+    bPlug: THREE.Vector3,
+    side: number,
+    color: string,
+    trips: Trip[],
+  ): Sync => {
+    const toB = b.center.clone().sub(a.center).setY(0).normalize();
+    const across = new THREE.Vector3(-toB.z, 0, toB.x);
+    const edge = (end: End, toward: THREE.Vector3): THREE.Vector3 =>
+      end.center
         .clone()
-        .addScaledVector(toward, 3.5 / Math.max(Math.abs(toward.x), Math.abs(toward.z)))
-        .addScaledVector(across, side)
+        .addScaledVector(toward, (end.half - 0.3) / Math.max(Math.abs(toward.x), Math.abs(toward.z)))
+        .addScaledVector(across, side * 0.35)
         .setY(onEngram);
-    // One cable, on its side of the pair (+1 or -1), from the node to a port.
-    const lane = (side: number, end: THREE.Vector3, port: THREE.Vector3): { route: THREE.Vector3[]; clips: THREE.Vector3[] } => {
-      const plug = node3.clone().add(end);
-      const outOfBox = plug.clone().addScaledVector(ends.outward, 0.4);
-      const floor = plug.clone().addScaledVector(ends.outward, 0.9).setY(onEngram);
-      const nodeEdge = edge(node3, toEngines, side * 0.35);
-      const enginesEdge = edge(engines3, toEngines.clone().negate(), side * 0.35);
-      const portAt = engines3.clone().add(port);
-      const outward = portAt.clone().sub(engines3).setY(0).normalize();
-      const onPlate = portAt.clone().addScaledVector(outward, 0.9).setY(onEngram);
-      const outOfPort = portAt.clone().addScaledVector(outward, 0.4);
-      const along = onPlate.clone().lerp(enginesEdge, 0.5);
-      return {
-        route: [outOfBox, floor, nodeEdge, enginesEdge, along, onPlate, outOfPort],
-        clips: [floor, nodeEdge, enginesEdge, along],
-      };
+    const leaving = (end: End, plug: THREE.Vector3): THREE.Vector3[] => {
+      const at = end.center.clone().add(plug);
+      const out = outwardOf(end, plug);
+      return [at.clone().addScaledVector(out, 0.4), at.clone().addScaledVector(out, 0.9).setY(onEngram)];
     };
-    const node2 = new THREE.Vector2(node3.x, node3.z);
-    // Seen from the node, Engines' inlet is on the +1 side of the pair.
-    const askLane = lane(1, ends.ask, ports.inlet);
-    const replyLane = lane(-1, ends.reply, ports.outlet);
+    const aEdge = edge(a, toB);
+    const bEdge = edge(b, toB.clone().negate());
+    const [aOut, aFloor] = leaving(a, aPlug);
+    const [bOut, bFloor] = leaving(b, bPlug);
+    const aAlong = aFloor!.clone().lerp(aEdge, 0.5);
+    const bAlong = bFloor!.clone().lerp(bEdge, 0.5);
+    return createSync({
+      from: new THREE.Vector2(a.center.x, a.center.z),
+      to: new THREE.Vector2(b.center.x, b.center.z),
+      color,
+      origin: aPlug,
+      route: [aOut!, aFloor!, aAlong, aEdge, bEdge, bAlong, bFloor!, bOut!],
+      clips: [aAlong, aEdge, bEdge, bAlong],
+      inlet: bPlug,
+      trips,
+    });
+  };
+  // Two cables between a and b, one per direction, each on its own side;
+  // each end's plugs are matched to the side they sit on.
+  const pair = (a: End, b: End, forward: { color: string; leaves: number[] }, backward: { color: string; leaves: number[] }): Sync[] => {
+    const toB = b.center.clone().sub(a.center).setY(0).normalize();
+    const across = new THREE.Vector3(-toB.z, 0, toB.x);
+    const bySide = (end: End): THREE.Vector3[] => [...end.plugs].sort((p, q) => q.dot(across) - p.dot(across));
+    const [aPlus, aMinus] = bySide(a);
+    const [bPlus, bMinus] = bySide(b);
     return [
-      createSync({
-        from: node2,
-        to: enginesAt,
-        color: ask.color,
-        origin: ends.ask,
-        route: askLane.route,
-        clips: askLane.clips,
-        inlet: ports.inlet,
-        trips: ask.leaves.map((leaves) => ({ color: ask.color, leaves })),
-      }),
-      createSync({
-        from: enginesAt,
-        to: node2,
-        color: "#f0cf8f",
-        origin: ports.outlet,
-        route: [...replyLane.route].reverse(),
-        clips: replyLane.clips,
-        inlet: ends.reply,
-        trips: replies.map((leaves) => ({ color: "#f0cf8f", leaves })),
-      }),
+      cable(a, aPlus!, b, bPlus!, 1, forward.color, forward.leaves.map((leaves) => ({ color: forward.color, leaves }))),
+      cable(b, bMinus!, a, aMinus!, 1, backward.color, backward.leaves.map((leaves) => ({ color: backward.color, leaves }))),
     ];
   };
-  // Shell's network box, facing Engines, with one plug per cable.
-  const shellToEngines = engines3.clone().sub(shell3).normalize();
-  const shellAcross = new THREE.Vector3(-shellToEngines.z, 0, shellToEngines.x);
-  const boxAt = faceTurn(1.6, PLATE_TOP + 0.25, 2.3);
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.5, 0.5),
-    new THREE.MeshStandardMaterial({ color: "#2a2f3d", roughness: 0.5, metalness: 0.4 }),
-  );
-  box.castShadow = true;
-  box.position.copy(shell3).add(boxAt);
-  box.rotation.y = Math.atan2(shellToEngines.x, shellToEngines.z);
-  stage.scene.add(box);
-  const boxPlug = (side: number): THREE.Vector3 =>
-    boxAt.clone().addScaledVector(shellToEngines, 0.26).addScaledVector(shellAcross, side * 0.18);
-  const shellLinks = linkToEngines(
-    shell3,
-    { ask: boxPlug(1), reply: boxPlug(-1), outward: shellToEngines },
-    enginesScene.ports[0]!,
+  // A small network box on a node's floor, facing another node, with one
+  // plug per cable.
+  const networkBox = (id: NodeId, boxAt: THREE.Vector3, toward: NodeId): End => {
+    const from = centerOf(id);
+    const to = centerOf(toward);
+    const dir = new THREE.Vector3(to.x - from.x, 0, to.y - from.y).normalize();
+    const across = new THREE.Vector3(-dir.z, 0, dir.x);
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.5, 0.5),
+      new THREE.MeshStandardMaterial({ color: "#2a2f3d", roughness: 0.5, metalness: 0.4 }),
+    );
+    box.castShadow = true;
+    box.position.set(from.x, 0, from.y).add(boxAt);
+    box.rotation.y = Math.atan2(dir.x, dir.z);
+    stage.scene.add(box);
+    const plug = (s: number): THREE.Vector3 => boxAt.clone().addScaledVector(dir, 0.26).addScaledVector(across, s * 0.18);
+    return endOf(id, [plug(1), plug(-1)], dir);
+  };
+
+  // Shell and Engines (contract, sections 5 and 11): from a network box on
+  // Shell's floor, right of the desk, into two ports on Engines' projector
+  // base. Through the blue one Shell asks, in turn, for the AI engines
+  // installed, for a preview of the change, and to apply it once the person
+  // confirms; through the amber one Engines answers each.
+  const enginesPorts = (i: number): End => endOf("engines", [enginesScene.ports[i]!.inlet, enginesScene.ports[i]!.outlet]);
+  const shellEngines = pair(
+    networkBox("shell", faceTurn(1.6, PLATE_TOP + 0.25, 2.3), "engines"),
+    enginesPorts(0),
     { color: "#b9d7ee", leaves: [ENGINES_ASK_LEAVES, PREVIEW_ASK_LEAVES, APPLY_LEAVES] },
-    [ENGINES_REPLY_LEAVES, PREVIEW_REPLY_LEAVES, APPLY_REPLY_LEAVES],
+    { color: "#f0cf8f", leaves: [ENGINES_REPLY_LEAVES, PREVIEW_REPLY_LEAVES, APPLY_REPLY_LEAVES] },
   );
 
-  for (const cable of [save, recall, ...shellLinks]) {
-    stage.scene.add(cable.group);
-    stage.onTick((seconds) => cable.update(seconds));
+  // Atlas (contract, section 7; acta 0004). Shell tells it to start and
+  // Atlas reports its progress and final report back; it asks Engines which
+  // engines can run its workers; it asks Engram for saved progress and
+  // writes the checked knowledge there. Atlas' light is green.
+  const atlasEnd = (i: number): End => endOf("atlas", atlasScene.ports[i]!);
+  const shellAtlas = pair(
+    networkBox("shell", faceTurn(2.8, PLATE_TOP + 0.25, 1.9), "atlas"),
+    atlasEnd(0),
+    { color: "#b9d7ee", leaves: [ATLAS_START_LEAVES] },
+    { color: ATLAS_LIGHT, leaves: [ATLAS_PROGRESS_LEAVES, ATLAS_REPORT_LEAVES] },
+  );
+  const atlasEngines = pair(
+    atlasEnd(1),
+    enginesPorts(1),
+    { color: ATLAS_LIGHT, leaves: [ATLAS_ENGINES_ASK_LEAVES] },
+    { color: "#f0cf8f", leaves: [ATLAS_ENGINES_REPLY_LEAVES] },
+  );
+  const atlasEngram = pair(
+    atlasEnd(2),
+    endOf("engram", engramScene.atlasPorts, faceTurn(0, 0, 1)),
+    { color: ATLAS_LIGHT, leaves: [ATLAS_LOOKUP_LEAVES, ATLAS_WRITE_LEAVES] },
+    { color: "#f3b7c6", leaves: [ATLAS_LOOKUP_REPLY_LEAVES] },
+  );
+
+  // Atlas' workers, one small plate each, fanned out below Atlas; no circuit
+  // of their own, since they are part of Workers. Two cables each: the task
+  // comes from Atlas through one, and the raw report goes back through the
+  // other (contract, section 7).
+  const atlasAt = centerOf("atlas");
+  const workerCables = [-18, 0, 18].map((offset, i) => {
+    const node = { across: 44 + offset, down: 60 };
+    const at = new THREE.Vector2((node.across + node.down) * Math.SQRT1_2, (node.down - node.across) * Math.SQRT1_2);
+    const plate = createPlatform(WORKERS, false, 4.6);
+    plate.group.position.set(at.x, 0, at.y);
+    const worker = createWorker(
+      PLATE_TOP,
+      i,
+      { cycle: CYCLE, from: TASK_LEAVES[i]! + TRAVEL, to: REPORT_LEAVES[i]! },
+      atlasAt.clone().sub(at).normalize(),
+    );
+    worker.group.position.set(at.x, 0, at.y);
+    const card = createCard({ name: `Worker ${i + 1}`, role: "Obrero", accent: WORKERS, kind: "worker" });
+    card.position.set(at.x, PLATE_TOP + 5.2, at.y);
+    stage.scene.add(plate.group, worker.group, card);
+    stage.onTick((seconds) => worker.update(seconds));
+    const workerEnd: End = { center: new THREE.Vector3(at.x, 0, at.y), plugs: worker.ports, outward: undefined, half: 2.3 };
+    return pair(
+      endOf("atlas", atlasScene.workerPorts[i]!, faceTurn(1, 0, 0)),
+      workerEnd,
+      { color: ATLAS_LIGHT, leaves: [TASK_LEAVES[i]!] },
+      { color: WORKERS_LIGHT, leaves: [REPORT_LEAVES[i]!] },
+    );
+  }).flat();
+
+  for (const c of [save, recall, ...shellEngines, ...shellAtlas, ...atlasEngines, ...atlasEngram, ...workerCables]) {
+    stage.scene.add(c.group);
+    stage.onTick((seconds) => c.update(seconds));
   }
 
   stage.start();

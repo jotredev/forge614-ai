@@ -7,6 +7,7 @@ import {
   ENGINES_ASK_ARRIVES,
   ENGINES_REPLY_LEAVES,
   PREVIEW_ASK_ARRIVES,
+  ATLAS_ENGINES_ASK_ARRIVES,
   PREVIEW_REPLY_LEAVES,
   since,
 } from "../timeline";
@@ -252,7 +253,7 @@ export function createEngines(top: number, towards: THREE.Vector2[]): EnginesNod
       // The hologram brightens when each request arrives and as each engine
       // is found.
       const pulse = Math.max(
-        ...[ENGINES_ASK_ARRIVES, ...ENGINE_FOUND_AT, PREVIEW_ASK_ARRIVES, APPLY_ARRIVES].map((at) => {
+        ...[ENGINES_ASK_ARRIVES, ...ENGINE_FOUND_AT, PREVIEW_ASK_ARRIVES, APPLY_ARRIVES, ATLAS_ENGINES_ASK_ARRIVES].map((at) => {
           const s = since(seconds, at);
           return s >= 0 && s < 0.5 ? 1 - s / 0.5 : 0;
         }),

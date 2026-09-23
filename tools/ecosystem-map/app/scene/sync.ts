@@ -4,7 +4,7 @@ import { CYCLE, TRAVEL } from "./timeline";
 
 // An automatic copy over the network: no one carries it. A thick fiber
 // cable runs from one node to another, and each memory runs inside it as a
-// flash of light; the plug it reaches glows on arrival.
+// flash of light, one way; the plug it reaches glows on arrival.
 
 // One memory traveling through the cable, once per cycle of the map clock.
 export type Trip = {
