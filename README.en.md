@@ -29,5 +29,6 @@ bun run standard:pack       # dist/standard-<VERSION>.tar.gz + SHA256SUMS
 | 02 | [Reglas y packs](docs/es/02-reglas-y-packs.md) | [Rules and packs](docs/en/02-rules-and-packs.md) |
 | 03 | [Plantillas y render](docs/es/03-plantillas-y-render.md) | [Templates and rendering](docs/en/03-templates-and-rendering.md) |
 | 04 | [Verificación y empaquetado](docs/es/04-verificacion-y-empaquetado.md) | [Verification and packaging](docs/en/04-verification-and-packaging.md) |
+| 05 | [Workflows](docs/es/05-workflows.md) | [Workflows](docs/en/05-workflows.md) |
 
 Español: [README.md](README.md)
