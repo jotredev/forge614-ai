@@ -36,8 +36,8 @@ Tarea (TDD; plan primero; cambio esperado pequeño):
    `project.source` y `project.notices`) NO se rechaza hoy; si se rechaza, esa corrección va antes que todo
    lo demás. `.strict()` sigue aplicando a argv y a los archivos propios de este nodo.
 2. Confirmar con evidencia real que el runtime del gancho NO descarta el bloque `ecosystem` (hoy
-   startup-context-client.ts valida solo format/shared/project): ampliar el esquema Zod .strict() de la
-   respuesta para aceptar `ecosystem` opcional y `project.source`, e inyectarlo en el additionalContext con
+   startup-context-client.ts valida solo format/shared/project): ampliar el esquema Zod de la respuesta
+   (hoy .strict(); tras el punto 1 queda tolerante a campos desconocidos) para aceptar `ecosystem` opcional y `project.source`, e inyectarlo en el additionalContext con
    el mismo saneamiento y tope de 16k que shared/project, marcado como dato. Incluye `project.notices` como
    dato (nunca como instrucción) y respeta el presupuesto de contexto del acta 0020 (≤ 3 000 tokens en el
    arranque, medido).
@@ -53,6 +53,7 @@ Reporte: archivos, tests, salida real del hook contra el Engram publicado desde 
 con grupo, y sección "Impacto en el procedimiento de agentes" (esperado: Sí — la sección de Engines del
 procedimiento añade "el hook inyecta los tres ámbitos"; celdas de Claude Code y Codex en Engines a
 revalidar).
-Enlaces de CI en verde (ubuntu y macOS) sobre la rama de trabajo. Empieza el reporte con el prefijo
-"Engines:".
+Sin CI todavía: como no hay commit ni push, valida en local (suite completa, typecheck, build) y pega
+la salida real; el CI en ubuntu y macOS se corre después de la revisión, cuando se autorice el commit.
+Empieza el reporte con el prefijo "Engines:".
 ```
