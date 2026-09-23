@@ -102,6 +102,9 @@ test.skipIf(onWindows)(`install.sh --uninstall also removes the legacy PATH bloc
 // clear reason in that case, rather than failing or silently doing nothing.
 const pwsh = Bun.which("pwsh");
 const pwshReason = pwsh === null ? " (skipped: pwsh is not installed in this environment)" : "";
+// pwsh starts cold on CI runners and can take several seconds; bun test
+// defaults to 5 s per test, so the two pwsh tests declare their own budget.
+const PWSH_TEST_TIMEOUT_MS = 60_000;
 
 function requirePwsh(): string {
   if (pwsh === null) throw new Error("pwsh not installed");
@@ -116,7 +119,7 @@ test.skipIf(pwsh === null)(`rendered install.ps1 passes a PowerShell parser synt
   const cmd = `$errs = $null; [System.Management.Automation.Language.Parser]::ParseFile('${script}', [ref]$null, [ref]$errs) | Out-Null; if ($errs.Count -gt 0) { $errs | ForEach-Object { Write-Error $_ }; exit 1 } else { exit 0 }`;
   const r = run([requirePwsh(), "-NoProfile", "-Command", cmd]);
   expect(r.exitCode, r.stderr).toBe(0);
-});
+}, PWSH_TEST_TIMEOUT_MS);
 
 test.skipIf(pwsh === null)(`install.ps1 removes a legacy PATH block from a fake profile file with a backup${pwshReason}`, () => {
   const files = renderNodeFiles(readTree("standard/templates"), vars);
@@ -141,4 +144,4 @@ test.skipIf(pwsh === null)(`install.ps1 removes a legacy PATH block from a fake 
   expect(r.exitCode, r.stderr).toBe(0);
   expect(readFileSync(fakeProfile, "utf8").replace(/\r\n/g, "\n")).toBe("Set-A\nSet-B\n");
   expect(readdirSync(dir).some((n) => n.startsWith("profile.ps1.forge614-backup-"))).toBe(true);
-});
+}, PWSH_TEST_TIMEOUT_MS);
