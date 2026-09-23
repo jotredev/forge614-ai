@@ -76,6 +76,14 @@ There is no server and no UI framework. `map:build` outputs a static folder that
 - **Motion.** The camera flies with smooth easing. Only informative elements animate, and the system reduced-motion preference is respected.
 - **Performance.** Target is 60 frames per second on a mid-range laptop.
 
+### 4.0 Owner decisions (2026-09-23)
+
+- **Each node is recognized by a signature object** that shows what it is without reading anything. From afar you see that object; up close, its real pieces.
+- **Engram:** a network of neurons, a central sphere joined by threads to smaller spheres, in soft pink (`#d98ca0`).
+- **Platform:** a thin plate floating above the floor, held by a column, with a line of the node's color under its edge.
+- **Card:** no box. A small uppercase line with the role (`NODO · LA MEMORIA`) in the node's color, above the large name in a classic serif typeface.
+- **Discarded:** the neon blueprint style. Background and lighting stay as in the first version, and new visual references only add details.
+
 ### 4.1 Ecosystem layout
 
 | Element | Representation |

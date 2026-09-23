@@ -1,44 +1,33 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { theme } from "./theme";
 
-export type PlatformOptions = { size: number; height: number; color: string; title: string; subtitle: string };
+// Every node stands on a thin plate floating above the floor, held by a
+// slim column, with a line of the node's color under its edge.
 
-export function createPlatform(options: PlatformOptions): THREE.Group {
+export type Platform = { group: THREE.Group; top: number };
+
+const COLUMN = "#2a2f3d";
+const PLATE = "#343a4a";
+
+function solid(geometry: THREE.BufferGeometry, color: string, roughness: number, metalness = 0.2): THREE.Mesh {
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness, metalness }));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+export function createPlatform(accent: string, size = 7.6): Platform {
   const group = new THREE.Group();
 
-  const base = new THREE.Mesh(
-    new RoundedBoxGeometry(options.size, options.height, options.size, 4, 0.35),
-    new THREE.MeshStandardMaterial({ color: theme.platformSide, roughness: 0.85 }),
-  );
-  base.position.y = options.height / 2;
-  base.castShadow = true;
-  base.receiveShadow = true;
+  const column = solid(new THREE.CylinderGeometry(0.35, 0.5, 1.4, 24), COLUMN, 0.6);
+  column.position.y = 0.7;
 
-  const top = new THREE.Mesh(
-    new RoundedBoxGeometry(options.size - 0.3, 0.12, options.size - 0.3, 4, 0.05),
-    new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.7 }),
-  );
-  top.position.y = options.height + 0.06;
-  top.receiveShadow = true;
+  const plate = solid(new RoundedBoxGeometry(size, 0.3, size, 4, 0.12), PLATE, 0.5);
+  plate.position.y = 1.55;
 
-  group.add(base, top);
+  const edge = solid(new RoundedBoxGeometry(size + 0.1, 0.06, size + 0.1, 2, 0.03), accent, 0.5);
+  edge.position.y = 1.42;
 
-  const card = document.createElement("div");
-  card.className = "platform-card";
-  const title = document.createElement("div");
-  title.className = "platform-card__title";
-  title.textContent = options.title;
-  const subtitle = document.createElement("div");
-  subtitle.className = "platform-card__subtitle";
-  subtitle.textContent = options.subtitle;
-  card.append(title, subtitle);
-
-  const label = new CSS2DObject(card);
-  // Float the card above the back corner so it never hides the platform.
-  label.position.set(-options.size / 2, options.height + 4.5, -options.size / 2);
-  group.add(label);
-
-  return group;
+  group.add(column, plate, edge);
+  return { group, top: 1.7 };
 }

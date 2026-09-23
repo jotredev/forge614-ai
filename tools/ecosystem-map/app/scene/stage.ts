@@ -8,12 +8,12 @@ import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
 import { theme } from "./theme";
 
-const VIEW_SIZE = 24;
+const DEFAULT_VIEW_SIZE = 24;
 const CAMERA_DISTANCE = 60;
 
 export type Stage = { scene: THREE.Scene; start(): void; dispose(): void };
 
-export function createStage(container: HTMLElement): Stage {
+export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE): Stage {
   const width = container.clientWidth;
   const height = container.clientHeight;
 
@@ -35,7 +35,7 @@ export function createStage(container: HTMLElement): Stage {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(theme.background);
 
-  const frustum = frustumFor(width / height, VIEW_SIZE);
+  const frustum = frustumFor(width / height, viewSize);
   const camera = new THREE.OrthographicCamera(frustum.left, frustum.right, frustum.top, frustum.bottom, 0.1, 500);
   camera.position.set(...isoOffset(CAMERA_DISTANCE));
   camera.lookAt(0, 0, 0);
@@ -93,7 +93,7 @@ export function createStage(container: HTMLElement): Stage {
     const w = container.clientWidth;
     const h = container.clientHeight;
     if (w === 0 || h === 0) return;
-    const f = frustumFor(w / h, VIEW_SIZE);
+    const f = frustumFor(w / h, viewSize);
     camera.left = f.left;
     camera.right = f.right;
     camera.top = f.top;

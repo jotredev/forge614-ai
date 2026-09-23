@@ -1,28 +1,24 @@
-import * as THREE from "three";
 import { fatalMessage } from "./fatal";
+import { createCard } from "./scene/card";
+import { createEngram } from "./scene/nodes/engram";
 import { createPlatform } from "./scene/platform";
 import { createStage } from "./scene/stage";
-import { theme } from "./scene/theme";
 
 const container = document.getElementById("office");
 if (!container) throw new Error("missing #office container");
 
+// Engram's color: the soft pink of the neurons.
+const ENGRAM_ACCENT = "#d98ca0";
+
 try {
   const stage = createStage(container);
-  stage.scene.add(
-    createPlatform({ size: 10, height: 1.2, color: theme.testPlatform, title: "Plataforma de prueba", subtitle: "Paso 1 · ambiente" }),
-  );
 
-  // One block on the platform so soft and contact shadows can be judged.
-  const block = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 1.2, 1),
-    new THREE.MeshStandardMaterial({ color: "#e9dcc4", roughness: 0.6 }),
-  );
-  block.position.set(-1.5, 1.32 + 0.6, 0.8);
-  block.castShadow = true;
-  block.receiveShadow = true;
-  stage.scene.add(block);
+  const platform = createPlatform(ENGRAM_ACCENT);
+  const engram = createEngram(platform.top - 0.2);
+  const card = createCard({ name: "Engram", role: "La memoria", accent: ENGRAM_ACCENT });
+  card.position.set(0, platform.top + 7, 0);
 
+  stage.scene.add(platform.group, engram, card);
   stage.start();
 } catch (error) {
   const message = document.createElement("pre");

@@ -4,7 +4,6 @@
   --card-border: #3a4052;
   --text: #e8e6df;
   --muted: #9aa0b0;
-  --accent: #5b8f7b;
   --font-display: ui-serif, Georgia, "Times New Roman", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -52,40 +51,28 @@ html, body {
   inset: 0;
 }
 
-.platform-card {
-  min-width: 180px;
-  padding: 12px 14px;
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  background: var(--card-bg);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+/* Node title: small caps role in the node's color above a large serif
+   name, with no box so the scene stays uncluttered. */
+.node-card {
+  --accent: #9aa0b0;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
   pointer-events: none;
 }
 
-.platform-card__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.node-card__eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
 }
 
-.platform-card__title::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.platform-card__subtitle {
-  margin-top: 6px;
+.node-card__name {
+  margin-top: 4px;
   font-family: var(--font-display);
-  font-size: 15px;
-  color: var(--muted);
+  font-size: 26px;
+  color: var(--text);
 }
 
 .fatal {

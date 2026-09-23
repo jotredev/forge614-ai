@@ -70,6 +70,14 @@ Sin servidor ni marco de interfaz. El resultado de `map:build` es una carpeta es
 - **Movimiento.** La cámara vuela con aceleración y frenado suaves. Solo se anima lo que aporta información, y se respeta la preferencia del sistema de reducir movimiento.
 - **Rendimiento.** Objetivo de 60 cuadros por segundo en una laptop de gama media.
 
+### 4.0 Decisiones del propietario (2026-09-23)
+
+- **Cada nodo se reconoce por un objeto protagonista** que dice lo que es sin leer nada. De lejos se ve ese objeto; de cerca, sus piezas reales.
+- **Engram:** una red de neuronas, con una esfera central unida por hilos a esferas más pequeñas, en rosa suave (`#d98ca0`).
+- **Plataforma:** una placa delgada que flota sobre el piso, sostenida por una columna, con una línea del color del nodo bajo su orilla.
+- **Tarjeta:** sin caja. Una línea pequeña en mayúsculas con la función (`NODO · LA MEMORIA`), en el color del nodo, sobre el nombre grande con letra de estilo clásico (serif).
+- **Descartado:** el estilo neón de plano técnico. El fondo y la luz se quedan como en la primera versión, y las referencias visuales nuevas solo suman detalles.
+
 ### 4.1 Distribución del ecosistema
 
 | Elemento | Representación |
