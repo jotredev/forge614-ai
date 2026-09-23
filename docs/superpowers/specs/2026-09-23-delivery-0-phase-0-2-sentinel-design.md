@@ -173,7 +173,7 @@ Circular bootstrap sequence (human review until Sentinel 0.1 exists):
 1. `forge614-ai` publishes rulebook 1.0.0 (tag `standard-v1.0.0`) with the workflow of §5.1.
 2. Sentinel is built from the 1.0.0 templates; its PRs pass its own `verify` (typecheck, tests) and independent review.
 3. Sentinel 0.1 reviews itself with its `check`, passes, and is published.
-4. `forge614-ai` adopts Sentinel in `verify`, deletes `src/modules/validators/` and `src/app/run-validators.ts`, keeps `standard:render`, `standard:pack`, `schemas:generate`, `decisions:index`, `notion-map:build`, and publishes standard 1.1.0 (`verify.yml` template with Sentinel, `layout.json`, `secret-patterns.json`, clarification of record 0024 in the additive evolution rule, `BRANCH_PROTECTION` already updated).
+4. `forge614-ai` adopts Sentinel in `verify`, deletes `src/modules/validators/` and `src/app/run-validators.ts`, keeps `standard:render`, `standard:pack`, `schemas:generate`, `decisions:index`, `notion-map:build`, and publishes standard 1.1.0 (`verify.yml` template with Sentinel, `layout.json`, `stack.json`, `secret-patterns.json`, clarification of record 0024 in the additive evolution rule, `BRANCH_PROTECTION` already updated).
 5. The nodes adopt Sentinel in their next release (phase 0.4).
 
 A node may declare 1.0.0 while Sentinel already knows 1.1.0: Sentinel reviews with the declared version and adds `standard.latestKnown` to the report.
