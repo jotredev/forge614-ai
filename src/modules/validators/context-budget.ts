@@ -1,6 +1,7 @@
 import { PackSchema } from "../standard/schemas";
 import { read, type FileTree } from "../standard/file-tree";
 import { fail, pass, type Finding } from "../standard/finding";
+import { parseJsonData } from "./json-data";
 import type { ValidatorOptions } from "./types";
 
 const RULE = "forge614-rule-context-budget";
@@ -25,7 +26,9 @@ export function validateContextBudget(tree: FileTree, _options: ValidatorOptions
   const raw = read(tree, PACK_PATH);
   if (raw === undefined) return [fail(RULE, [`${PACK_PATH} missing`], "contextBudgetInvalid")];
 
-  const parsed = PackSchema.safeParse(JSON.parse(raw));
+  const json = parseJsonData(PACK_PATH, raw);
+  if (!json.ok) return [fail(RULE, [json.evidence], "dataFileInvalidJson")];
+  const parsed = PackSchema.safeParse(json.data);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
     return [fail(RULE, issues, "contextBudgetInvalid")];

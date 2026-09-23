@@ -82,10 +82,19 @@ function previousMapOf(tree: FileTree): NotionMap | undefined {
   return parsed.data;
 }
 
-function productVersionOf(tree: FileTree): string {
+// The product version every CLI reports with `--version` and the one the
+// notion map records: read from package.json through a schema, never by
+// trusting the file's shape.
+export function readProductVersion(tree: FileTree): string {
   const raw = read(tree, "package.json");
   if (raw === undefined) throw new Error("package.json not found");
-  const parsed = PackageVersion.safeParse(JSON.parse(raw));
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`package.json: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const parsed = PackageVersion.safeParse(data);
   if (!parsed.success) throw new Error(`package.json: ${issuesOf(parsed.error)}`);
   return parsed.data.version;
 }
@@ -96,7 +105,7 @@ function productVersionOf(tree: FileTree): string {
 // turns that into the NOTION_MAP_FAILED envelope.
 export function buildNotionMapForTree(tree: FileTree): NotionMap {
   const previous = previousMapOf(tree);
-  const productVersion = productVersionOf(tree);
+  const productVersion = readProductVersion(tree);
   return previous === undefined ? buildNotionMap(tree, productVersion) : buildNotionMap(tree, productVersion, previous);
 }
 
@@ -106,4 +115,13 @@ export function serializeNotionMap(map: NotionMap): string {
 
 export function writeNotionMap(map: NotionMap, outPath: string): void {
   writeTextAtomic(outPath, serializeNotionMap(map));
+}
+
+// True when the committed docs/notion-map.json is byte-identical to what a
+// fresh build would write (the `--check` step of verify). A missing map is
+// not current either.
+export function notionMapIsCurrent(tree: FileTree): boolean {
+  const committed = read(tree, NOTION_MAP_PATH);
+  if (committed === undefined) return false;
+  return committed === serializeNotionMap(buildNotionMapForTree(tree));
 }

@@ -31,4 +31,5 @@ export const es: MessageCatalog = {
   contextBudgetOverBudget: (p) =>
     `Presupuesto de contexto (estimado) excede el límite: ~${p.tokens ?? "?"} tokens (límite ${p.budget ?? "3000"}).`,
   contextBudgetInvalid: () => "No se pudo estimar el presupuesto de contexto: pack.json del ecosistema ausente o inválido.",
+  dataFileInvalidJson: () => "Archivo de datos del estándar con JSON inválido.",
 };

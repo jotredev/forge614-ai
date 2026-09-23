@@ -33,5 +33,6 @@ export interface MessageCatalog {
   contextBudgetOk: Msg;
   contextBudgetOverBudget: Msg;
   contextBudgetInvalid: Msg;
+  dataFileInvalidJson: Msg;
 }
 export type MessageKey = keyof MessageCatalog;

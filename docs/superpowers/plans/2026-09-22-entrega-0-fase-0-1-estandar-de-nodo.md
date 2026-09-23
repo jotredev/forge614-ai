@@ -8,6 +8,8 @@
 
 **Tech Stack:** TypeScript 5.9 `strict`, Bun 1.3.x (`bun test`, `bun build`), Zod 4 (`z.toJSONSchema`), empaquetado ustar+gzip escrito en TypeScript (sin `tar`/`gzip` del sistema, para bytes idénticos en los tres SO), `bash -n` y `pwsh` (si existe) para validar sintaxis de instaladores.
 
+**Status:** completed
+
 **Spec:** `docs/superpowers/specs/2026-09-22-entrega-0-estandar-de-nodo-design.md` (aprobada 2026-09-22) y actas `docs/decisions/0001`–`0019`.
 
 ## Global Constraints
@@ -2813,3 +2815,7 @@ Después del commit, la persona aplica en GitHub la configuración de `BRANCH_PR
 **Consistencia de tipos.** `Finding { ruleId, verdict, evidence, messageKey, params }`, `MessageCatalog`/`MessageKey`/`MessageParams`/`Locale` (`messages/types.ts`), `renderMessage`, `renderFinding`, `pass(ruleId, key, params?)`/`fail(ruleId, evidence, key, params?)` (todas las llamadas de las Tasks 3–9 y 12 usan claves del catálogo, nunca texto literal), `FileTree`, `treeFrom`, `listUnder`, `read`, `ValidatorOptions { forbiddenMentions; parseYaml; today }` (ampliada en Task 8; los tests de Tasks 4–7 se actualizan en ese paso), `VALIDATORS`, `runValidators`, `VerifyReport { checks: ReportedFinding[] }` con `ReportedFinding = Finding & { message: { es; en } }`, `renderNodeFiles`/`NodeVars`, `run`, `packStandard`/`PackResult`, `buildDecisionsIndex`, `buildNotionMap`, `WorkflowSchema`/`checkWorkflowShape`/`jobsOf`/`runStepsOf`, `runWorkflow`/`WorkflowRunResult`: nombres idénticos en definición y uso. Funciones puente de `app` para respetar capas: `readRepoTree`, `runCommand`, `readTemplatesTree`, `writeRenderedFiles`, `writeJsonSchemas`.
 
 **Requisito no cubierto por decisión explícita.** El paquete compartido `bun release` (spec §4.7) y su publicación multiplataforma se construyen en la fase 0.4 sobre el script de Engines; aquí solo se deja la plantilla que lo invoca y los stubs.
+
+## Impacto en el procedimiento de agentes
+
+Sí: esta fase crea la matriz de soporte (`standard/support-matrix.json`) y el runbook (`standard/procedures/add-agent-runbook.md`) que el procedimiento de agentes usa desde ahora; las celdas que quedaron en `revalidate` tienen plazo 2026-10-22 y el validador `support-matrix` falla si una celda supera los 30 días sin que una persona registre la revalidación.

@@ -16,9 +16,12 @@ const RunStep = z
   })
   .strict();
 export const StepSchema = z.union([UsesStep, RunStep]);
+// spec §4.7: every job declares `timeout-minutes`; no stage may run without
+// a limit (a release once hung in `bun test` on a suite with no timeout).
 const Job = z
   .object({
     "runs-on": z.string(),
+    "timeout-minutes": z.number().int().positive(),
     steps: z.array(StepSchema).min(1),
     needs: z.union([z.string(), z.array(z.string())]).optional(),
     strategy: z.object({ matrix: z.record(z.string(), z.unknown()) }).strict().optional(),

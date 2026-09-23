@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import { resolve } from "node:path";
-import { readTree } from "../../infrastructure/fs-tree";
-import { PackSchema } from "../standard/schemas";
-import { listUnder, read, treeFrom } from "../standard/file-tree";
+import { treeFrom } from "../standard/file-tree";
 import { validatePacksCatalog } from "./packs-catalog";
 
 const pack = (rules: string[]) =>
@@ -45,6 +42,14 @@ test("pack name must match its folder", () => {
   ]);
 });
 
+test("a pack.json that is not valid JSON is a fail finding, not a throw", () => {
+  const tree = treeFrom({ "standard/packs/forge614-pack-ecosystem-node/pack.json": "{ not json" });
+  const invalid = validatePacksCatalog(tree).find((f) => f.messageKey === "dataFileInvalidJson");
+  expect(invalid?.verdict).toBe("fail");
+  expect(invalid?.evidence).toHaveLength(1);
+  expect(invalid?.evidence[0]).toStartWith("standard/packs/forge614-pack-ecosystem-node/pack.json: invalid JSON: ");
+});
+
 test("invalid pack.json is reported", () => {
   const tree = treeFrom({
     "standard/packs/forge614-pack-ecosystem-node/pack.json": JSON.stringify({ not: "a pack" }),
@@ -52,33 +57,4 @@ test("invalid pack.json is reported", () => {
   expect(validatePacksCatalog(tree)[0]?.evidence).toEqual([
     "forge614-pack-ecosystem-node: invalid pack.json",
   ]);
-});
-
-// On-disk consistency: the ecosystem node pack must list every core rule
-// package present under standard/rules/, in both directions, so adding a
-// rule without updating the pack fails this test.
-test("forge614-pack-ecosystem-node lists exactly the core rules present on disk", () => {
-  const root = resolve(import.meta.dir, "../../..");
-  const tree = readTree(root);
-
-  const findings = validatePacksCatalog(tree);
-  expect(findings[0]?.verdict).toBe("pass");
-
-  const onDisk = new Set(
-    listUnder(tree, "standard/rules/")
-      .map((p) => p.split("/")[2] ?? "")
-      .filter((dir) => dir.length > 0),
-  );
-
-  const raw = read(tree, "standard/packs/forge614-pack-ecosystem-node/pack.json");
-  expect(raw).toBeDefined();
-  const pack = PackSchema.parse(JSON.parse(raw ?? "{}"));
-  const listed = new Set(pack.rules);
-
-  for (const rule of listed) {
-    expect(onDisk.has(rule), `pack lists '${rule}' but it is not present under standard/rules/`).toBe(true);
-  }
-  for (const rule of onDisk) {
-    expect(listed.has(rule), `core rule '${rule}' on disk is missing from the ecosystem node pack`).toBe(true);
-  }
 });

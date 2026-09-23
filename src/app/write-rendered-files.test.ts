@@ -24,7 +24,11 @@ test("writes every file under outDir and returns the written paths sorted", () =
   expect(readFileSync(join(dir, ".github/workflows/verify.yml"), "utf8")).toBe("name: verify\n");
 });
 
-test("marks install.sh and .githooks/pre-push executable, leaves other files at default mode", () => {
+// POSIX permission bits do not exist on Windows (every file reports the same
+// mode there), so the executable-bit assertions are skipped with a reason.
+const WINDOWS_REASON = process.platform === "win32" ? " (skipped: POSIX mode bits are not available on Windows)" : "";
+
+test.skipIf(process.platform === "win32")(`marks install.sh and .githooks/pre-push executable, leaves other files at default mode${WINDOWS_REASON}`, () => {
   dir = mkdtempSync(join(tmpdir(), "write-rendered-"));
   writeRenderedFiles(dir, {
     "install.sh": "#!/usr/bin/env bash\n",

@@ -13,6 +13,8 @@
 | `build` | tag `v*` | `bun run build:target`, `bun run smoke:target` on macOS arm64/x64, Linux arm64/x64, Windows x64 | per-platform artifacts | ~8 min |
 | `publish` | after `build` | `bun run release:publish` | release with binaries and `SHA256SUMS` | ~1 min |
 
+Every job declares `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10): no stage runs without a limit and `bun run workflows:check` rejects a job that lacks it.
+
 **Precondition of `release.yml`:** a node with `file:../` dependencies to sibling repositories in its `package.json` cannot adopt this template; the workflow checks out a single repository, so `bun install --frozen-lockfile` would fail against that path dependency. Replace it with the published version of the sibling node before adopting the template.
 
 ## Running locally

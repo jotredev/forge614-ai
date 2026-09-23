@@ -111,7 +111,7 @@ Es normativo. "Debe" significa que el verificador lo comprueba o, si no puede, q
 ├── forge614.node.json
 ├── CONTRACT.md · CONTRACT.en.md · README.md · CHANGELOG.md · SECURITY.md · LICENSE
 ├── src/
-│   ├── modules/          reglas y tipos puros; sin I/O; solo node:crypto y node:util
+│   ├── modules/          reglas y tipos puros; sin I/O; solo node:crypto, node:util y zod
 │   ├── app/              casos de uso; orquesta modules e infrastructure
 │   ├── infrastructure/   disco, procesos, red, bases de datos
 │   └── interfaces/       cli/, mcp/: traducen entrada externa a casos de uso
@@ -142,7 +142,7 @@ Convención única (acta 0013, **aceptada** el 2026-09-22; cambia el formato que
 - Toda salida de datos va a **stdout** como un solo objeto JSON con `schemaVersion` entero en la raíz.
 - Todo error va a **stderr** como `{ "schemaVersion": n, "code": "CODIGO_ESTABLE", "error": "mensaje para personas en el idioma configurado" }`, sin rutas crudas, sin stack traces, sin secretos.
 - Códigos de salida: `0` éxito; `1` error; `2` entrada inválida; `75` pausa recuperable (cuota); otros solo si el contrato del nodo los documenta.
-- Flujos de eventos: NDJSON en stdout, un objeto por línea, cada uno con `schemaVersion` y `type`; evento terminal garantizado.
+- Flujos de eventos: NDJSON en stdout, un objeto por línea, cada uno con `schemaVersion` y `event`; evento terminal garantizado.
 - `--help` y `--version` siempre disponibles y nunca bloqueantes.
 - Cambios incompatibles suben `schemaVersion`; el consumidor rechaza versiones que no conoce con `SCHEMA_UNSUPPORTED`.
 - **Evolución aditiva** (acta 0024): en datos persistidos y contratos públicos solo se agrega (tablas, columnas nulas o con valor por defecto, campos opcionales, comandos, herramientas, versiones); nunca se renombra, elimina ni cambia el tipo o significado de algo existente. Lo que deja de usarse se marca obsoleto con `sunset`. Migraciones hacia adelante, idempotentes, con respaldo automático y sin destruir datos; test obligatorio que abre datos escritos por versiones anteriores. El verificador rechaza `DROP`/`RENAME`/cambios de tipo en migraciones (`schema-evolution`, Sentinel fase 0.2).
@@ -181,7 +181,7 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 - `bun release` es un paquete compartido publicado por `forge614-ai` (origen: el script probado de Engines), no una copia por repositorio: sugiere versión por commits convencionales, valida contra tags, sincroniza `productVersion` en `notion-map.json`, corre tests y typecheck, ejecuta el verificador, aplica la puerta del procedimiento de agentes (4.12), etiqueta, empuja y sigue la ejecución de CI.
 - SemVer estricto. Commits convencionales obligatorios (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `ci`; `!` o `BREAKING CHANGE` para mayor).
 - `CHANGELOG.md` generado por `bun release`; nunca editado a mano.
-- CI desde plantilla: `verify.yml` en push y PR (install frozen, typecheck, test, build, paridad de docs, verificador del estándar); `release.yml` por tag con compilación en runners nativos (macOS arm64/x64, Linux arm64/x64, Windows x64), prueba de humo por plataforma y publicación con `SHA256SUMS`.
+- CI desde plantilla: `verify.yml` en push y PR ejecuta `bun install --frozen-lockfile` y `bun run verify`, que encadena typecheck, tests, paridad de docs y el verificador del estándar; `release.yml` por tag con compilación en runners nativos (macOS arm64/x64, Linux arm64/x64, Windows x64), prueba de humo por plataforma y publicación con `SHA256SUMS`.
 - Acciones de CI fijadas por versión. Lockfile obligatorio.
 - El commit de release no lleva atribuciones fijas de herramientas.
 - **Workflows delgados, documentados y validados antes de integrar** (acta 0019):
@@ -196,9 +196,9 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 
 - `README.md` raíz bilingüe con: analogía en una frase, qué es, qué no es, instalación, tabla de documentación.
 - `docs/es/NN-slug.md` y `docs/en/NN-slug.md` numerados desde `00`, paridad uno a uno por número y contenido; cada documento abre con una analogía cotidiana y define cada término técnico la primera vez.
-- `docs/notion-map.json` con todas las páginas, `reviewedProductVersion` igual a la versión actual y huellas SHA-256 reales.
+- `docs/notion-map.json` con todas las páginas, `productVersion` igual a la versión actual y huellas SHA-256 reales.
 - `CONTRACT.md` generado o verificado contra el código (los comandos listados existen; los esquemas coinciden).
-- Documentos históricos (`docs/superpowers/`, `docs/handoffs/`) se conservan pero se marcan como registro, no como estado actual, y no cuentan para la paridad.
+- Documentos históricos (`docs/superpowers/`, `docs/handoffs/`) se conservan pero se marcan como registro, no como estado actual, y no cuentan para la paridad. `CHANGELOG.md` (generado) y `LICENSE` (texto legal) quedan exentos de la paridad bilingüe.
 - Ninguna mención a productos externos (acta 0012).
 - Textos para personas dentro del código: catálogo tipado por idioma (una interfaz `Catalog`, un archivo por idioma `es.ts`/`en.ts`, funciones con parámetros para mensajes con datos); la paridad la garantiza el compilador; identificadores, rutas, comandos y texto externo nunca se traducen. Patrón de referencia: el catálogo de Shell 1.9.0.
 

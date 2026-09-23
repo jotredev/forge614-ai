@@ -3,7 +3,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { treeFrom } from "../modules/standard/file-tree";
-import { NotionMapSchema, buildNotionMap, buildNotionMapForTree, serializeNotionMap, writeNotionMap, type NotionMap } from "./build-notion-map";
+import {
+  NotionMapSchema,
+  buildNotionMap,
+  buildNotionMapForTree,
+  notionMapIsCurrent,
+  readProductVersion,
+  serializeNotionMap,
+  writeNotionMap,
+  type NotionMap,
+} from "./build-notion-map";
 
 const SHA256_OF_HOLA = "b221d9dbb083a7f33428d7c2a3c3198ae925614d70210e28716ccaa7cd4ddb79";
 
@@ -114,6 +123,35 @@ describe("buildNotionMapForTree", () => {
   test("throws when package.json is missing or has no semver version", () => {
     expect(() => buildNotionMapForTree(treeFrom({ "docs/es/00-a.md": "a", "docs/en/00-a.md": "a" }))).toThrow("package.json not found");
     expect(() => buildNotionMapForTree(treeFrom({ ...docs, "package.json": JSON.stringify({ version: "v1" }) }))).toThrow("package.json: version");
+  });
+});
+
+describe("readProductVersion", () => {
+  test("returns the semver version of package.json", () => {
+    expect(readProductVersion(treeFrom({ "package.json": JSON.stringify({ name: "x", version: "1.2.3" }) }))).toBe("1.2.3");
+  });
+
+  test("throws when package.json is missing, not JSON, or its version is not semver", () => {
+    expect(() => readProductVersion(treeFrom({}))).toThrow("package.json not found");
+    expect(() => readProductVersion(treeFrom({ "package.json": "{ nope" }))).toThrow("package.json: invalid JSON");
+    expect(() => readProductVersion(treeFrom({ "package.json": JSON.stringify({ version: "v1" }) }))).toThrow("package.json: version");
+  });
+});
+
+// `notion-map:build --check` (verify step): the committed map must equal
+// the one a fresh build would write, byte for byte.
+describe("notionMapIsCurrent", () => {
+  const docs = { "docs/es/00-a.md": "a", "docs/en/00-a.md": "a", "package.json": JSON.stringify({ version: "0.1.0" }) };
+
+  test("is true when docs/notion-map.json equals a fresh build", () => {
+    const current = serializeNotionMap(buildNotionMapForTree(treeFrom(docs)));
+    expect(notionMapIsCurrent(treeFrom({ ...docs, "docs/notion-map.json": current }))).toBe(true);
+  });
+
+  test("is false when the map is missing or a page's content changed since it was built", () => {
+    expect(notionMapIsCurrent(treeFrom(docs))).toBe(false);
+    const stale = serializeNotionMap(buildNotionMapForTree(treeFrom(docs)));
+    expect(notionMapIsCurrent(treeFrom({ ...docs, "docs/es/00-a.md": "a changed", "docs/notion-map.json": stale }))).toBe(false);
   });
 });
 

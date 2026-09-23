@@ -7,7 +7,9 @@ import { readRepoTree, repoRoot } from "../../app/repo";
 import { runValidators } from "../../app/run-validators";
 import { updateNodePointerSha256 } from "../../app/update-node-pointer";
 import { NodePointerSchema } from "../../modules/standard/schemas";
-import { printError, printJson } from "./output";
+import { issuesOf, parseFlags } from "./args";
+import { printError, printJson, runCli } from "./output";
+import { printVersionIfRequested } from "./version";
 
 const USAGE = "standard-pack [--update-pointer] [--check]";
 
@@ -18,15 +20,6 @@ const Args = z
     "update-pointer": z.literal(true).optional(),
   })
   .strict();
-
-// Every argument becomes a key so the strict schema rejects anything it does
-// not know: a misspelled flag or a stray positional argument fails loudly
-// instead of being ignored.
-function parseArgs(argv: string[]): Record<string, true> {
-  const out: Record<string, true> = {};
-  for (const arg of argv) out[arg.startsWith("--") ? arg.slice(2) : arg] = true;
-  return out;
-}
 
 const POINTER_PATH = resolve(repoRoot, "forge614.node.json");
 
@@ -66,9 +59,10 @@ function check(): number {
 }
 
 function main(argv: string[]): number {
-  const parsed = Args.safeParse(parseArgs(argv));
+  if (printVersionIfRequested(argv)) return 0;
+  const parsed = Args.safeParse(parseFlags(argv));
   if (!parsed.success) {
-    printError("INVALID_ARGUMENTS", parsed.error.issues.map((issue) => (issue.path.length > 0 ? `${issue.path.join(".")}: ${issue.message}` : issue.message)).join("; "));
+    printError("INVALID_ARGUMENTS", issuesOf(parsed.error));
     return 2;
   }
   if (parsed.data.help) {
@@ -95,13 +89,4 @@ function main(argv: string[]): number {
   return 0;
 }
 
-// Any unexpected failure leaves through the error envelope, never as a raw
-// stack trace.
-let exitCode: number;
-try {
-  exitCode = main(process.argv.slice(2));
-} catch (error) {
-  printError("STANDARD_PACK_FAILED", error instanceof Error ? error.message : String(error));
-  exitCode = 1;
-}
-process.exit(exitCode);
+process.exit(runCli("STANDARD_PACK_FAILED", () => main(process.argv.slice(2))));

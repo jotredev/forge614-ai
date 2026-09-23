@@ -28,6 +28,14 @@ describe("forge614-rule-context-budget", () => {
     expect(finding?.messageKey).toBe("contextBudgetOverBudget");
   });
 
+  test("an ecosystem pack.json that is not valid JSON is a fail finding, not a throw", () => {
+    const [finding] = validateContextBudget(treeFrom({ "standard/packs/forge614-pack-ecosystem-node/pack.json": "{ not json" }), opts);
+    expect(finding?.verdict).toBe("fail");
+    expect(finding?.messageKey).toBe("dataFileInvalidJson");
+    expect(finding?.evidence).toHaveLength(1);
+    expect(finding?.evidence[0]).toStartWith("standard/packs/forge614-pack-ecosystem-node/pack.json: invalid JSON: ");
+  });
+
   test("fails with contextBudgetInvalid when the ecosystem pack.json is missing", () => {
     const [finding] = validateContextBudget(treeFrom({}), opts);
     expect(finding?.verdict).toBe("fail");

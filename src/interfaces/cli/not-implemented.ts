@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { printError, printJson } from "./output";
+import { printVersionIfRequested } from "./version";
 
 const USAGE = "not-implemented <group>:<script>";
 
@@ -10,6 +11,7 @@ const USAGE = "not-implemented <group>:<script>";
 const Args = z.tuple([z.string().regex(/^[a-z]+:[a-z]+$/, "must be <group>:<script> in lowercase letters")]);
 
 function main(argv: string[]): number {
+  if (printVersionIfRequested(argv)) return 0;
   if (argv.includes("--help")) {
     printJson({ schemaVersion: 1, usage: USAGE });
     return 0;

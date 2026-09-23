@@ -30,4 +30,5 @@ export const en: MessageCatalog = {
   contextBudgetOk: (p) => `Context budget (estimated): ~${p.tokens ?? "?"} tokens (limit ${p.budget ?? "3000"}).`,
   contextBudgetOverBudget: (p) => `Context budget (estimated) exceeds the limit: ~${p.tokens ?? "?"} tokens (limit ${p.budget ?? "3000"}).`,
   contextBudgetInvalid: () => "Could not estimate the context budget: the ecosystem pack.json is missing or invalid.",
+  dataFileInvalidJson: () => "Standard data file with invalid JSON.",
 };

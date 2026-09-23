@@ -57,4 +57,16 @@ describe("forge614-rule-bilingual-docs", () => {
     expect(fails).toHaveLength(1);
     expect(fails[0]?.evidence).toEqual(expect.arrayContaining([expect.stringContaining("headings vs")]));
   });
+
+  test("a '#' line inside a fenced code block is not a heading, but a real extra heading still is", () => {
+    const fenced = "# T\n## 1. A\n\n```bash\n# comment inside a block\n## not a heading either\n```\n";
+    const plain = "# T\n## 1. A\n";
+    const ok = validateBilingualDocs(treeFrom({ "README.md": "x", "README.en.md": "x", "standard/STANDARD.md": fenced, "standard/STANDARD.en.md": plain }));
+    expect(ok.every((f) => f.verdict === "pass")).toBe(true);
+
+    const extra = `${fenced}## 2. B\n`;
+    const fails = validateBilingualDocs(treeFrom({ "README.md": "x", "README.en.md": "x", "standard/STANDARD.md": extra, "standard/STANDARD.en.md": plain })).filter((f) => f.verdict === "fail");
+    expect(fails).toHaveLength(1);
+    expect(fails[0]?.evidence).toEqual(expect.arrayContaining(["standard/STANDARD.md: 3 headings vs standard/STANDARD.en.md: 2"]));
+  });
 });

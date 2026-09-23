@@ -30,24 +30,31 @@ Publicar el Estándar de Nodo y los contratos del ecosistema Forge614, y verific
 ## Comandos públicos
 | Comando | Entrada (esquema) | Salida (esquema) | `schemaVersion` | Códigos de salida |
 | --- | --- | --- | --- | --- |
-| `bun run verify` | `[--locale es\|en] [--today YYYY-MM-DD]` | `VerifyReport`: `{ standard, verdict, checks: [{ ruleId, verdict, evidence, messageKey, params, message: { es, en } }] }` | `1` | `0` todo en `pass`; `1` paso fallido (`VERIFY_STEP_FAILED`) o veredicto distinto de `pass`; `2` `INVALID_ARGUMENTS` |
-| `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Título]` | `{ node, out, written: string[] }`; escribe los quince archivos de `DESTINATIONS` en `<dir>` | `1` | `0` escrito; `2` `INVALID_ARGUMENTS` |
+| `bun run verify` | `[--locale es\|en] [--today YYYY-MM-DD]` | `VerifyReport`: `{ standard, verdict, checks: [{ ruleId, verdict, evidence, messageKey, params, message: { es, en } }] }` | `1` | `0` todo en `pass`; `1` paso fallido (`VERIFY_STEP_FAILED`), veredicto distinto de `pass` o `VERIFY_FAILED`; `2` `INVALID_ARGUMENTS` |
+| `bun run standard:render` | `--node <[a-z0-9-]+> --out <dir> [--repo owner/repo] [--title Título]` | `{ node, out, written: string[] }`; escribe los quince archivos de `DESTINATIONS` en `<dir>` | `1` | `0` escrito; `1` `STANDARD_RENDER_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:pack` | `[--update-pointer] [--check]` | `{ version, archive, sha256, entries }`; con `--check`: `{ ok: true, sha256, pointerChecked: true, sumsChecked }`; escribe `dist/` y, con `--update-pointer`, `forge614.node.json` | `1` | `0`; `1` `STANDARD_INVALID`, `STANDARD_PACK_DRIFT` o `STANDARD_PACK_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run standard:check` | Sin argumentos (alias de `standard:pack --check`; es el paso del job `parity`) | Igual que `standard:pack --check` | `1` | Igual que `standard:pack --check` |
-| `bun run workflows:check` | Sin argumentos | `{ verdict, findings: Finding[] }` | `1` | `0` veredicto `pass`; `1` en otro caso |
-| `bun run workflows:run` | `[--workflow <nombre>]` (por defecto `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` todo en `0`; `1` paso fallido o `WORKFLOW_NOT_FOUND`; `2` `INVALID_ARGUMENTS` |
-| `bun run decisions:index` | `[--check]` | `{ ok: true, records }`; sin `--check` escribe `docs/decisions/INDEX.json` (`decisions-index.schema.json`) | `1` | `0`; `1` `DECISIONS_INDEX_INVALID` o, con `--check`, `DECISIONS_INDEX_DRIFT` |
-| `bun run notion-map:build` | Sin argumentos | `{ path, pages }`; escribe `docs/notion-map.json` | `1` | `0`; `1` `NOTION_MAP_FAILED`; `2` `INVALID_ARGUMENTS` |
-| `bun run schemas:generate` | `[--check]` | `{ written: string[] }`; con `--check`: `{ ok: true }`; sin `--check` escribe `standard/schemas/*.schema.json` | `1` | `0`; `1` `SCHEMAS_DRIFT` (solo con `--check`) |
+| `bun run workflows:check` | Sin argumentos | `{ verdict, findings: Finding[] }` | `1` | `0` veredicto `pass`; `1` en otro caso o `WORKFLOWS_CHECK_FAILED`; `2` `INVALID_ARGUMENTS` |
+| `bun run workflows:run` | `[--workflow <nombre>]` (por defecto `verify`) | `{ workflow, jobs: [{ job, steps: [{ run, exitCode }] }], ok }` | `1` | `0` todo en `0`; `1` paso fallido, `WORKFLOW_NOT_FOUND` o `WORKFLOWS_RUN_FAILED`; `2` `INVALID_ARGUMENTS` |
+| `bun run decisions:index` | `[--check]` | `{ ok: true, records }`; sin `--check` escribe `docs/decisions/INDEX.json` (`decisions-index.schema.json`) | `1` | `0`; `1` `DECISIONS_INDEX_INVALID`, `DECISIONS_INDEX_FAILED` o, con `--check`, `DECISIONS_INDEX_DRIFT`; `2` `INVALID_ARGUMENTS` |
+| `bun run notion-map:build` | `[--check]` | `{ path, pages }`; escribe `docs/notion-map.json`; con `--check`: `{ ok: true, path }` sin escribir nada (es el paso 6 de `verify`) | `1` | `0`; `1` `NOTION_MAP_FAILED` o, con `--check`, `NOTION_MAP_DRIFT`; `2` `INVALID_ARGUMENTS` |
+| `bun run schemas:generate` | `[--check]` | `{ written: string[] }`; con `--check`: `{ ok: true }`; sin `--check` escribe `standard/schemas/*.schema.json` | `1` | `0`; `1` `SCHEMAS_DRIFT` (solo con `--check`) o `SCHEMAS_GENERATE_FAILED`; `2` `INVALID_ARGUMENTS` |
 | `bun run build:target`, `bun run smoke:target`, `bun run release:publish` | Sin argumentos (`release.yml` pasa `FORGE614_TARGET`, hoy ignorada) | Ninguna: stubs de `src/interfaces/cli/not-implemented.ts` hasta la fase 0.4 | `1` (solo el sobre de error) | `1` `NOT_IMPLEMENTED`; `2` `INVALID_ARGUMENTS` |
 
-Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; todo error es un sobre `{ schemaVersion: 1, code, error }` en stderr (`error-envelope.schema.json`). Todos los comandos aceptan `--help`, que imprime `{ schemaVersion: 1, usage }` y sale con `0`.
+Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; todo error es un sobre `{ schemaVersion: 1, code, error }` en stderr (`error-envelope.schema.json`); ningún comando imprime un stack trace: un fallo inesperado sale por el sobre con el código `*_FAILED` del comando y salida `1`. Todos los comandos aceptan `--help`, que imprime `{ schemaVersion: 1, usage }` y sale con `0`, y `--version`, que imprime `{ schemaVersion: 1, name: "forge614-ai", version }` (la versión de `package.json`) y sale con `0` antes de analizar cualquier otro argumento.
 
 ## Códigos de error
 | Código | Significado |
 | --- | --- |
-| `INVALID_ARGUMENTS` | Argumento, flag o valor no admitido por el comando; salida `2`. Los comandos con analizador de pares `--clave valor` (`verify`, `standard:render`, `workflows:run`) rechazan un flag desconocido solo cuando lleva valor e ignoran argumentos posicionales sueltos; los de conjunto estricto de flags (`standard:pack`, `standard:check`, `notion-map:build`, `not-implemented`) rechazan cualquier flag desconocido o argumento posicional |
-| `VERIFY_STEP_FAILED` | Un paso de `verify` (typecheck, test, índice de actas, workflows, esquemas) terminó con salida distinta de `0` |
+| `INVALID_ARGUMENTS` | Argumento, flag o valor no admitido por el comando; salida `2`. Los tres comandos con analizador de pares `--clave valor` (`verify`, `standard:render`, `workflows:run`) rechazan un flag desconocido solo cuando lleva valor e ignoran argumentos posicionales sueltos; todos los demás (`standard:pack`, `standard:check`, `decisions:index`, `schemas:generate`, `workflows:check`, `notion-map:build`, `not-implemented`) tienen conjunto estricto de flags y rechazan cualquier flag desconocido o argumento posicional |
+| `VERIFY_STEP_FAILED` | Un paso de `verify` (typecheck, test, índice de actas, workflows, esquemas, mapa de Notion) terminó con salida distinta de `0` |
+| `VERIFY_FAILED` | `verify`: error inesperado (lectura del árbol o de `standard/VERSION`) fuera de los pasos y validadores |
+| `DECISIONS_INDEX_FAILED` | `decisions:index`: error inesperado de lectura o escritura |
+| `SCHEMAS_GENERATE_FAILED` | `schemas:generate`: error inesperado de lectura o escritura |
+| `WORKFLOWS_CHECK_FAILED` | `workflows:check`: error inesperado de lectura del árbol |
+| `WORKFLOWS_RUN_FAILED` | `workflows:run`: error inesperado fuera de la ejecución de los pasos (lectura del árbol o del YAML) |
+| `STANDARD_RENDER_FAILED` | `standard:render`: error inesperado de lectura de plantillas o de escritura en `--out` |
+| `NOTION_MAP_DRIFT` | `notion-map:build --check`: `docs/notion-map.json` no coincide con el mapa fresco |
 | `WORKFLOW_NOT_FOUND` | `workflows:run`: `.github/workflows/<nombre>.yml` no existe o no cumple `WorkflowSchema` |
 | `DECISIONS_INDEX_INVALID` | `decisions:index`: el índice construido desde `docs/decisions/` no cumple `DecisionsIndexSchema` |
 | `DECISIONS_INDEX_DRIFT` | `decisions:index --check`: `docs/decisions/INDEX.json` no coincide con el índice fresco |

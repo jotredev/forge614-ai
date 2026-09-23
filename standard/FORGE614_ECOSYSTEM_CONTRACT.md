@@ -119,6 +119,8 @@ Durante la inicialización de memoria por primera vez, Engram solo necesita esta
 | Crear o seleccionar proyectos | No es parte de la inicialización |
 | Escribir `.forge614/project.json` al vincular un proyecto | Siempre, silencioso e idempotente |
 
+Vincular un proyecto (escribir `.forge614/project.json`) ocurre después de `init`, cuando un proyecto se crea o se selecciona: vincular no es inicializar.
+
 ## 7. Forge614 Atlas
 
 Atlas es el orquestador de contextualización profunda. Trabaja detrás de Engram; no es ni el almacén de memoria ni el espacio de trabajo visual. Planes 1–5 implementados, v1.0.0 publicada; contextualización inicial opcional del proyecto.
