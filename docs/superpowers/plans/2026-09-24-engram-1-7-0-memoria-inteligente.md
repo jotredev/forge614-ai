@@ -145,7 +145,7 @@ Expected: `{"user_version":10}` y `[{"scope":"ecosystem","n":1},{"scope":"projec
 ```ts
 import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
-import { copyFileSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProject } from "./projects";
@@ -157,7 +157,8 @@ const temporary: string[] = [];
 afterEach(() => { while (temporary.length) rmSync(temporary.pop()!, { recursive: true, force: true }); });
 
 function fixture(path: string, options: { readonly?: boolean } = {}): { db: Database; file: string; directory: string } {
-  const directory = mkdtempSync(join(tmpdir(), "engram-intel-"));
+  // SQLite reports the real path; on macOS tmpdir() is under /var, a symlink to /private/var.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "engram-intel-")));
   temporary.push(directory);
   const file = join(directory, "engram.db");
   copyFileSync(join(FIXTURES, path), file);
