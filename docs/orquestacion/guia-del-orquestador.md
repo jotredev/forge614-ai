@@ -47,7 +47,7 @@ Reglas del prompt:
 | Tras un fallo que el plan no previó, pedir la suite completa **antes** de enmendar | provisional | Sentinel 0.1.1: la ronda con suite previa cerró en verde 426/426 |
 | Si el prompt autoriza un paso que el plan asigna al propietario, decirlo explícitamente ("te AUTORIZA el paso X aunque el plan diga…") | provisional | Sentinel 0.1.1: el agente obedeció al plan y se detuvo; 1 ronda extra |
 | El prompt empieza con la etiqueta `[<Proyecto> · T<n>]` (así se liga la sesión a su registro) | provisional | método nuevo, 0 corridas |
-| **El prompt lleva dentro todo el texto de la tarea** (código, textos, rutas); nunca pide leer el plan ni nada fuera del repositorio de la sesión | firme (regla del propietario) | decisión del propietario, 2026-09-24: la regla crítica "cada sesión solo en su repositorio" se mantiene estricta. Engram T2 docs r1: Sonnet low se detuvo con razón al pedirle leer el plan en forge614-ai; Codex (T2) y Opus (T1) sí lo habían leído con la misma regla |
+| **El prompt lleva dentro todo el texto de la tarea** (código, textos, rutas); nunca pide leer el plan ni nada fuera del repositorio de la sesión | firme (regla del propietario) | decisión del propietario, 2026-09-24: la regla crítica "cada sesión solo en su repositorio" se mantiene estricta. Engram T2 docs r1: Codex medium se detuvo con razón al pedirle leer el plan en forge614-ai, aunque el mismo modelo con la misma regla lo había leído en T2 r1 (y Opus en T1): la regla se aplicaba de forma inconsistente |
 
 ## 3. Forma del reporte
 
