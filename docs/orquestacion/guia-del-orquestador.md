@@ -25,8 +25,8 @@
 [<Proyecto> · T<n>] <qué hace, en una línea>
 
 Contexto: <1–3 líneas: por qué existe esta tarea>.
-Plan: git -C ~/Desktop/forge614-ai show <rama>:<ruta del plan> — Tarea <n>, pasos <a>–<b>.
-Haz SOLO eso. No hagas <lo siguiente>: <sin push / sin PR / sin tags, según el caso>.
+Haz SOLO esto: <pasos de la tarea, con el código o texto exacto copiado del plan dentro del prompt>.
+ No hagas <lo siguiente>: <sin push / sin PR / sin tags, según el caso>.
 
 Antes de empezar (solo lectura): <estado esperado: rama, commit, árbol limpio>. Si no cuadra, detente.
 
@@ -47,6 +47,7 @@ Reglas del prompt:
 | Tras un fallo que el plan no previó, pedir la suite completa **antes** de enmendar | provisional | Sentinel 0.1.1: la ronda con suite previa cerró en verde 426/426 |
 | Si el prompt autoriza un paso que el plan asigna al propietario, decirlo explícitamente ("te AUTORIZA el paso X aunque el plan diga…") | provisional | Sentinel 0.1.1: el agente obedeció al plan y se detuvo; 1 ronda extra |
 | El prompt empieza con la etiqueta `[<Proyecto> · T<n>]` (así se liga la sesión a su registro) | provisional | método nuevo, 0 corridas |
+| **El prompt lleva dentro todo el texto de la tarea** (código, textos, rutas); nunca pide leer el plan ni nada fuera del repositorio de la sesión | firme (regla del propietario) | decisión del propietario, 2026-09-24: la regla crítica "cada sesión solo en su repositorio" se mantiene estricta. Engram T2 docs r1: Sonnet low se detuvo con razón al pedirle leer el plan en forge614-ai; Codex (T2) y Opus (T1) sí lo habían leído con la misma regla |
 
 ## 3. Forma del reporte
 
@@ -111,5 +112,6 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-24 — Regla firme del propietario: el prompt lleva dentro todo el texto de la tarea (§2); la plantilla ya no pide leer el plan en otro repositorio.
 - 2026-09-24 — Regla firme del propietario: documentación tarea por tarea (§4b).
 - 2026-09-24 — Creada con 6 reglas provisionales de las primeras corridas medidas (Sentinel 0.1.1) y 2 hipótesis a medir.
