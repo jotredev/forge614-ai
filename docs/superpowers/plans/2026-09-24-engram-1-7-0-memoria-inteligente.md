@@ -1180,7 +1180,92 @@ git add src/modules/memory src/modules/search/types.ts src/index.ts src/infrastr
 git commit -m "feat(memory): reject secrets on save and keep level-11 metadata (short, review date, supersedes, affects)"
 ```
 
-- [ ] **Step 12: Documentación (prompt aparte, sesión nueva, commit propio)** — el orquestador escribe su texto exacto después de aprobar el código, leyendo los capítulos reales (04 SDK, 06 errores y el capítulo que describe `memory_save`).
+- [ ] **Step 12: Documentación (prompt aparte, sesión nueva, commit propio)**
+
+Texto escrito por el orquestador tras aprobar el código (commits `8d6dad2` y `62dfc6f`), leyendo los capítulos reales. Hechos verificados en el código: todo guardado pasa por `saveCore` (CLI `save`, SDK, `memory_save`, resúmenes de sesión de proyecto y de grupo); `meta`/`marks` salen en `searchPreviews` y `getVersion` (MCP `memory_search` y `memory_get`; CLI `search --preview` y `get --version`); la CLI no tiene opciones para `short`, `affects` ni `supersedes`. Ningún capítulo de usuario lista los parámetros de `memory_save` (su uso se documenta en el capítulo 09 con el protocolo v4, Task 7). T1 no documentó `enableIntelligence` en el capítulo 04; se corrige aquí.
+
+Archivos: `docs/es/04-sdk-typescript.md`, `docs/en/04-typescript-sdk.md`, `docs/es/06-resolucion-de-errores.md`, `docs/en/06-troubleshooting.md` y `CHANGELOG.md`. `docs/notion-map.json` **sin cambios**: las entradas del 06 ya tienen `"notionSyncPending": true` y el 04 no tiene entrada.
+
+1. `docs/es/04-sdk-typescript.md`, al final del archivo:
+
+````markdown
+
+## Memoria inteligente (desde 1.7.0, esquema 11)
+
+```ts
+store.intelligenceEnabled();   // boolean
+store.enableIntelligence();    // IntelligenceEnrolment: { migrated, backup }; activa el esquema 11 con respaldo previo
+store.save({ projectId, title: "Base de datos", content: "…", type: "decision", topicKey: "db",
+  short: "Usamos SQLite local", affects: ["engram", "shell"], supersedes: oldId });
+store.searchPreviews(projectId, "sqlite")[0]?.meta;  // MemoryMeta | undefined
+store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined: "superseded" | "verify"
+```
+
+`SaveInput` gana tres campos opcionales que solo se aceptan con el esquema 11 (en un nivel anterior responden `INTELLIGENCE_REQUIRED`): `short` (versión corta de 1 a 300 caracteres), `affects` (de 1 a 20 nombres de proyecto de 1 a 64 caracteres; se recortan, se quitan repetidos y se ordenan) y `supersedes` (id de un recuerdo activo del mismo ámbito y dueño, que queda marcado como reemplazado por este; nunca se archiva; si no existe o es de otro ámbito, `SUPERSEDES_NOT_FOUND`). Estos datos viven fuera de la versión del recuerdo: no crean versión nueva ni cambian su huella, y guardar el mismo texto con metadatos nuevos solo los actualiza. Cada versión nueva de una `decision` o un `procedure` recibe una fecha de revisión a 90 días; cuando pasa, la lectura añade la marca `verify`. Si el contenido cambia sin un `short` nuevo, la versión corta anterior se borra. `searchPreviews` y `getVersion` (y sus variantes `*InGroup`) añaden `meta` y `marks` solo con el esquema 11 y solo cuando el recuerdo tiene metadatos; en otro caso el resultado no cambia de forma. Tipos exportados nuevos: `MemoryMeta` y `MemoryMark`.
+
+Todo guardado (`save`, resúmenes de sesión, CLI y MCP), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un título, contenido, tema o versión corta que parezca contener un secreto: llave privada, clave de AWS, token de GitHub o Slack, clave `sk-`, JWT, cadena de conexión con usuario y contraseña, o una asignación con valor literal como `password=<valor>`. El error nombra el tipo de secreto, nunca el valor. Nombrar dónde vive una clave sí se permite (`process.env.API_KEY`, `password: <redacted>`).
+````
+
+2. `docs/en/04-typescript-sdk.md`, al final del archivo:
+
+````markdown
+
+## Memory intelligence (since 1.7.0, schema 11)
+
+```ts
+store.intelligenceEnabled();   // boolean
+store.enableIntelligence();    // IntelligenceEnrolment: { migrated, backup }; enables schema 11 after a backup
+store.save({ projectId, title: "Database", content: "…", type: "decision", topicKey: "db",
+  short: "We use local SQLite", affects: ["engram", "shell"], supersedes: oldId });
+store.searchPreviews(projectId, "sqlite")[0]?.meta;  // MemoryMeta | undefined
+store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined: "superseded" | "verify"
+```
+
+`SaveInput` gains three optional fields accepted only with schema 11 (an earlier level answers `INTELLIGENCE_REQUIRED`): `short` (a 1–300 character short version), `affects` (1–20 project names of 1–64 characters; trimmed, deduplicated and sorted) and `supersedes` (the id of an active memory with the same scope and owner, which is marked as replaced by this one; it is never archived; if it does not exist or belongs to another scope, `SUPERSEDES_NOT_FOUND`). This data lives outside the memory version: it creates no new version and does not change the memory's hash, and saving the same text with new metadata only updates it. Every new version of a `decision` or `procedure` gets a review date 90 days ahead; once it passes, reads add the `verify` mark. When the content changes without a new `short`, the previous short version is cleared. `searchPreviews` and `getVersion` (and their `*InGroup` variants) add `meta` and `marks` only with schema 11 and only when the memory has metadata; otherwise the result keeps its shape. New exported types: `MemoryMeta` and `MemoryMark`.
+
+Every save (`save`, session summaries, CLI and MCP), at any database level, rejects with `SECRET_REJECTED` a title, content, topic or short version that looks like it contains a secret: a private key, an AWS key, a GitHub or Slack token, an `sk-` key, a JWT, a connection string with user and password, or an assignment with a literal value such as `password=<value>`. The error names the kind of secret, never the value. Naming where a key lives is allowed (`process.env.API_KEY`, `password: <redacted>`).
+````
+
+3. `docs/es/06-resolucion-de-errores.md`, nueva sección justo antes de `## Integraciones de IA`:
+
+```markdown
+## Memoria inteligente
+
+Desde 1.7.0. En la CLI estos códigos devuelven `{schemaVersion,code,error}` por stderr.
+
+- `SECRET_REJECTED`: el título, el contenido, el tema o la versión corta parecen contener un secreto (el mensaje dice de qué tipo, nunca el valor). Quita el valor y guarda solo dónde vive, por ejemplo `password: <redacted>` o el nombre de la variable de entorno. Aplica en cualquier nivel de la base.
+- `INTELLIGENCE_REQUIRED`: se enviaron `short`, `supersedes` o `affects` y la base aún no tiene la memoria inteligente. Actívala con `forge614-engram intelligence-enable` (respalda antes de migrar) o guarda sin esos campos.
+- `SUPERSEDES_NOT_FOUND`: `supersedes` apunta a un recuerdo que no existe, está archivado o es de otro ámbito o proyecto. Busca el id correcto con `memory_search`.
+
+```
+
+4. `docs/en/06-troubleshooting.md`, nueva sección justo antes de `## AI integrations`:
+
+```markdown
+## Memory intelligence
+
+Since 1.7.0. In the CLI these codes return `{schemaVersion,code,error}` on stderr.
+
+- `SECRET_REJECTED`: the title, content, topic or short version looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
+- `INTELLIGENCE_REQUIRED`: `short`, `supersedes` or `affects` were sent and the database does not have memory intelligence yet. Enable it with `forge614-engram intelligence-enable` (it backs up before migrating) or save without those fields.
+- `SUPERSEDES_NOT_FOUND`: `supersedes` points to a memory that does not exist, is archived, or belongs to another scope or project. Find the right id with `memory_search`.
+
+```
+
+5. `CHANGELOG.md`, en `## 1.7.0 — en desarrollo`, después de la viñeta **Esquema 11** y antes de «La replicación de grupos…»:
+
+```markdown
+- **Filtro de secretos y metadatos del recuerdo:** todo guardado (CLI, SDK, MCP y resúmenes de sesión), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un texto que parezca contener un secreto; el error nombra el tipo, nunca el valor, y nombrar dónde vive una clave sigue permitido. Con el esquema 11, `memory_save` y `SaveInput` aceptan `short`, `affects` y `supersedes` (`INTELLIGENCE_REQUIRED` en niveles anteriores; `SUPERSEDES_NOT_FOUND` si el reemplazado no existe en el mismo ámbito); las decisiones y los procedimientos reciben fecha de revisión a 90 días; `memory_search` y `memory_get` añaden `meta` y `marks` (`superseded`, `verify`). Los metadatos no crean versión ni cambian la huella del recuerdo. Tipos nuevos del SDK: `MemoryMeta` y `MemoryMark`.
+```
+
+Verificación: `git diff --check` sin salida y `git diff --stat` con exactamente esos 5 archivos (la documentación no cambia pruebas; el orquestador corre la suite en su copia).
+
+Commit:
+
+```bash
+git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/06-resolucion-de-errores.md docs/en/06-troubleshooting.md CHANGELOG.md
+git commit -m "docs: secret filter and memory metadata in SDK, troubleshooting and changelog"
+```
 
 ### Task 3: Buscador nuevo y candidatos parecidos *(detalle tras aprobar T2)*
 
