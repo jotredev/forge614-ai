@@ -62,7 +62,7 @@ Orden: T1 → T2 → T3 → T5 → T4 → T6 → T7 → T8 → T9 → T10 (uno a
 
 **T2:** `findSecret(text: string): string | null` (`src/modules/memory/secrets.ts`, devuelve el id del patrón, nunca el valor) → `SECRET_REJECTED`; `MemoryMeta { short: string | null; reviewAfter: string | null; supersededBy: string | null; affects: string[] | null }`; `SaveInput` gana opcionales `short?`, `supersedes?` (id del recuerdo que queda "reemplazado por" el nuevo) y `affects?`; `REVIEW_AFTER_DAYS = 90` para `decision` y `procedure`; `memory_get`/`memory_search` agregan `meta` y `marks: ("superseded" | "verify")[]`.
 
-**T3:** `buildQuery(text: string): QueryPlan { terms: string[]; words: string | null; trigram: string | null }` (`src/modules/search/query.ts`, sin palabras de relleno ES/EN, prefijo `*` en términos ≥ 4 letras, OR); fusión de `memories_words` y `memories_fts` por RRF; `MIN_SCORE`; `explanation.mode` agrega `"hybrid"`; `similarTo(...)`: `SimilarCandidate { id: string; title: string; version: number; score: number }[]` (máx. 3, mismo ámbito y dueño); `memory_save` devuelve `similar` cuando no hubo tema ni texto idéntico.
+**T3:** `buildQuery(text: string): QueryPlan { terms: string[]; words: string | null; trigram: string | null }` (`src/modules/search/query.ts`, sin palabras de relleno ES/EN, prefijo `*` en términos ≥ 4 letras, OR); fusión de `memories_words` y `memories_fts` por RRF; `MIN_MATCHED_TERMS = 2` (errata 2026-09-24: sustituye a `MIN_SCORE`, ver D-T3-4); `explanation.mode` agrega `"hybrid"`; `similarTo(...)`: `SimilarCandidate { id: string; title: string; version: number; score: number }[]` (en `modules/memory`; máx. 3, mismo ámbito y dueño, puntaje ≥ `SIMILAR_MIN_SCORE = 0.25`); `memory_save` devuelve `similar` cuando no hubo tema ni texto idéntico.
 
 **T4:** en nivel 11, `scope: "ecosystem"` exige `type ∈ {decision, procedure, warning}` y `affects` con ≥ 2 nombres de proyectos del grupo; `ECOSYSTEM_BOARD_LIMIT = 40` recuerdos activos; códigos `ECOSYSTEM_TYPE_NOT_ALLOWED`, `ECOSYSTEM_AFFECTS_REQUIRED`, `ECOSYSTEM_AFFECTS_UNKNOWN`, `ECOSYSTEM_BOARD_FULL`, `ECOSYSTEM_STATUS_FORBIDDEN`, `ECOSYSTEM_STATUS_TOO_LONG`; CLI `memory-demote --id <id> --project-id <id>` y `group-source-set --group <ref> --project-id <id>`; tema reservado `ecosystem/estado-actual` (fijado, ≤ 600 caracteres, `fact` permitido, solo desde el proyecto fuente del grupo).
 
@@ -1267,10 +1267,569 @@ git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/06-res
 git commit -m "docs: secret filter and memory metadata in SDK, troubleshooting and changelog"
 ```
 
-### Task 3: Buscador nuevo y candidatos parecidos *(detalle tras aprobar T2)*
+### Task 3: Buscador nuevo y candidatos parecidos
 
-**Objetivo:** `buildQuery` (sin palabras de relleno ES/EN, prefijo, OR), fusión RRF de `memories_words` + `memories_fts`, `MIN_SCORE`, modo `"hybrid"`; `similarTo` y `similar` en la respuesta de `memory_save`; conjunto de 20 consultas en lenguaje natural sobre un corpus sintético (nunca datos privados del propietario) con acierto medido antes y después.
-**Terminado:** las 20 consultas con acierto igual o mayor al umbral acordado al escribir el detalle, y ninguna consulta larga devuelve 0 cuando hay un recuerdo relevante.
+**Experimento:** Claude Code · Sonnet 5 · **high**, plan con código completo, **probado por el orquestador antes de entregarlo** (primera tarea con esa práctica: medir si baja las rondas por error del plan, que fueron 3 en T1 y 1 en T2).
+
+**Medición del orquestador (2026-09-24, laboratorio sobre `ed69776`, nunca en el repositorio):**
+- 20 preguntas en lenguaje natural sobre una **copia** de la base real del propietario (107 recuerdos): buscador actual **8/20** en el top 3 y **9/20 sin ningún resultado**; buscador nuevo **20/20** y **0 sin resultado**. La primera versión dio 19/20: el índice de trigramas distingue acentos ("proteccion" no encontraba "protección"); se corrigió buscando cada término como se escribió y sin acentos.
+- Mismo ejercicio sobre el corpus sintético que entra al repositorio (`tests/fixtures/search-benchmark.ts`, 30 recuerdos reescritos sin datos privados): antes **8/20** (12 vacías), después **20/20**.
+- Parecidos: en la base real, de 1 609 pares de recuerdos del mismo dueño, solo 2 llegan a 0,25 de similitud y los dos son una actualización real del otro (causa del cuelgue de Bun → Bun 1.4.2 fijado; Engines 1.12.0 → 1.12.1). Con 0,20 serían 11 pares, varios solo emparentados. Umbral: **0,25**.
+- Velocidad (misma copia, 100 búsquedas): actual mediana 0,44 ms; nuevo mediana 1,63 ms, p95 3,24 ms.
+- Suite completa en el laboratorio: **636 pass / 10 skip / 0 fail** (646; +12), typecheck 0.
+
+**Decisiones de esta tarea:**
+- **D-T3-1:** el buscador nuevo solo actúa en **nivel 11**; en niveles menores `search`/`searchPreviews` quedan idénticos a 1.6.0 (modos `fts5` y `literal`).
+- **D-T3-2:** consulta = palabras sin relleno (listas ES/EN), sin acentos y en minúsculas, unidas con **OR**; en el índice de palabras (`memories_words`) las de 4+ letras buscan por prefijo; en el de trigramas (`memories_fts`) las de 3+ letras buscan como se escribieron y sin acentos. Máximo 16 términos. Si todas son de relleno, se usan todas; si no queda ninguna palabra, 0 resultados.
+- **D-T3-3:** fusión por rango recíproco (RRF, `k = 60`, 50 candidatos por índice) multiplicada por el refuerzo existente (`rankingFactors`: fijado, recencia, estabilidad). `explanation` = `{ mode: "hybrid", bm25, multiplier, orderScore: -(rrf × multiplier), reinforcement }` (menor es mejor, como en `fts5`).
+- **D-T3-4:** umbral de ruido: un resultado debe contener **al menos 2** términos de la pregunta (o todos si tiene menos de 2). Se nombra `MIN_MATCHED_TERMS` (el esqueleto decía `MIN_SCORE`: un umbral de puntaje no sirve con RRF, que solo mide posiciones).
+- **D-T3-5:** parecidos = índice de Jaccard entre las palabras (sin relleno ni acentos) de título + contenido; mismo ámbito y dueño, activos, sin el propio recuerdo ni resúmenes de sesión (`session/*/summary`); máx. 3 con puntaje ≥ 0,25. Solo se calculan al **crear** un recuerdo **sin tema**; nunca en una versión nueva de un tema ni en una confirmación de texto idéntico. Una repetición por `requestKey` no los repite.
+- **D-T3-6:** `SessionSaveResult` gana `similar?` (opcional, solo si hay candidatos); `memory_save` lo devuelve en los tres ámbitos. `SimilarCandidate` vive en `modules/memory` porque `modules/sessions` no puede depender de `modules/search` (regla de arquitectura medida en el laboratorio).
+
+**Files:**
+- Create: `src/modules/search/query.ts` (+ `query.test.ts`)
+- Create: `src/infrastructure/sqlite/hybrid.ts` (+ `hybrid.test.ts`), `src/infrastructure/sqlite/similar.ts` (+ `similar.test.ts`)
+- Create: `tests/fixtures/search-benchmark.ts`
+- Modify: `src/modules/search/index.ts`, `src/modules/memory/types.ts`, `src/modules/memory/index.ts`, `src/modules/sessions/types.ts`, `src/index.ts`
+- Modify: `src/infrastructure/sqlite/search.ts`, `src/infrastructure/sqlite/writes.ts`
+- Modify: `src/interfaces/mcp/memory-tools.ts`, `src/interfaces/mcp/memory-tools.test.ts`
+
+**Interfaces:**
+- Consumes: `intelligenceEnabled(db)` (T1), `rankingFactors` y pesos `RANKING_*` de `modules/memory`, `memories_words` (T1), `memories_fts`.
+- Produces:
+  ```ts
+  // src/modules/search/query.ts
+  export const MAX_QUERY_TERMS = 16; export const MIN_MATCHED_TERMS = 2; export const RRF_K = 60; export const HYBRID_CANDIDATES = 50;
+  export const SIMILAR_LIMIT = 3; export const SIMILAR_MIN_SCORE = 0.25;
+  export interface QueryPlan { terms: string[]; words: string | null; trigram: string | null }
+  export function termsOf(text: string): string[];
+  export function buildQuery(text: string): QueryPlan;
+  export function matchedTerms(terms: readonly string[], text: string): number;
+  export function similarity(left: readonly string[], right: readonly string[]): number;
+  // src/modules/memory/types.ts
+  export interface SimilarCandidate { id: string; title: string; version: number; score: number }
+  // SearchExplanation.mode gana "hybrid"; SessionSaveResult gana similar?: SimilarCandidate[]
+  // src/infrastructure/sqlite/hybrid.ts
+  export function hybridHits(db, selection: { sql: string; args: string[] }, query: string, limit: number, now?: string): HybridHit[];
+  // src/infrastructure/sqlite/similar.ts
+  export function similarTo(db, input: { scope; ownerColumn: "projectId" | "groupId"; ownerId: string | null; title: string; content: string; excludeId: string }): SimilarCandidate[];
+  ```
+
+- [ ] **Step 1: Pruebas que fallan**
+
+`src/modules/search/query.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { buildQuery, matchedTerms, MAX_QUERY_TERMS, similarity, termsOf } from "./query";
+
+test("filler words are dropped, accents folded, terms OR-ed; four letters or more match by prefix", () => {
+  expect(buildQuery("¿Qué decidimos sobre la versión de Sentinel y el bun?")).toEqual({
+    terms: ["decidimos", "version", "sentinel", "bun"],
+    words: '"decidimos"* OR "version"* OR "sentinel"* OR "bun"',
+    trigram: '"decidimos" OR "version" OR "sentinel" OR "bun" OR "versión"',
+  });
+});
+
+test("a query made only of filler words keeps them; punctuation alone yields no query", () => {
+  expect(buildQuery("de la")).toEqual({ terms: ["de", "la"], words: '"de" OR "la"', trigram: null });
+  expect(buildQuery("¿?! --")).toEqual({ terms: [], words: null, trigram: null });
+});
+
+test("long texts are capped and repeated words counted once", () => {
+  const text = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(" ");
+  expect(buildQuery(text).terms).toHaveLength(MAX_QUERY_TERMS);
+  expect(termsOf("Main main MAIN rama")).toEqual(["main", "rama"]);
+});
+
+test("matched terms: substring from three letters, whole word below", () => {
+  expect(matchedTerms(["proteccion", "main", "ai"], "Protección de main en forge614-ai")).toBe(3);
+  expect(matchedTerms(["ai"], "email")).toBe(0);
+  expect(matchedTerms(["pointerschema"], "NodePointerSchema es estricto")).toBe(1);
+});
+
+test("similarity is the Jaccard index of two term sets, two decimals", () => {
+  expect(similarity(["a", "b"], ["b", "c"])).toBe(0.33);
+  expect(similarity(["a", "b"], ["b", "a"])).toBe(1);
+  expect(similarity([], ["a"])).toBe(0);
+});
+```
+
+`tests/fixtures/search-benchmark.ts`:
+
+```ts
+// Search benchmark: 30 memories modeled on real ones from this ecosystem (rewritten, no private data)
+// and 20 natural-language questions its owner asked, each with the title it must find in the top 3.
+export const BENCHMARK_MEMORIES: ReadonlyArray<{ title: string; content: string; type: "fact" | "decision" | "procedure" | "warning" | "preference" }> = [
+  { type: "decision", title: "Versión de Sentinel dentro de forge614.node.json", content: "La versión de Sentinel vive en el campo sentinel.version del archivo del nodo; no se agregan archivos nuevos." },
+  { type: "decision", title: "Presupuesto de arranque de 3000 tokens", content: "Acta 0020: la memoria que se inyecta al iniciar una sesión no pasa de 3000 tokens." },
+  { type: "procedure", title: "Procedimiento para agregar un agente de IA", content: "Runbook paso a paso: registrar el agente en Engines, probar el gancho de inicio y marcar la matriz de soporte." },
+  { type: "decision", title: "Bun 1.4.2 como versión única", content: "Todos los nodos fijan Bun 1.4.2 en CI y en local; la 1.3.8 se atoraba en Linux al cargar módulos." },
+  { type: "decision", title: "Productos externos que no se nombran", content: "La documentación y los contratos no mencionan productos de terceros; se describen como referencia A o B." },
+  { type: "fact", title: "Protección de la rama main", content: "Ruleset aplicado: todo cambio entra por PR con los cuatro checks en verde." },
+  { type: "decision", title: "Grupo forge614 en Engram", content: "Todos los nodos pertenecen al grupo forge614 del ámbito ecosystem." },
+  { type: "decision", title: "Identidad portátil del proyecto", content: "Engram escribe .forge614/project.json en la raíz del repositorio y resuelve por su id." },
+  { type: "decision", title: "Soporte de macOS, Linux y Windows", content: "Acta 0018: todo nodo corre en los tres sistemas; la paridad se prueba en CI." },
+  { type: "decision", title: "Diseño de forge614 init y prepare", content: "init prepara la máquina y prepare prepara cada proyecto; ninguno instala nada sin confirmar." },
+  { type: "decision", title: "Evolución aditiva de datos", content: "Acta 0024: los contratos y los datos guardados solo crecen; nunca se renombra ni se quita un campo." },
+  { type: "procedure", title: "Precios de modelos por fecha", content: "Los precios oficiales se guardan con su fecha en Notion para calcular el costo de cada corrida." },
+  { type: "procedure", title: "Verificación del orquestador", content: "Cada tarea se revisa leyendo el diff completo y corriendo pruebas y typecheck en una copia temporal." },
+  { type: "warning", title: "Goldens de Sentinel al subir versión", content: "Lección: subir la versión exige regenerar los goldens con sentinel:parity --update." },
+  { type: "warning", title: "Proyecto de prueba en la base real", content: "Un proyecto Release probe quedó registrado en la base del propietario por una prueba de publicación." },
+  { type: "preference", title: "Commits sin atribución", content: "Ningún commit ni PR menciona a una IA ni lleva líneas Co-Authored-By." },
+  { type: "preference", title: "Comandos para la terminal", content: "Los comandos que se entregan para pegar no llevan líneas de comentario." },
+  { type: "preference", title: "Color favorito", content: "Negro con morado." },
+  { type: "decision", title: "Workflows delgados", content: "Acta 0019: los workflows de CI son delgados, documentados y validados antes de integrar." },
+  { type: "fact", title: "Reglamento 1.0.0 publicado", content: "Release standard-v1.0.0 con el paquete del reglamento y su huella sha256." },
+  { type: "warning", title: "Timeouts de CI en Ubuntu", content: "La prueba cli.e2e excedía 10 s en ubuntu; se subió el límite de la prueba." },
+  { type: "fact", title: "Release de Shell 1.10.0", content: "Publicada con la actividad en segundo plano corregida." },
+  { type: "fact", title: "Engines 1.12.1 publicada", content: "Release sin atribución y pruebas de Windows en verde." },
+  { type: "decision", title: "Modelo Lego de instalación", content: "Cada nodo se instala por separado y se combina como piezas." },
+  { type: "decision", title: "Registro de decisiones en cuatro capas", content: "Plan, acta, Engram y changelog." },
+  { type: "procedure", title: "Checklist de agentes nuevos", content: "Se revisa en cada cambio de nodo antes de publicar." },
+  { type: "fact", title: "Pantalla de grupo en Shell", content: "Shell muestra el grupo del ecosistema y los avisos de Engram." },
+  { type: "fact", title: "Réplica en PostgreSQL", content: "La sincronización con PostgreSQL es explícita con el comando sync." },
+  { type: "fact", title: "Plan B de Sentinel", content: "29 tareas escritas y revisadas antes de ejecutar." },
+  { type: "fact", title: "Traspaso del 24 de septiembre", content: "Sentinel 0.1 cerrado e instalado en la Mac." },
+];
+
+export const BENCHMARK_QUERIES: ReadonlyArray<readonly [query: string, expectedTitle: string]> = [
+  ["qué decidimos sobre la versión de Sentinel en el json", "Versión de Sentinel dentro de forge614.node.json"],
+  ["cuánto es el presupuesto de tokens al arrancar", "Presupuesto de arranque de 3000 tokens"],
+  ["cómo se agrega un agente nuevo", "Procedimiento para agregar un agente de IA"],
+  ["qué versión de bun usamos", "Bun 1.4.2 como versión única"],
+  ["regla de no mencionar productos externos", "Productos externos que no se nombran"],
+  ["protección de la rama main", "Protección de la rama main"],
+  ["a qué grupo pertenecen los nodos en engram", "Grupo forge614 en Engram"],
+  ["identidad portátil del proyecto", "Identidad portátil del proyecto"],
+  ["soporte de windows linux y mac", "Soporte de macOS, Linux y Windows"],
+  ["decisión sobre init y prepare", "Diseño de forge614 init y prepare"],
+  ["evolución aditiva de los contratos", "Evolución aditiva de datos"],
+  ["dónde guardamos los precios de los modelos", "Precios de modelos por fecha"],
+  ["cómo verifica el orquestador cada tarea", "Verificación del orquestador"],
+  ["lección de los goldens de sentinel", "Goldens de Sentinel al subir versión"],
+  ["proyecto de prueba que quedó en la base real", "Proyecto de prueba en la base real"],
+  ["commits sin atribución a la IA", "Commits sin atribución"],
+  ["comandos para la terminal sin comentarios", "Comandos para la terminal"],
+  ["cuál es mi color favorito", "Color favorito"],
+  ["workflows delgados validados", "Workflows delgados"],
+  ["reglamento publicado", "Reglamento 1.0.0 publicado"],
+];
+```
+
+`src/infrastructure/sqlite/hybrid.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import type { Database } from "bun:sqlite";
+import { BENCHMARK_MEMORIES, BENCHMARK_QUERIES } from "../../../tests/fixtures/search-benchmark";
+import { withDatabase } from "../__test-support__/fixtures";
+import { createProject } from "./projects";
+import { enableIntelligence, enableSearchReinforcement } from "./schema";
+import { search, searchPreviews } from "./search";
+import { save } from "./writes";
+
+function benchmarkHits(db: Database): number {
+  const project = createProject(db, "Benchmark");
+  for (const memory of BENCHMARK_MEMORIES) save(db, { projectId: project.projectId, ...memory });
+  return BENCHMARK_QUERIES.filter(([query, expected]) =>
+    searchPreviews(db, project.projectId, query, 3, "all").some(result => result.memory.title === expected)).length;
+}
+
+test("benchmark: 20 natural-language questions, at least 18 found in the top 3 (was far fewer before level 11)", () => {
+  let before = 0, after = 0;
+  withDatabase(db => { enableSearchReinforcement(db); before = benchmarkHits(db); });
+  withDatabase(db => { enableIntelligence(db); after = benchmarkHits(db); });
+  expect(after).toBeGreaterThanOrEqual(18);
+  expect(before).toBeLessThan(after);
+});
+
+test("OR search with accents folded; a result needs at least two of the query terms", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Hybrid");
+  const replica = save(db, { projectId: project.projectId, type: "fact", title: "Réplica en PostgreSQL", content: "sincronización explícita" });
+  save(db, { projectId: project.projectId, type: "fact", title: "Notas de la rama", content: "la rama main está protegida" });
+  const results = searchPreviews(db, project.projectId, "cómo configuro la replica de postgres en main", 10, "all");
+  expect(results.map(result => result.memory.id)).toEqual([replica.id]);
+  const explanation = results[0]!.explanation;
+  expect(explanation.mode).toBe("hybrid");
+  expect(explanation.multiplier).toBeGreaterThan(1);
+  expect(explanation.orderScore!).toBeLessThan(0);
+}));
+
+test("code names are found by fragment, and another project's memories never leak", () => withDatabase(db => {
+  enableIntelligence(db);
+  const mine = createProject(db, "Mine"), other = createProject(db, "Other");
+  const schema = save(db, { projectId: mine.projectId, type: "fact", title: "Credencial del nodo", content: "NodePointerSchema es estricto" });
+  save(db, { projectId: other.projectId, type: "fact", title: "Credencial del nodo", content: "NodePointerSchema es estricto" });
+  expect(search(db, mine.projectId, "PointerSchema", 10, "all").map(result => result.memory.id)).toEqual([schema.id]);
+  expect(searchPreviews(db, mine.projectId, "PointerSchema", 10, "project").map(result => result.memory.id)).toEqual([schema.id]);
+}));
+
+test("a query with no usable words returns nothing instead of noise", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Empty");
+  save(db, { projectId: project.projectId, type: "fact", title: "Algo", content: "texto" });
+  expect(searchPreviews(db, project.projectId, "¿?!", 10, "all")).toEqual([]);
+  expect(searchPreviews(db, project.projectId, "nada relacionado aquí", 10, "all")).toEqual([]);
+}));
+```
+
+`src/infrastructure/sqlite/similar.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { createProject } from "./projects";
+import { enableIntelligence, enableSearchReinforcement } from "./schema";
+import { similarTo } from "./similar";
+import { archive, save, saveWithSession } from "./writes";
+
+const cause = { type: "decision" as const, title: "Bun 1.3.8 se atora en Linux", content: "La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa." };
+const fix = { type: "decision" as const, title: "Bun 1.4.2 fijado como versión única", content: "Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos." };
+
+test("look-alikes: same scope and owner only, never itself, archived memories or session summaries", () => withDatabase(db => {
+  enableIntelligence(db);
+  const mine = createProject(db, "Mine"), other = createProject(db, "Other");
+  const kept = save(db, { projectId: mine.projectId, ...cause });
+  const gone = save(db, { projectId: mine.projectId, ...cause, title: "Bun 1.3.8 se atora en Linux (copia)" });
+  archive(db, mine.projectId, gone.id);
+  save(db, { projectId: mine.projectId, ...cause, title: "Resumen", topicKey: "session/abc/summary" });
+  save(db, { projectId: other.projectId, ...cause });
+  save(db, { projectId: mine.projectId, type: "fact", title: "Color favorito", content: "Negro con morado." });
+  const probe = save(db, { projectId: mine.projectId, ...fix });
+  const found = similarTo(db, { scope: "project", ownerColumn: "projectId", ownerId: mine.projectId, title: fix.title, content: fix.content, excludeId: probe.id });
+  expect(found.map(candidate => candidate.id)).toEqual([kept.id]);
+  expect(found[0]!.score).toBeGreaterThanOrEqual(0.25);
+  expect(found[0]).toEqual({ id: kept.id, title: cause.title, version: 1, score: found[0]!.score });
+}));
+
+test("a new memory without a topic reports look-alikes; topics, identical text and older levels do not", () => {
+  withDatabase(db => {
+    enableIntelligence(db);
+    const project = createProject(db, "Save");
+    const first = saveWithSession(db, { projectId: project.projectId, ...cause });
+    expect(first.similar).toBeUndefined();
+    const second = saveWithSession(db, { projectId: project.projectId, ...fix });
+    expect(second.similar?.map(candidate => candidate.id)).toEqual([first.memory.id]);
+    expect(saveWithSession(db, { projectId: project.projectId, ...fix, topicKey: "bun" }).similar).toBeUndefined();
+    expect(saveWithSession(db, { projectId: project.projectId, ...fix })).not.toHaveProperty("similar");
+  });
+  withDatabase(db => {
+    enableSearchReinforcement(db);
+    const project = createProject(db, "Old");
+    saveWithSession(db, { projectId: project.projectId, ...cause });
+    expect(saveWithSession(db, { projectId: project.projectId, ...fix })).not.toHaveProperty("similar");
+  });
+});
+```
+
+`src/interfaces/mcp/memory-tools.test.ts`: agregar esta prueba justo después de la línea `import { sdkHarness } from "./__tests__/sdk-harness";` (antes de la primera prueba que ya existe debajo de esa línea):
+
+```ts
+test("memory_save reports look-alikes of a new memory at level 11 and memory_search finds natural questions", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const cause=(await h.call("memory_save",{title:"Bun 1.3.8 se atora en Linux",content:"La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa.",type:"decision"})).data;
+    expect(cause).not.toHaveProperty("similar");
+    const fix=(await h.call("memory_save",{title:"Bun 1.4.2 fijado como versión única",content:"Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos.",type:"decision"})).data;
+    expect(fix.similar.map((candidate:any)=>candidate.id)).toEqual([cause.id]);
+    const found=(await h.call("memory_search",{query:"qué versión de bun usamos",limit:3})).data;
+    expect(found.results.map((result:any)=>[result.memory.id,result.explanation.mode])).toEqual([[fix.id,"hybrid"]]);
+  } finally {await h.close();}
+});
+```
+
+- [ ] **Step 2: Rojo**
+
+Run: `bun test src/modules/search/query.test.ts src/infrastructure/sqlite/hybrid.test.ts src/infrastructure/sqlite/similar.test.ts src/interfaces/mcp/memory-tools.test.ts`
+Expected: FAIL (módulos `query`, `hybrid` y `similar` inexistentes; la prueba MCP nueva no recibe `similar`).
+
+- [ ] **Step 3: Módulo de consulta**
+
+`src/modules/search/query.ts`:
+
+```ts
+// Natural-language query planning for the level-11 hybrid search: filler words are dropped,
+// the remaining terms are OR-ed, terms of four or more letters match by prefix in the word
+// index and terms of three or more letters match anywhere in the trigram index.
+const STOPWORDS = new Set([
+  "a","al","algo","ante","antes","aqui","asi","cada","como","con","contra","cual","cuales","cuando","de","del","desde","donde",
+  "el","ella","ellas","ellos","en","entre","era","eres","es","esa","esas","ese","eso","esos","esta","estaba","estan","estas",
+  "este","esto","estos","fue","fueron","ha","han","hay","la","las","le","les","lo","los","mas","me","mi","mis","muy","nos",
+  "nosotros","o","otra","otras","otro","otros","para","pero","por","porque","pues","que","quien","se","sea","ser","si","sin",
+  "sobre","son","su","sus","te","ti","tu","tus","u","un","una","unas","uno","unos","y","ya","yo",
+  "an","and","are","as","at","be","been","but","by","can","did","do","does","for","from","had","has","have","how","i","if",
+  "in","into","is","it","its","me","my","of","on","or","our","so","that","the","their","them","then","there","these","they",
+  "this","to","was","we","were","what","when","where","which","who","why","will","with","you","your",
+]);
+
+/** At most this many terms are sent to the indexes; the rest of a long text is ignored. */
+export const MAX_QUERY_TERMS = 16;
+/** A result must contain at least this many query terms (or all of them when the query has fewer). */
+export const MIN_MATCHED_TERMS = 2;
+/** Reciprocal rank fusion constant: a result scores 1/(RRF_K + rank) in each index that returns it. */
+export const RRF_K = 60;
+/** Candidates read from each index before fusion. */
+export const HYBRID_CANDIDATES = 50;
+
+export interface QueryPlan { terms: string[]; words: string | null; trigram: string | null }
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+function tokens(text: string): string[] {
+  return fold(text).match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/** Distinct folded words of a text without filler words; when every word is filler, all of them. */
+export function termsOf(text: string): string[] {
+  const all = [...new Set(tokens(text))];
+  const meaningful = all.filter(term => !STOPWORDS.has(term));
+  return meaningful.length > 0 ? meaningful : all;
+}
+
+export function buildQuery(text: string): QueryPlan {
+  const terms = termsOf(text).slice(0, MAX_QUERY_TERMS);
+  const quote = (term: string) => `"${term}"`;
+  const words = terms.length === 0 ? null : terms.map(term => Array.from(term).length >= 4 ? `${quote(term)}*` : quote(term)).join(" OR ");
+  // The trigram index keeps accents: search each term as folded and as written.
+  const written = (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(word => terms.includes(fold(word)));
+  const long = [...new Set([...terms, ...written])].filter(term => Array.from(term).length >= 3);
+  return { terms, words, trigram: long.length === 0 ? null : long.map(quote).join(" OR ") };
+}
+
+/** How many query terms a text contains: by substring for three or more letters, as a whole word otherwise. */
+export function matchedTerms(terms: readonly string[], text: string): number {
+  const folded = fold(text), words = new Set(tokens(text));
+  return terms.filter(term => Array.from(term).length >= 3 ? folded.includes(term) : words.has(term)).length;
+}
+
+/** At most this many similar memories are returned after a save. */
+export const SIMILAR_LIMIT = 3;
+/** Minimum share of distinct words two memories must have in common to be reported as similar. */
+export const SIMILAR_MIN_SCORE = 0.25;
+
+/** Jaccard similarity of two term sets, rounded to two decimals. */
+export function similarity(left: readonly string[], right: readonly string[]): number {
+  const a = new Set(left), b = new Set(right);
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const term of a) if (b.has(term)) shared += 1;
+  return Math.round(shared / (a.size + b.size - shared) * 100) / 100;
+}
+```
+
+`src/modules/search/index.ts` (archivo completo):
+
+```ts
+export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult } from "./types";
+export { searchTerms,validateSearchLimit } from "./rules";
+export { buildQuery,termsOf,matchedTerms,similarity,MAX_QUERY_TERMS,MIN_MATCHED_TERMS,RRF_K,HYBRID_CANDIDATES,SIMILAR_LIMIT,SIMILAR_MIN_SCORE } from "./query";
+export type { QueryPlan } from "./query";
+```
+
+`src/modules/memory/types.ts`: en `SearchExplanation`, reemplazar `mode:"fts5"|"literal";` por `mode:"fts5"|"literal"|"hybrid";`, y justo después de la línea `export interface SearchResult { memory:Memory;explanation:SearchExplanation }` agregar:
+
+```ts
+/** A memory of the same scope and owner that looks like the one just saved (level 11). */
+export interface SimilarCandidate { id:string;title:string;version:number;score:number }
+```
+
+`src/modules/memory/index.ts`: en el `export type { … } from "./types";` agregar `SimilarCandidate` al final de la lista (después de `SearchExplanation`).
+
+`src/modules/sessions/types.ts`: la primera línea pasa a `import type { MemoryVersion,SimilarCandidate } from "../memory";` y `SessionSaveResult` pasa a:
+
+```ts
+export interface SessionSaveResult {memory:MemoryVersion;sessionId:string|null;sessionSource:"explicit"|"inferred"|"manual"|null;similar?:SimilarCandidate[]}
+```
+
+`src/index.ts`: en el `export type { … } from "./modules/memory";` agregar `SimilarCandidate` al final de la lista (después de `MemoryMark`).
+
+- [ ] **Step 4: Búsqueda híbrida y parecidos**
+
+`src/infrastructure/sqlite/hybrid.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import { rankingFactors,RANKING_CONTENT_WEIGHT,RANKING_TITLE_WEIGHT,RANKING_TOPIC_WEIGHT,type SearchExplanation } from "../../modules/memory";
+import { buildQuery,HYBRID_CANDIDATES,matchedTerms,MIN_MATCHED_TERMS,RRF_K } from "../../modules/search";
+
+type Selection = { sql: string; args: string[] };
+type IndexRow = { id: string; bm25: number };
+type CandidateRow = { id: string; title: string; content: string; topic_key: string | null; pinned: number;
+  revisionCount: number; duplicateCount: number; lastSeenAt: string };
+export interface HybridHit { id: string; explanation: SearchExplanation }
+
+function indexHits(db: Database, index: "memories_words" | "memories_fts", match: string, selection: Selection): IndexRow[] {
+  return db.query(`SELECT m.id AS id,bm25(${index},${RANKING_TITLE_WEIGHT},${RANKING_CONTENT_WEIGHT},${RANKING_TOPIC_WEIGHT}) AS bm25
+    FROM ${index} JOIN memories m ON m.rowid=${index}.rowid
+    WHERE ${index} MATCH ? AND ${selection.sql} AND m.state='active' ORDER BY bm25 ASC,m.id ASC LIMIT ?`)
+    .all(match, ...selection.args, HYBRID_CANDIDATES) as IndexRow[];
+}
+
+/** Level-11 search: word and trigram indexes fused by rank, filtered by matched terms, weighted by reinforcement. */
+export function hybridHits(db: Database, selection: Selection, query: string, limit: number, now = new Date().toISOString()): HybridHit[] {
+  const plan = buildQuery(query);
+  const fused = new Map<string, { rrf: number; bm25: number | null }>();
+  const lists = [plan.words === null ? [] : indexHits(db, "memories_words", plan.words, selection),
+    plan.trigram === null ? [] : indexHits(db, "memories_fts", plan.trigram, selection)];
+  for (const list of lists) list.forEach((row, index) => {
+    const current = fused.get(row.id) ?? { rrf: 0, bm25: null };
+    fused.set(row.id, { rrf: current.rrf + 1 / (RRF_K + index + 1), bm25: current.bm25 ?? row.bm25 });
+  });
+  if (fused.size === 0) return [];
+  const ids = [...fused.keys()];
+  const rows = db.query(`SELECT m.id,m.title,m.content,m.topic_key,m.pinned,m.version-1 AS revisionCount,
+      (SELECT count(*) FROM confirmations c WHERE c.memoryId=m.id) AS duplicateCount,
+      max(m.updated_at,coalesce((SELECT max(c.recordedAt) FROM confirmations c WHERE c.memoryId=m.id),m.updated_at)) AS lastSeenAt
+    FROM memories m WHERE m.id IN (${ids.map(() => "?").join(",")})`).all(...ids) as CandidateRow[];
+  const needed = Math.min(MIN_MATCHED_TERMS, plan.terms.length);
+  return rows
+    .filter(row => matchedTerms(plan.terms, `${row.title}\n${row.content}\n${row.topic_key ?? ""}`) >= needed)
+    .map(row => {
+      const { rrf, bm25 } = fused.get(row.id)!;
+      const { multiplier, ...reinforcement } = rankingFactors({ revisionCount: row.revisionCount,
+        duplicateCount: row.duplicateCount, lastSeenAt: row.lastSeenAt }, row.pinned === 1, now);
+      return { id: row.id, explanation: { mode: "hybrid" as const, bm25, multiplier, orderScore: -(rrf * multiplier), reinforcement } };
+    })
+    .sort((a, b) => a.explanation.orderScore! - b.explanation.orderScore! || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, limit);
+}
+```
+
+`src/infrastructure/sqlite/similar.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import type { MemoryScope,SimilarCandidate } from "../../modules/memory";
+import { buildQuery,HYBRID_CANDIDATES,similarity,SIMILAR_LIMIT,SIMILAR_MIN_SCORE,termsOf } from "../../modules/search";
+
+type CandidateRow = { id: string; title: string; content: string; version: number };
+
+/** Active memories of the same scope and owner whose words look like the given text; session summaries excluded. */
+export function similarTo(db: Database, input: { scope: MemoryScope; ownerColumn: "projectId" | "groupId"; ownerId: string | null;
+    title: string; content: string; excludeId: string }): SimilarCandidate[] {
+  const text = `${input.title}\n${input.content}`, plan = buildQuery(text);
+  if (plan.words === null) return [];
+  const rows = db.query(`SELECT m.id,m.title,m.content,m.version FROM memories_words JOIN memories m ON m.rowid=memories_words.rowid
+    WHERE memories_words MATCH ? AND m.scope=? AND m.${input.ownerColumn} IS ? AND m.state='active' AND m.id<>?
+    AND (m.topic_key IS NULL OR m.topic_key NOT GLOB 'session/*/summary')
+    ORDER BY bm25(memories_words) ASC,m.id ASC LIMIT ?`)
+    .all(plan.words, input.scope, input.ownerId, input.excludeId, HYBRID_CANDIDATES) as CandidateRow[];
+  const mine = termsOf(text);
+  return rows
+    .map(row => ({ id: row.id, title: row.title, version: row.version, score: similarity(mine, termsOf(`${row.title}\n${row.content}`)) }))
+    .filter(candidate => candidate.score >= SIMILAR_MIN_SCORE)
+    .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, SIMILAR_LIMIT);
+}
+```
+
+`src/infrastructure/sqlite/search.ts`:
+1. Después de `import { ecosystemEnabled,getGroup,groupOfProject } from "./ecosystem-groups";` agregar `import { hybridHits } from "./hybrid";`.
+2. Justo antes de `function readSearchPreviews(` agregar:
+
+```ts
+// Level 11: rank ids with the hybrid search, then read the requested projection in that order.
+function hybridRows<T extends { id: string }>(db: Database, columns: string, selection: Selection, query: string, limit: number):
+    { row: T; explanation: SearchResult["explanation"] }[] {
+  const hits = hybridHits(db, selection, query, limit);
+  if (hits.length === 0) return [];
+  const rows = db.query(`SELECT ${columns} FROM memories m WHERE m.id IN (${hits.map(() => "?").join(",")})`).all(...hits.map(hit => hit.id)) as T[];
+  const byId = new Map(rows.map(row => [row.id, row]));
+  return hits.map(hit => ({ row: byId.get(hit.id)!, explanation: hit.explanation }));
+}
+
+```
+
+3. En `readSearchPreviews`, justo después de la línea `const selection = searchSelection(db, projectId, scope, groupId); const parsed = searchTerms(query); validateSearchLimit(limit);` agregar:
+
+```ts
+  if (intelligenceEnabled(db)) return hybridRows<PreviewRow>(db, PREVIEW_COLUMNS, selection, query, limit)
+    .map(({ row, explanation }) => ({ memory: preview(row), explanation }));
+```
+
+4. En `search`, justo después de la línea `const parsed = searchTerms(query); validateSearchLimit(limit);` agregar:
+
+```ts
+    if (intelligenceEnabled(db)) return hybridRows<Row>(db, "m.*", selection, query, limit)
+      .map(({ row, explanation }) => ({ memory: memory(row), explanation }));
+```
+
+`src/infrastructure/sqlite/writes.ts`:
+1. Después de `import { readMeta,upsertMeta } from "./meta";` agregar `import { similarTo } from "./similar";`.
+2. Al final de `saveCore`, reemplazar `      return {memory:snapshot,sessionId:selected,sessionSource:source};` (la última, después de `applySaveMeta` con `newVersion: true`) por:
+
+```ts
+      // A brand-new memory without a topic reports up to three look-alikes so the caller can merge or supersede.
+      const similar = intelligenceEnabled(db) && !existing && topic === null
+        ? similarTo(db, { scope, ownerColumn, ownerId, title, content, excludeId: id }) : [];
+      return {memory:snapshot,sessionId:selected,sessionSource:source,...(similar.length > 0 ? { similar } : {})};
+```
+
+`src/interfaces/mcp/memory-tools.ts` (handler de `memory_save`):
+1. Rama `ecosystem`: reemplazar
+
+```ts
+      return memoryStore().saveWithSession({ ...saveInput,scope:"ecosystem",projectId:null,groupId:target.group.id },
+        {mode:"assistant",...(sessionId?{sessionId,projectId:target.projectId}:{})}).memory;
+```
+
+por
+
+```ts
+      const saved = memoryStore().saveWithSession({ ...saveInput,scope:"ecosystem",projectId:null,groupId:target.group.id },
+        {mode:"assistant",...(sessionId?{sessionId,projectId:target.projectId}:{})});
+      return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
+```
+
+2. Rama `shared`: reemplazar
+
+```ts
+      return memoryStore().saveWithSession({ ...saveInput,scope:"shared",projectId:null },
+        {mode:"assistant",...(sessionId?{sessionId}:{}),...(sessionProjectId?{projectId:sessionProjectId}:{})}).memory;
+```
+
+por
+
+```ts
+      const saved = memoryStore().saveWithSession({ ...saveInput,scope:"shared",projectId:null },
+        {mode:"assistant",...(sessionId?{sessionId}:{}),...(sessionProjectId?{projectId:sessionProjectId}:{})});
+      return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
+```
+
+3. Rama `project`: reemplazar
+
+```ts
+    return {...saved.memory,sessionId:saved.sessionId,sessionSource:saved.sessionSource,...(notices.length?{notices}:{})};
+```
+
+por
+
+```ts
+    return {...saved.memory,sessionId:saved.sessionId,sessionSource:saved.sessionSource,...(saved.similar?{similar:saved.similar}:{}),...(notices.length?{notices}:{})};
+```
+
+- [ ] **Step 5: Verde**
+
+Run: `bun test src/modules/search/query.test.ts src/infrastructure/sqlite/hybrid.test.ts src/infrastructure/sqlite/similar.test.ts src/interfaces/mcp/memory-tools.test.ts`
+Expected: PASS (5 + 4 + 2 + 9 = 20 pruebas).
+
+- [ ] **Step 6: Suite completa y tipos**
+
+Run: `bun test` y `bun run typecheck`. Expected: 636 pass / 10 skip / 0 fail; typecheck sin errores. La suite completa tarda ~30 s; si el entorno la corta, córrela por grupos **sin repetir carpetas** (`bun test src/modules`, `bun test src/infrastructure`, `bun test src/app src/interfaces src/shared src/index.test.ts`, `bun test tests scripts`).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/modules/search src/modules/memory/types.ts src/modules/memory/index.ts src/modules/sessions/types.ts src/index.ts src/infrastructure/sqlite/hybrid.ts src/infrastructure/sqlite/hybrid.test.ts src/infrastructure/sqlite/similar.ts src/infrastructure/sqlite/similar.test.ts src/infrastructure/sqlite/search.ts src/infrastructure/sqlite/writes.ts src/interfaces/mcp/memory-tools.ts src/interfaces/mcp/memory-tools.test.ts tests/fixtures/search-benchmark.ts
+git commit -m "feat(search): hybrid word and trigram search with look-alike candidates on save (level 11)"
+```
+
+- [ ] **Step 8: Documentación (prompt aparte, sesión nueva, commit propio)** — el orquestador escribe su texto exacto después de aprobar el código, leyendo los capítulos reales.
 
 ### Task 5: Sesiones interrumpidas *(detalle tras aprobar T3)*
 
