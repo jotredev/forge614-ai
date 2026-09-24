@@ -17,7 +17,7 @@
    - registra el conteo **medido**, no el reportado, y borra la copia.
    A futuro, Sentinel hará esta verificación de forma automática.
 4. Al cerrar cada tarea, el orquestador mide la corrida desde el registro de la herramienta (§5) y agrega la fila en Notion; si aprendió algo, agrega o actualiza una lección.
-5. Los prompts se entregan en la página "Prompts Forge614" (https://claude.ai/artifact/2GXZWGs1rmxPAZQAaDRZjP): tarjeta "Ahora" con el paso numerado y botón Copiar; en el chat solo se dice qué hacer ahora. Un solo paso a la vez. Si falta la copia local de la página, se recupera con Artifact `read` de esa URL y se republica con `url`. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
+5. **Los prompts se entregan en el chat del orquestador, en un solo bloque de código listo para copiar y pegar** (decisión del propietario, 2026-09-24: la página de tarjetas se retiró porque cada publicación costaba $1,5–2 y agregaba pasos). Antes del bloque, una línea dice dónde pegarlo (repositorio, herramienta, modelo y razonamiento). Un solo paso a la vez. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
 6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5).
 
 ## 2. Forma del prompt
@@ -123,6 +123,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-24 — Los prompts se entregan en el chat del orquestador, en un solo bloque para copiar (§1.5); se retira la página de tarjetas.
 - 2026-09-24 — Laboratorio antes de entregar cada tarea (§1, §4), medición del orquestador y traspaso de sesión (§1, §5), reporte sin total de la suite (§3), documentación en sesión nueva (§4b), datos de T1–T3 en §6 y programa de medición (apéndice A).
 - 2026-09-24 — Regla firme del propietario: lectura del plan autorizada explícitamente en el prompt (solo lectura, mismo ecosistema; regla compartida v2). Sustituye la decisión previa del mismo día de copiar todo el texto en el prompt.
 - 2026-09-24 — Regla firme del propietario: documentación tarea por tarea (§4b).

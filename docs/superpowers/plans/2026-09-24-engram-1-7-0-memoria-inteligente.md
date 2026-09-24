@@ -2426,10 +2426,283 @@ git add docs/es/03-referencia-cli.md docs/en/03-cli-reference.md docs/es/04-sdk-
 git commit -m "docs: session activity, interrupted sessions and previous-session handoff in CLI, SDK, architecture, troubleshooting and changelog"
 ```
 
-### Task 4: Reglas del tablero *(detalle tras aprobar T5; plan con solo pruebas y contratos — experimento)*
+### Task 4: Reglas del tablero
 
-**Objetivo:** los contratos T4 del esqueleto.
-**Terminado:** una prueba por código de error nuevo; `memory-demote` conserva historial; la nota de estado solo la escribe el proyecto fuente.
+**Experimento:** Codex · gpt-5.6-terra · **medium**, plan con **solo pruebas y contratos, sin código de implementación y sin laboratorio**: el orquestador (Opus 5.5) escribió las pruebas leyendo el código de `4e64042` en solo lectura, pero no construyó la implementación ni corrió las pruebas. Se compara con T2 (mismo agente con código completo: 1 ronda por error del plan). Mide la teoría "el orquestador solo entrega pruebas y contratos y el worker construye".
+
+**Decisiones de esta tarea:**
+- **D-T4-1:** todo solo en **nivel 11**. En niveles menores un recuerdo `ecosystem` se guarda y se mueve como en 1.6.0 (cualquier tipo, sin `affects`), `fromProjectId` se ignora, y `setGroupSource` y `demoteMemory` responden `INTELLIGENCE_REQUIRED`.
+- **D-T4-2 (reglas del tablero):** aplican a todo guardado `ecosystem` (`save`, `saveWithSession`, CLI `save`, MCP `memory_save`) y a `moveMemoryToGroup`. **Exentos:** los resúmenes de sesión (`saveSessionSummary` con grupo; su API de 1.6.0 no cambia) y la nota de estado (D-T4-5). Orden de comprobación: tipo → `affects` → tope.
+  - Tipo: solo `decision`, `procedure` o `warning` → si no, `ECOSYSTEM_TYPE_NOT_ALLOWED`.
+  - `affects` efectivos (los enviados o, si no se envían, los ya guardados en `memory_meta`): al menos 2 nombres → si no, `ECOSYSTEM_AFFECTS_REQUIRED`; cada nombre debe ser exactamente el `name` de un proyecto miembro del grupo → si no, `ECOSYSTEM_AFFECTS_UNKNOWN` (el mensaje nombra los desconocidos y los válidos).
+  - Tope: `ECOSYSTEM_BOARD_LIMIT = 40` recuerdos activos del grupo, sin contar la nota de estado ni los resúmenes de sesión. Solo se comprueba cuando el guardado o el movimiento **agrega** un recuerdo al tablero (nunca en una versión nueva, una confirmación de texto idéntico o una repetición por `requestKey`). Lleno → `ECOSYSTEM_BOARD_FULL`, con un mensaje que incluye el conteo y los títulos activos del tablero ordenados, separados por « · », para que la IA consolide o baje uno.
+- **D-T4-3 (quién escribe):** la variante `ecosystem` de `SaveInput` gana el opcional `fromProjectId?: string` (el proyecto que escribe). Solo lo usa la nota de estado. `memory_save` (MCP) lo llena siempre con el proyecto de la carpeta; la CLI no lo envía, así que la nota de estado no se escribe por CLI.
+- **D-T4-4 (proyecto fuente):** `setGroupSource(groupId, projectId)` guarda en `ecosystem_sources` (T1) el proyecto fuente del grupo, reemplazando al anterior. Errores: grupo inexistente `GROUP_NOT_FOUND`, proyecto inexistente `PROJECT_NOT_FOUND`, proyecto que no pertenece a ese grupo `GROUP_REQUIRED`. Registra el evento de identidad `GROUP_SOURCE_SET`. `groupSource(groupId)` lo lee o devuelve `null`.
+- **D-T4-5 (nota de estado):** tema reservado `ECOSYSTEM_STATUS_TOPIC = "ecosystem/estado-actual"` en ámbito `ecosystem`. Solo la escribe el proyecto fuente, que además debe seguir siendo miembro del grupo: `fromProjectId` ausente, grupo sin fuente o `fromProjectId` distinto → `ECOSYSTEM_STATUS_FORBIDDEN`. Tipos permitidos: `decision`, `procedure`, `warning` y `fact`; `preference` → `ECOSYSTEM_TYPE_NOT_ALLOWED`. Contenido de a lo más `ECOSYSTEM_STATUS_MAX = 600` caracteres (contados con `Array.from`) → si no, `ECOSYSTEM_STATUS_TOO_LONG`. Se guarda siempre fijado (`pinned: true`, aunque no se pida), no exige `affects` y no cuenta para el tope. Mover a un grupo un recuerdo con ese tema → `ECOSYSTEM_STATUS_FORBIDDEN`. Orden: permiso → tipo → largo.
+- **D-T4-6 (bajar del tablero):** `demoteMemory(projectId, id)` devuelve al ámbito `project` de `projectId` un recuerdo del tablero del grupo de ese proyecto. Es el espejo de `moveMemoryToGroup`: conserva el id, todas las versiones anteriores y `memory_meta`, agrega una versión que registra el cambio de ámbito y mueve sus `requests`. Registra el evento `MEMORY_DEMOTED`. Errores, en este orden: proyecto sin grupo `GROUP_REQUIRED`; recuerdo que no está en el tablero de ese grupo `NOT_FOUND`; el proyecto ya tiene ese tema `TOPIC_CONFLICT`; choque de `requestKey` `REQUEST_CONFLICT`. Resultado: `{ memory, from: { scope: "ecosystem", groupId }, to: { scope: "project", projectId } }`.
+- **D-T4-7 (CLI):** `group-source-set --group <nombre|id> --project-id <UUID>` imprime `{ "schemaVersion": 1, "source": GroupSource }`. `memory-demote --id <recuerdo> --project-id <UUID>` imprime `{ "schemaVersion": 1, memory, from, to }`. `save` gana `--affects <a,b,…>` (separados por comas). `memory-demote` se agrega a `CONTRACT_COMMANDS` (`group-source-set` ya entra por el prefijo `group-`), y los seis códigos nuevos se agregan a `CONTRACT_CODES`. El texto de ayuda lista los dos comandos y la opción.
+
+**Files:**
+- Create: `src/modules/ecosystem/board.ts` (+ `board.test.ts`), `src/infrastructure/sqlite/board.ts` (+ `board.test.ts`)
+- Modify: `src/modules/ecosystem/types.ts`, `src/modules/ecosystem/index.ts`, `src/modules/memory/types.ts`, `src/index.ts`
+- Modify: `src/infrastructure/sqlite/writes.ts` (reglas en `saveCore` y en `moveMemoryToGroup`)
+- Modify: `src/app/memory-store.ts`, `src/app/workspace.ts`
+- Modify: `src/interfaces/mcp/memory-tools.ts`, `src/interfaces/mcp/memory-tools.test.ts`
+- Modify: `src/interfaces/cli/arguments.ts`, `src/interfaces/cli/commands.ts`, `src/interfaces/cli/main.ts`, `src/interfaces/cli/help.ts`, `src/interfaces/cli/__tests__/ecosystem.e2e.test.ts`
+- Modify (guardas del contrato público): `src/index.test.ts`, `tests/fixtures/sdk-contract.ts`
+
+**Interfaces (contratos exactos; la implementación es libre mientras respete esto y las reglas de arquitectura):**
+```ts
+// src/modules/ecosystem/board.ts (y exportado por src/modules/ecosystem/index.ts)
+export const ECOSYSTEM_BOARD_LIMIT = 40;
+export const ECOSYSTEM_AFFECTS_MIN = 2;
+export const ECOSYSTEM_STATUS_TOPIC = "ecosystem/estado-actual";
+export const ECOSYSTEM_STATUS_MAX = 600;
+/** decision, procedure and warning always; fact too, but only for the status note. */
+export function boardTypeAllowed(type: string, topicKey: string | null): boolean;
+// src/modules/ecosystem/types.ts (exportado por modules/ecosystem y por src/index.ts como tipo)
+export interface GroupSource { groupId: string; projectId: string; setAt: string }
+// src/modules/memory/types.ts: la variante ecosystem de SaveInput pasa a
+//   {scope:"ecosystem";projectId:null;groupId:string;fromProjectId?:string}
+// src/infrastructure/sqlite/board.ts
+export function setGroupSource(db: Database, groupId: string, projectId: string): GroupSource;
+export function groupSource(db: Database, groupId: string): GroupSource | null;
+export function demoteMemory(db: Database, projectId: string, id: string):
+  { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } };
+// src/app/memory-store.ts (MemoryStore)
+setGroupSource(groupId: string, projectId: string): GroupSource;
+groupSource(groupId: string): GroupSource | null;
+demoteMemory(projectId: string, id: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } };
+// src/app/workspace.ts (MemoryWorkspace, para la CLI; resuelve la referencia del grupo)
+setGroupSource(group: string, projectId: string): GroupSource;
+demoteMemory(id: string, projectId: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } };
+// src/interfaces/mcp/memory-tools.ts: en la rama ecosystem de memory_save, el SaveInput lleva fromProjectId: target.projectId
+```
+
+- [ ] **Step 1: Pruebas que fallan**
+
+`src/modules/ecosystem/board.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { boardTypeAllowed, ECOSYSTEM_AFFECTS_MIN, ECOSYSTEM_BOARD_LIMIT, ECOSYSTEM_STATUS_MAX, ECOSYSTEM_STATUS_TOPIC } from "./board";
+
+test("board constants and allowed types; only the status note also accepts facts", () => {
+  expect([ECOSYSTEM_BOARD_LIMIT, ECOSYSTEM_AFFECTS_MIN, ECOSYSTEM_STATUS_MAX, ECOSYSTEM_STATUS_TOPIC]).toEqual([40, 2, 600, "ecosystem/estado-actual"]);
+  const types = ["decision", "procedure", "warning", "fact", "preference"];
+  expect(types.map(type => boardTypeAllowed(type, "api"))).toEqual([true, true, true, false, false]);
+  expect(types.map(type => boardTypeAllowed(type, null))).toEqual([true, true, true, false, false]);
+  expect(types.map(type => boardTypeAllowed(type, ECOSYSTEM_STATUS_TOPIC))).toEqual([true, true, true, true, false]);
+});
+```
+
+`src/infrastructure/sqlite/board.test.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import { expect, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { demoteMemory, groupSource, setGroupSource } from "./board";
+import { bindProjectToGroup, createGroup, identityEvents } from "./ecosystem-groups";
+import { get, history } from "./memory";
+import { createProject } from "./projects";
+import { enableEcosystem, enableIntelligence, enableProjectBindings } from "./schema";
+import { getVersion } from "./search";
+import { archive, moveMemoryToGroup, save } from "./writes";
+
+type Board = { group: string; ai: string; engram: string; shell: string; loose: string };
+function board(run: (db: Database, x: Board) => void): void {
+  withDatabase(db => {
+    enableIntelligence(db);
+    const ai = createProject(db, "forge614-ai").projectId, engram = createProject(db, "forge614-engram").projectId;
+    const shell = createProject(db, "forge614-shell").projectId, loose = createProject(db, "suelto").projectId;
+    const group = createGroup(db, "forge614").id;
+    for (const project of [ai, engram, shell]) bindProjectToGroup(db, project, group, "command");
+    run(db, { group, ai, engram, shell, loose });
+  });
+}
+const rule = (group: string, extra: Record<string, unknown> = {}) => ({ scope: "ecosystem" as const, projectId: null, groupId: group,
+  title: "Contrato de API", content: "Los nodos hablan JSON versionado.", type: "decision" as const, topicKey: "api",
+  affects: ["forge614-engram", "forge614-shell"], ...extra });
+const status = (group: string, extra: Record<string, unknown> = {}) => ({ scope: "ecosystem" as const, projectId: null, groupId: group,
+  title: "Estado actual", content: "Frente: Engram 1.7.0; paso: T4.", type: "fact" as const, topicKey: "ecosystem/estado-actual", ...extra });
+const code = (value: string) => expect.objectContaining({ code: value });
+
+test("below level 11 the board keeps the 1.6.0 behavior and the new operations need intelligence", () => withDatabase(db => {
+  enableProjectBindings(db); enableEcosystem(db);
+  const project = createProject(db, "tienda-web").projectId, group = createGroup(db, "tienda").id;
+  bindProjectToGroup(db, project, group, "command");
+  const saved = save(db, { scope: "ecosystem", projectId: null, groupId: group, title: "Nota", content: "libre", type: "fact", fromProjectId: project });
+  expect(saved.type).toBe("fact");
+  expect(() => setGroupSource(db, group, project)).toThrow(code("INTELLIGENCE_REQUIRED"));
+  expect(() => demoteMemory(db, project, saved.id)).toThrow(code("INTELLIGENCE_REQUIRED"));
+}));
+
+test("a board memory needs an allowed type and at least two affected projects of the group", () => board((db, { group }) => {
+  expect(() => save(db, rule(group, { type: "fact", affects: undefined }))).toThrow(code("ECOSYSTEM_TYPE_NOT_ALLOWED"));
+  expect(() => save(db, rule(group, { affects: undefined }))).toThrow(code("ECOSYSTEM_AFFECTS_REQUIRED"));
+  expect(() => save(db, rule(group, { affects: ["forge614-engram"] }))).toThrow(code("ECOSYSTEM_AFFECTS_REQUIRED"));
+  expect(() => save(db, rule(group, { affects: ["forge614-engram", "suelto"] }))).toThrow(code("ECOSYSTEM_AFFECTS_UNKNOWN"));
+  const saved = save(db, rule(group, { affects: [" forge614-shell", "forge614-engram"] }));
+  expect(getVersion(db, { groupId: group }, saved.id)?.meta?.affects).toEqual(["forge614-engram", "forge614-shell"]);
+  // A new version may omit affects: the stored ones still count.
+  expect(save(db, rule(group, { content: "v2", expectedVersion: 1, affects: undefined })).version).toBe(2);
+}));
+
+test("the board holds at most 40 active memories; updates, archived ones and the status note do not count", () => board((db, { group, ai }) => {
+  const ids = Array.from({ length: 40 }, (_, i) => save(db, rule(group, { title: `Regla ${i}`, content: `Contenido ${i}`, topicKey: `regla/${i}` })).id);
+  let error: unknown;
+  try { save(db, rule(group, { title: "Regla 40", content: "otra", topicKey: "regla/40" })); } catch (caught) { error = caught; }
+  expect(error).toMatchObject({ code: "ECOSYSTEM_BOARD_FULL" });
+  expect((error as Error).message).toContain("Regla 0");
+  expect(save(db, rule(group, { title: "Regla 0", content: "cambiada", topicKey: "regla/0", expectedVersion: 1 })).version).toBe(2);
+  setGroupSource(db, group, ai);
+  expect(save(db, status(group, { fromProjectId: ai })).pinned).toBe(true);
+  archive(db, { groupId: group }, ids[1]!);
+  expect(save(db, rule(group, { title: "Regla 40", content: "otra", topicKey: "regla/40" })).scope).toBe("ecosystem");
+}));
+
+test("only the group's source project writes the status note: pinned, up to 600 characters, facts allowed", () => board((db, { group, ai, engram }) => {
+  expect(() => save(db, status(group, { fromProjectId: ai }))).toThrow(code("ECOSYSTEM_STATUS_FORBIDDEN"));
+  expect(setGroupSource(db, group, ai)).toEqual({ groupId: group, projectId: ai, setAt: expect.any(String) });
+  expect(() => save(db, status(group, { fromProjectId: engram }))).toThrow(code("ECOSYSTEM_STATUS_FORBIDDEN"));
+  expect(() => save(db, status(group))).toThrow(code("ECOSYSTEM_STATUS_FORBIDDEN"));
+  expect(() => save(db, status(group, { fromProjectId: ai, type: "preference" }))).toThrow(code("ECOSYSTEM_TYPE_NOT_ALLOWED"));
+  expect(() => save(db, status(group, { fromProjectId: ai, content: "x".repeat(601) }))).toThrow(code("ECOSYSTEM_STATUS_TOO_LONG"));
+  const saved = save(db, status(group, { fromProjectId: ai, content: "é".repeat(600) }));
+  expect(saved).toMatchObject({ scope: "ecosystem", topicKey: "ecosystem/estado-actual", type: "fact", pinned: true });
+  expect(groupSource(db, group)?.projectId).toBe(ai);
+}));
+
+test("the group source must be a member of the group; setting it again replaces it and is recorded", () => board((db, { group, ai, engram, loose }) => {
+  expect(() => setGroupSource(db, group, loose)).toThrow(code("GROUP_REQUIRED"));
+  expect(() => setGroupSource(db, group, crypto.randomUUID())).toThrow(code("PROJECT_NOT_FOUND"));
+  expect(() => setGroupSource(db, crypto.randomUUID(), ai)).toThrow(code("GROUP_NOT_FOUND"));
+  expect(groupSource(db, group)).toBeNull();
+  setGroupSource(db, group, ai);
+  expect(setGroupSource(db, group, engram).projectId).toBe(engram);
+  expect(groupSource(db, group)?.projectId).toBe(engram);
+  expect(identityEvents(db).filter(event => event.action === "GROUP_SOURCE_SET")).toHaveLength(2);
+}));
+
+test("demoting returns a board memory to a member project and keeps its id, history and metadata", () => board((db, { group, engram, loose }) => {
+  const first = save(db, rule(group));
+  save(db, rule(group, { content: "v2", expectedVersion: 1 }));
+  expect(() => demoteMemory(db, loose, first.id)).toThrow(code("GROUP_REQUIRED"));
+  const demoted = demoteMemory(db, engram, first.id);
+  expect(demoted.from).toEqual({ scope: "ecosystem", groupId: group });
+  expect(demoted.to).toEqual({ scope: "project", projectId: engram });
+  expect(demoted.memory).toMatchObject({ id: first.id, scope: "project", projectId: engram, version: 3, content: "v2", state: "active" });
+  expect(history(db, engram, first.id).map(version => [version.version, version.scope])).toEqual([[1, "ecosystem"], [2, "ecosystem"], [3, "project"]]);
+  expect(get(db, { groupId: group }, first.id)).toBeNull();
+  expect(getVersion(db, engram, first.id)?.meta?.affects).toEqual(["forge614-engram", "forge614-shell"]);
+  expect(identityEvents(db).some(event => event.action === "MEMORY_DEMOTED" && event.memoryId === first.id)).toBe(true);
+  expect(() => demoteMemory(db, engram, first.id)).toThrow(code("NOT_FOUND"));
+  const again = save(db, rule(group, { title: "Otro contrato", content: "otro" }));
+  expect(() => demoteMemory(db, engram, again.id)).toThrow(code("TOPIC_CONFLICT"));
+}));
+
+test("moving a memory onto the board obeys the same rules at level 11", () => board((db, { group, engram }) => {
+  const fact = save(db, { scope: "project", projectId: engram, title: "Hecho", content: "algo", type: "fact" });
+  expect(() => moveMemoryToGroup(db, engram, fact.id, group)).toThrow(code("ECOSYSTEM_TYPE_NOT_ALLOWED"));
+  const decision = { scope: "project" as const, projectId: engram, title: "Decisión", content: "usar JSON", type: "decision" as const, topicKey: "d" };
+  const bare = save(db, decision);
+  expect(() => moveMemoryToGroup(db, engram, bare.id, group)).toThrow(code("ECOSYSTEM_AFFECTS_REQUIRED"));
+  save(db, { ...decision, expectedVersion: 1, affects: ["forge614-engram", "forge614-shell"] });
+  expect(moveMemoryToGroup(db, engram, bare.id, group).memory.scope).toBe("ecosystem");
+  const note = save(db, { scope: "project", projectId: engram, title: "Estado", content: "x", type: "fact", topicKey: "ecosystem/estado-actual" });
+  expect(() => moveMemoryToGroup(db, engram, note.id, group)).toThrow(code("ECOSYSTEM_STATUS_FORBIDDEN"));
+}));
+```
+
+`src/interfaces/mcp/memory-tools.test.ts`: agregar al final del archivo:
+
+```ts
+test("memory_save writes the ecosystem status note only from the group's source project (level 11)", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    const seed=(await h.call("memory_save",{title:"Seed",content:"creates the project",type:"fact"})).data;
+    h.store.enableIntelligence();
+    const group=h.store.createGroup("tienda");
+    h.store.bindProjectToGroup(seed.projectId,group.id);
+    const note={scope:"ecosystem",groupIntent:"status of the whole group",title:"Estado actual",content:"Frente: T4.",type:"fact",topicKey:"ecosystem/estado-actual"};
+    expect((await h.call("memory_save",note)).data.code).toBe("ECOSYSTEM_STATUS_FORBIDDEN");
+    h.store.setGroupSource(group.id,seed.projectId);
+    expect((await h.call("memory_save",note)).data).toMatchObject({scope:"ecosystem",topicKey:"ecosystem/estado-actual",pinned:true});
+  } finally {await h.close();}
+});
+```
+
+`src/interfaces/cli/__tests__/ecosystem.e2e.test.ts`: agregar al final del archivo:
+
+```ts
+test("group-source-set, memory-demote and save --affects speak the machine contract at level 11", async () => {
+  const engram = await machine();
+  const ai = await engram.ok("project-create", "--name", "forge614-ai");
+  const node = await engram.ok("project-create", "--name", "forge614-engram");
+  await engram.ok("group-create", "--name", "forge614");
+  for (const project of [ai, node]) await engram.ok("group-bind", "--project-id", project.projectId, "--group", "forge614");
+  expect(await engram.fail("group-source-set", "--group", "forge614", "--project-id", ai.projectId)).toMatchObject({ schemaVersion: 1, code: "INTELLIGENCE_REQUIRED" });
+  await engram.ok("intelligence-enable");
+  expect(await engram.ok("group-source-set", "--group", "forge614", "--project-id", ai.projectId))
+    .toEqual({ schemaVersion: 1, source: { groupId: expect.any(String), projectId: ai.projectId, setAt: expect.any(String) } });
+  expect(await engram.fail("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Hecho", "--content", "libre", "--type", "fact"))
+    .toMatchObject({ schemaVersion: 1, code: "ECOSYSTEM_TYPE_NOT_ALLOWED" });
+  const rule = await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Contrato", "--content", "JSON versionado",
+    "--type", "decision", "--affects", "forge614-ai,forge614-engram");
+  const demoted = await engram.ok("memory-demote", "--id", rule.id, "--project-id", node.projectId);
+  expect(demoted).toMatchObject({ schemaVersion: 1, memory: { id: rule.id, scope: "project", projectId: node.projectId },
+    from: { scope: "ecosystem" }, to: { scope: "project", projectId: node.projectId } });
+  expect(await engram.fail("memory-demote", "--id", rule.id, "--project-id", node.projectId)).toMatchObject({ schemaVersion: 1, code: "NOT_FOUND" });
+}, T);
+```
+
+`src/index.test.ts`: reemplazar `const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted"];` por:
+
+```ts
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory"];
+```
+
+`tests/fixtures/sdk-contract.ts`:
+1. En el bloque `import type {` inicial, reemplazar la línea `  PreviousSession,` por `  PreviousSession, GroupSource,`.
+2. Reemplazar `  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;` por:
+
+```ts
+  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;
+  setGroupSource(groupId:string,projectId:string):GroupSource;groupSource(groupId:string):GroupSource|null;
+  demoteMemory(projectId:string,id:string):{memory:Memory;from:{scope:"ecosystem";groupId:string};to:{scope:"project";projectId:string}};
+```
+
+- [ ] **Step 2: Rojo**
+
+Run: `bun test src/modules/ecosystem/board.test.ts src/infrastructure/sqlite/board.test.ts src/interfaces/mcp/memory-tools.test.ts src/index.test.ts`
+Expected: FAIL (módulos `board` inexistentes, métodos nuevos ausentes en el contrato, la prueba MCP nueva recibe `pinned: false` o ningún error). El e2e se corre en el paso 4.
+
+- [ ] **Step 3: Implementación**
+
+Implementa lo necesario para que las pruebas del paso 1 pasen, respetando los contratos de «Interfaces», las decisiones D-T4-1 a D-T4-7 y las reglas de arquitectura de «Global Constraints» (cada archivo nuevo con comportamiento lleva su `X.test.ts` hermano; los módulos cruzan solo por `index.ts`; `app` no importa `bun:sqlite`; `interfaces` solo importa `src/app/index.ts`). Mensajes de error para personas en español; comentarios en inglés. No cambies ninguna prueba del paso 1 ni ninguna prueba existente, salvo las dos guardas del contrato ya indicadas. `src/infrastructure/sqlite/board.ts` no puede importar `./writes` (evita el ciclo: `writes.ts` sí importa `./board`).
+
+- [ ] **Step 4: Verde**
+
+Run: `bun test src/modules/ecosystem/board.test.ts src/infrastructure/sqlite/board.test.ts src/interfaces/mcp/memory-tools.test.ts src/index.test.ts src/interfaces/cli/__tests__/ecosystem.e2e.test.ts`
+Expected: PASS (10 pruebas nuevas: 1 del módulo, 7 de SQLite, 1 de MCP y 1 de CLI).
+
+- [ ] **Step 5: Suite completa y tipos**
+
+Run: `bun test` y `bun run typecheck`. Expected: 0 fallos; typecheck sin errores (esperado: 652 pass / 10 skip). La suite tarda ~35 s; si el entorno la corta, córrela por grupos **sin repetir carpetas** (`bun test src/modules`, `bun test src/infrastructure`, `bun test src/app src/interfaces src/shared src/index.test.ts`, `bun test tests scripts`).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/modules/ecosystem src/modules/memory/types.ts src/index.ts src/index.test.ts src/infrastructure/sqlite/board.ts src/infrastructure/sqlite/board.test.ts src/infrastructure/sqlite/writes.ts src/app/memory-store.ts src/app/workspace.ts src/interfaces/mcp/memory-tools.ts src/interfaces/mcp/memory-tools.test.ts src/interfaces/cli tests/fixtures/sdk-contract.ts
+git commit -m "feat(ecosystem): board rules, status note, group source and demote (level 11)"
+```
+
+Antes del commit, `git status --short` no debe mostrar archivos fuera de esa lista; si la implementación necesitó otro archivo, repórtalo como desviación.
+
+- [ ] **Step 7: Documentación (prompt aparte, sesión nueva, commit propio)**
+
+Los textos exactos se redactan tras aprobar el commit del paso 6, contra los capítulos reales y simulados en una copia. Alcance fijado: 03 (CLI: `group-source-set`, `memory-demote`, `save --affects`), 04 (SDK: métodos y `GroupSource`, `fromProjectId`), 05 (reglas del tablero), 06 (los seis códigos nuevos), 11 (ámbitos y ecosistemas: el tablero, la nota de estado y el proyecto fuente), es/en, y `CHANGELOG.md`.
 
 ### Task 6: Bloque de arranque *(detalle tras aprobar T4)*
 
