@@ -29,7 +29,7 @@ Donde una decisión originó un punto, la norma cita el acta correspondiente (se
 
 Dos archivos fijan la versión:
 
-- `standard/VERSION` contiene la versión del estándar (hoy `1.0.0`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.0.0.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
+- `standard/VERSION` contiene la versión del estándar (hoy `1.0.1`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.0.1.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
 - `forge614.node.json` es el **puntero del nodo**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` es la versión del estándar que el nodo declara cumplir y `standard.sha256` la huella del paquete del estándar de esa versión; `kind` distingue `product` (se instala) de `internal` (nadie lo instala a mano); `ecosystem`, opcional en el esquema (acta 0022), nombra el grupo al que pertenece el nodo. El esquema `NodePointerSchema` (`src/modules/standard/schemas/node-pointer.ts`) lo valida y rechaza campos desconocidos.
 
 En este repositorio el puntero lleva la huella del paquete que `bun run standard:pack` produce a partir del propio `standard/`; `bun run standard:pack --check` comprueba que siguen coincidiendo (documento 04).
