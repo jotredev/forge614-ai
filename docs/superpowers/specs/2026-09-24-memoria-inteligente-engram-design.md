@@ -66,6 +66,10 @@ Principios transversales: lo garantizable lo garantiza el servidor; nada depende
 - **Libreta personal (`shared`):** solo preferencias de la persona que valen en cualquier proyecto; exige `globalIntent`.
 - Todo subido al tablero aparece en el resumen vivo ("subí 1 al tablero: …") y se puede **bajar** (`ecosystem-demote`), conservando historial.
 
+### 5.1b Dónde viven los datos nuevos
+
+La réplica valida las claves de cada versión **exactamente** (`snapshot.ts`), así que la versión corta, `reviewAfter`, "reemplazado por", la actividad de sesión y el proyecto fuente de un grupo viven en **tablas nuevas aparte**, nunca dentro de la versión del recuerdo. Los formatos de réplica 1–3 no cambian; la réplica de estos datos llega con 1.8.0 (formato 4).
+
 ### 5.2 Forma de un recuerdo
 
 - Título corto y buscable; contenido en cuatro partes: **qué**, **por qué**, **dónde aplica**, **qué se aprendió**.
@@ -74,7 +78,7 @@ Principios transversales: lo garantizable lo garantiza el servidor; nada depende
 
 ### 5.3 Nunca se guarda
 
-Avances del día, estados temporales, lo derivable del código o de Git, conversaciones completas, secretos (Engram rechaza patrones de secreto, como hoy).
+Avances del día, estados temporales, lo derivable del código o de Git, conversaciones completas, secretos. **Corrección 2026-09-24:** hoy Engram no rechaza secretos en el código (la regla solo existe como texto del protocolo); 1.7.0 agrega un filtro de patrones de secreto al guardar (`SECRET_REJECTED`).
 
 ### 5.4 Duplicados
 
