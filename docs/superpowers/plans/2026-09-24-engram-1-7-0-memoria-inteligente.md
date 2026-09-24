@@ -24,7 +24,7 @@
 - Mensajes de error para personas en español; comentarios de código, texto del protocolo y descripciones MCP en inglés; documentación es/en con el mismo contenido.
 - Commits convencionales en inglés, **sin líneas de atribución ni menciones a ninguna IA**; sin merge, tag ni release (los autoriza el propietario tras la revisión de `forge614-ai`).
 - Sin nombres de productos externos en código, pruebas ni docs (acta 0012); el protocolo v4 no puede contener `claude|openai|anthropic` (misma regla que la prueba de v3).
-- **Documentación tarea por tarea (regla del propietario, 2026-09-24):** al terminar cada tarea, con un **prompt aparte** (etiqueta `[Engram · T<n> · docs]`, misma sesión) para medir su costo por separado, se actualizan en **un commit propio** los capítulos es/en que describen lo que cambió, agrega su viñeta a la sección `## 1.7.0 — en desarrollo` de `CHANGELOG.md` y marca `"notionSyncPending": true` en las entradas de `docs/notion-map.json` que tocó. El orquestador verifica en cada revisión que código, pruebas y documentación digan lo mismo; T8 solo hace la pasada final de coherencia y la versión.
+- **Documentación tarea por tarea (regla del propietario, 2026-09-24):** al terminar cada tarea, con un **prompt aparte** (etiqueta `[Engram · T<n> · docs]`, misma sesión) para medir su costo por separado, se actualizan en **un commit propio** los capítulos es/en que describen lo que cambió, agrega su viñeta a la sección `## 1.7.0 — en desarrollo` de `CHANGELOG.md` y marca `"notionSyncPending": true` en las entradas de `docs/notion-map.json` de los capítulos que tocó **solo si la entrada existe y aún no está marcada** (nunca se crean entradas nuevas: exigirían inventar URL y huella). El orquestador verifica en cada revisión que código, pruebas y documentación digan lo mismo; T8 solo hace la pasada final de coherencia y la versión.
 
 ## Review Focus
 
@@ -594,7 +594,7 @@ Memoria inteligente; esta sección crece tarea por tarea.
 - La replicación de grupos (formato 4) pasa a la versión 1.8.0.
 ```
 
-`docs/notion-map.json`: agregar `"notionSyncPending": true` a las cuatro entradas de los capítulos 03 y 05 (es y en), igual que en 1.6.0.
+`docs/notion-map.json`: sin cambios (errata 2026-09-24: las entradas del capítulo 03 ya tienen `"notionSyncPending": true` desde 1.6.0 y el capítulo 05 no tiene entrada ni página en Notion; crear una exigiría inventar su URL y su huella).
 
 Verificación: `git diff --check` sin salida y `bun test` en verde (la documentación no cambia pruebas).
 
