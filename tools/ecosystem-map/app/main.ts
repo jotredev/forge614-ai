@@ -157,6 +157,16 @@ try {
   cloudCard.position.set(cloudAt.x, CLOUD_LIFT + cloudPlate.top + 6, cloudAt.y);
   stage.scene.add(cloudPlate.group, dataCenter.group, cloudCard);
   remember(cloudAt, 3.8, CLOUD_LIFT + 1.4, CLOUD_LIFT + cloudPlate.top + 6);
+  selectables.push({
+    id: "cloud",
+    name: "PostgreSQL",
+    role: "Copia en la nube, opcional",
+    accent: CLOUD,
+    center: cloudAt,
+    card: cloudCard,
+    info: NODE_INFO.cloud,
+    lift: CLOUD_LIFT,
+  });
   stage.onTick((seconds) => dataCenter.update(seconds));
 
   // The cable, fully in view like a real one: out of the side of Engram's

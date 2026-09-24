@@ -26,6 +26,7 @@ export type Selectable = {
   hit?: { width: number; height: number }; // size of the invisible click box
   zoom?: number; // how close the camera gets
   anchor?: number; // height above the plate where the line starts
+  lift?: number; // how high the whole thing floats above the floor (the cloud)
 };
 
 export type Interaction = {
@@ -63,7 +64,7 @@ export function createInteraction(stage: Stage, viewSize: number, items: Selecta
   const boxes = items.map((item) => {
     const { width, height } = item.hit ?? HIT;
     const box = new THREE.Mesh(new THREE.BoxGeometry(width, height, width), new THREE.MeshBasicMaterial({ visible: false }));
-    box.position.set(item.center.x, HIT.base + height / 2, item.center.y);
+    box.position.set(item.center.x, HIT.base + (item.lift ?? 0) + height / 2, item.center.y);
     box.userData.id = item.id;
     box.updateMatrixWorld();
     stage.scene.add(box);
@@ -91,7 +92,7 @@ export function createInteraction(stage: Stage, viewSize: number, items: Selecta
     const unitsPerPixel = (frustum.top - frustum.bottom) / zoomOf(item) / height;
     const wide = width >= NARROW;
     const shift = (wide ? PANEL_WIDTH / 2 : height * SHEET_HALF) * unitsPerPixel;
-    return new THREE.Vector3(center.x, home.target.y, center.y).addScaledVector(wide ? RIGHT : DOWN, shift);
+    return new THREE.Vector3(center.x, home.target.y + (item.lift ?? 0), center.y).addScaledVector(wide ? RIGHT : DOWN, shift);
   };
 
   let hovered: string | null = null;
@@ -134,7 +135,7 @@ export function createInteraction(stage: Stage, viewSize: number, items: Selecta
     const width = stage.input.clientWidth;
     const height = stage.input.clientHeight;
     const box = panel.rect();
-    anchor.set(item.center.x, item.anchor ?? ANCHOR_HEIGHT, item.center.y).project(stage.camera);
+    anchor.set(item.center.x, (item.anchor ?? ANCHOR_HEIGHT) + (item.lift ?? 0), item.center.y).project(stage.camera);
     const from = { x: (anchor.x * 0.5 + 0.5) * width, y: (-anchor.y * 0.5 + 0.5) * height };
     const vertical = width < NARROW;
     const to = vertical ? { x: Math.min(Math.max(from.x, box.left + 24), box.right - 24), y: box.top } : { x: box.left, y: box.top + 44 };

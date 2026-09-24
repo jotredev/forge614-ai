@@ -115,13 +115,14 @@ export function createSentinel(top: number): SentinelNode {
     rail.position.set(0, beltY + 0.07, z);
     line.add(rail);
   }
-  const rollers = Array.from({ length: 9 }, (_, i) => {
+  // (The rollers are plain smooth cylinders: turning them about their own axis
+  // changes nothing on screen, so they stay still and can be joined with the rest.)
+  for (let i = 0; i < 9; i++) {
     const roller = solid(new THREE.CylinderGeometry(0.06, 0.06, 0.8, 10), "#aab3c2", 0.3, 0.7);
     roller.rotation.x = Math.PI / 2;
     roller.position.set(-2.1 + i * 0.52, beltY - 0.08, 0);
     line.add(roller);
-    return roller;
-  });
+  }
   for (const x of [-2.1, 0, 2.1]) {
     const leg = solid(new THREE.BoxGeometry(0.1, 0.8, 0.6), "#2a2f3d", 0.5);
     leg.position.set(x, top + 0.4, 0);
@@ -288,7 +289,6 @@ export function createSentinel(top: number): SentinelNode {
       else x = THREE.MathUtils.lerp(archX, 2.1, Math.min((t - SCAN_END) / (EXIT_END - SCAN_END), 1));
       folder.position.set(x, beltY + 0.12, 0);
       folder.visible = active && t < STAMP;
-      if (active && !scanning && t < EXIT_END) rollers.forEach((r) => (r.rotation.y = seconds * 6));
       const sweep = scanning ? (1 - Math.cos((t - MOVE_IN) * 8)) / 2 : 0;
       bar.visible = scanning;
       barGlow.visible = scanning;

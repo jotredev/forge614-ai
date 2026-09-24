@@ -9,6 +9,7 @@ import {
   STORE_TIME,
   since,
 } from "../timeline";
+import { bankOf } from "../lights";
 
 // Engram seen from afar: "la memoria", as a vault that works on its own,
 // on the map's shared clock. When Shell asks, the neuron hologram glows and
@@ -194,6 +195,9 @@ export function createEngram(top: number): EngramNode {
   face.rotation.y = FACE_CAMERA;
   group.add(face);
 
+  // The lights only blink on and off, so all of them are one instanced mesh.
+  const bank = bankOf(lights, group);
+
   const rackTop = new THREE.Vector3(0, top + rackHeight, -0.3);
   const hologramCenter = new THREE.Vector3(0, top + 4.6, -0.3);
   // What Engram does in the cycle, and through which port.
@@ -246,9 +250,7 @@ export function createEngram(top: number): EngramNode {
       hologram.flash(glow);
       hologram.update(seconds);
 
-      lights.forEach((light, i) => {
-        light.visible = Math.sin(seconds * (2 + (i % 5)) + i * 1.7) > -0.3;
-      });
+      lights.forEach((_, i) => bank.set(i, Math.sin(seconds * (2 + (i % 5)) + i * 1.7) > -0.3));
     },
   };
 }

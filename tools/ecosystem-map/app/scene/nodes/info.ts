@@ -20,7 +20,7 @@ export type NodeInfo = {
   facts: { label: string; value: string }[];
 };
 
-export type InfoId = "shell" | "engram" | "engines" | "atlas" | "sentinel" | "worker";
+export type InfoId = "shell" | "engram" | "engines" | "atlas" | "sentinel" | "worker" | "cloud";
 
 export const NODE_INFO: Record<InfoId, NodeInfo> = {
   shell: {
@@ -215,6 +215,26 @@ export const NODE_INFO: Record<InfoId, NodeInfo> = {
       },
       { label: "Sus datos", value: "`~/.forge614/atlas/`, su carpeta propia." },
       { label: "Actas", value: "0004 — contextualización inicial opcional · 0007 — Sentinel juzga, nunca hace." },
+    ],
+  },
+
+  cloud: {
+    analogy: "La copia de seguridad en otro lugar: como guardar una copia de tus fotos en casa de un familiar, por si algo le pasa a tu computadora.",
+    purpose:
+      "Es una base de datos (PostgreSQL) que vive en un servidor de internet y no en tu computadora. Engram puede mandarle una copia de cada recuerdo que guarda. Es opcional.",
+    never:
+      "No es parte del ecosistema, no piensa ni decide, y no hace falta para que Engram funcione: la memoria local siempre está y es obligatoria.",
+    steps: [
+      { title: "Engram guarda un recuerdo", text: "Lo escribe primero en su archivo local, como siempre." },
+      { title: "Lo manda por internet", text: "Justo después, si la copia en la nube está activada, Engram envía el recuerdo al servidor." },
+      { title: "PostgreSQL lo guarda", text: "El servidor recibe la copia y la conserva." },
+    ],
+    links: [{ name: "Engram", receives: "Una copia de cada recuerdo, por internet, justo después de que Engram lo guarda.", sends: "Nada: en el mapa solo recibe." }],
+    facts: [
+      { label: "¿Es obligatorio?", value: "No. Sin la nube, Engram sigue guardando todo en su archivo local." },
+      { label: "Dónde vive", value: "En un servidor de internet, no en tu computadora." },
+      { label: "Quién la usa", value: "Solo Engram, y solo si la persona activó la copia." },
+      { label: "Cuándo se copia", value: "Justo después de guardar cada recuerdo." },
     ],
   },
 

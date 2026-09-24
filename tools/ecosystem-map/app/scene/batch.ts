@@ -62,7 +62,7 @@ const WATCHED = ["MeshStandardMaterial", "MeshBasicMaterial"];
 // A piece is a candidate to be joined if it is a plain solid: one opaque
 // material with no image on it, and not marked `userData.noBatch`.
 function isCandidate(object: THREE.Object3D): object is THREE.Mesh {
-  if (!(object instanceof THREE.Mesh) || object.userData.noBatch === true) return false;
+  if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || object.userData.noBatch === true) return false;
   const material = object.material;
   if (Array.isArray(material) || !WATCHED.includes(material.type) || material.transparent || !material.visible) return false;
   const m = material as THREE.MeshStandardMaterial;

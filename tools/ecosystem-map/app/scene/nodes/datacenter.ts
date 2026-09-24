@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { bankOf } from "../lights";
 
 // The optional cloud copy of Engram (PostgreSQL), shown as another place: a
 // small remote data center with three racks. Copies arrive on their own,
@@ -100,13 +101,14 @@ export function createDataCenter(top: number): DataCenterNode {
   face.rotation.y = FACE_CAMERA;
   group.add(face);
 
+  // The lights only blink on and off, so all of them are one instanced mesh.
+  const bank = bankOf(lights, group);
+
   return {
     group,
     inlet: inletFace.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), FACE_CAMERA),
     update: (seconds) => {
-      lights.forEach((light, i) => {
-        light.visible = Math.sin(seconds * (1.5 + (i % 4)) + i * 2.1) > -0.35;
-      });
+      lights.forEach((_, i) => bank.set(i, Math.sin(seconds * (1.5 + (i % 4)) + i * 2.1) > -0.35));
     },
     flash: (amount) => {
       inletFlash.material.opacity = amount * 0.9;

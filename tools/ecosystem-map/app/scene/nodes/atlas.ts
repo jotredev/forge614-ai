@@ -12,6 +12,7 @@ import {
   since,
 } from "../timeline";
 import { glowSprite } from "./datacenter";
+import { bankOf } from "../lights";
 
 // Atlas seen from afar: "orquestador de contexto", the first context of the
 // project (acta 0004), drawn as a cartographer who hands out the work and checks
@@ -105,6 +106,11 @@ export function createAtlas(top: number, towards: THREE.Vector2[], workers: numb
     city.add(block, check);
     return { material, check, height: h, at: block.position };
   });
+  // The check marks over the buildings only switch on, so they are one instanced mesh.
+  const checks = bankOf(
+    buildings.map((b) => b.check),
+    city,
+  );
   // Streets: a faint grid under the buildings, brighter as they are inspected.
   const streetMaterial = new THREE.LineBasicMaterial({ color: ATLAS, transparent: true, opacity: 0.25 });
   const streetPoints: THREE.Vector3[] = [];
@@ -282,7 +288,7 @@ export function createAtlas(top: number, towards: THREE.Vector2[], workers: numb
       }
       buildings.forEach((b, i) => {
         b.material.opacity = i < done ? 0.5 : 0.1;
-        b.check.visible = i < done;
+        checks.set(i, i < done);
       });
       streetMaterial.opacity = 0.25 + (done / FOLDERS) * 0.45;
       // The lens glides to the building being inspected and hovers above it.
