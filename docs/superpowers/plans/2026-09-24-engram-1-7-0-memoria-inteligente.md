@@ -1890,10 +1890,476 @@ git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/05-arq
 git commit -m "docs: hybrid search and look-alike candidates in SDK, architecture, troubleshooting and changelog"
 ```
 
-### Task 5: Sesiones interrumpidas *(detalle tras aprobar T3)*
+### Task 5: Sesiones interrumpidas
 
-**Objetivo:** `session_activity` al guardar y al iniciar; al iniciar una sesión runtime, las otras abiertas del mismo proyecto quedan interrumpidas; inactividad > 6 h cuenta como interrumpida al leer; `previousInterrupted`.
-**Terminado:** pruebas con reloj controlado (`setSystemTime`) para ambos casos y para "la sesión actual nunca se marca".
+**Experimento:** Claude Code · Sonnet 5 · **medium**, plan con código completo probado en laboratorio (como T3; variable: medium contra el high de T3). Variable nueva del orquestador: el laboratorio lo construyó un **subagente de contexto limpio (Sonnet)** a partir del diseño fijado por el orquestador (decisiones, contratos y pruebas exigidas); el orquestador revisó el diff completo línea por línea y después otro subagente limpio aplicó este texto tal cual sobre otra copia para probar que el plan es literal. Hipótesis: baja el costo del orquestador sin subir las rondas.
+
+**Medición del orquestador (2026-09-24, laboratorio sobre `d478c0f`, nunca en el repositorio):**
+- Subagente de laboratorio (Sonnet, contexto limpio): 247 955 tokens, 107 llamadas a herramientas, 19,7 min, TDD rojo → verde. Revisión del orquestador: 1 corrección (en `startProjectSessionWithNotices` la consulta del vínculo de carpeta se condiciona al nivel 11, porque `projectForDirectory` exige el nivel 5 y una base más vieja habría cambiado de error), 0 desviaciones del diseño.
+- Suite completa en el laboratorio: **642 pass / 10 skip / 0 fail** (+6 pruebas, +1 archivo), typecheck 0, `git diff --check` limpio.
+- Segundo laboratorio (otro subagente limpio aplicó este texto tal cual sobre otra copia de `d478c0f`, como lo hará la sesión de Engram): todas las anclas únicas, rojo (3 fallos + 1 error) → verde 13/13 en el paso 7, 642 / 10 / 0, typecheck 0, 16 archivos en el commit, **0 discrepancias** con el plan.
+- Evidencia viva del problema que resuelve: al guardar el traspaso del orquestador, Engram respondió `AMBIGUOUS_SESSION` porque tres sesiones viejas de `forge614-ai` (21, 22 y 24 de septiembre) seguían abiertas.
+
+**Decisiones de esta tarea:**
+- **D-T5-1:** todo bajo **nivel 11** (`intelligenceEnabled(db)`). En niveles menores nada cambia: no se escribe `session_activity`, `inferredSessions` conserva su consulta de 7 días byte-idéntica, `previousInterrupted` devuelve `null`, `touchSession` no hace nada (la tabla no existe) y `startProjectSessionWithNotices` no hace ninguna consulta nueva.
+- **D-T5-2 (cambia el contrato del esqueleto, con aviso):** "interrumpida" es una **marca, no un cierre**: `sessions.endedAt` sigue en `NULL`. Al **crear** una sesión runtime, las demás abiertas del mismo proyecto (`kind='runtime' AND endedAt IS NULL`; otros proyectos y la sesión manual no se tocan) reciben `session_activity.interruptedAt = <instante del arranque>`; una marca anterior se conserva; repetir el arranque de una sesión abierta no marca a nadie. El esqueleto decía `endedAt + interruptedAt`: cerrar rompería una sesión que sigue viva en otra ventana del mismo repositorio (dos sesiones de Claude Code sobre `forge614-ai` a la vez, como la anterior y la actual del orquestador): sus guardados fallarían con `SESSION_CLOSED`, nunca podría guardar su resumen y la réplica fusiona sesiones por `endedAt`. Con la marca, una sesión interrumpida que sigue trabajando se revive sola con su siguiente guardado y puede cerrar bien.
+- **D-T5-3:** actividad = `touchSession(db, sessionId, at)`: upsert de `session_activity` con `lastActivityAt = at` e `interruptedAt = NULL` (la actividad borra la marca). Se llama al arrancar o repetir el arranque de una sesión runtime (el mismo instante que `startedAt`, capturado una sola vez), al registrar en `saveCore` una entrada o una confirmación con sesión runtime (explícita o inferida; nunca la sesión manual) y al cerrar (con el instante de `endedAt`). Las repeticiones por `requestKey` no tocan.
+- **D-T5-4:** `INACTIVITY_HOURS = 6` en `modules/sessions/rules.ts` (se exporta por `modules/sessions`; no por `src/index.ts`, cuya lista `RUNTIME_EXPORTS` no cambia). Última actividad efectiva de una sesión = `coalesce(session_activity.lastActivityAt, max(session_entries.recordedAt), sessions.startedAt)` (las sesiones anteriores al nivel 11 no tienen fila de actividad).
+- **D-T5-5:** `previousInterrupted(db, projectId, now?)`: entre las sesiones runtime abiertas del proyecto, las **marcadas** o con última actividad anterior a `now − 6 h`; se devuelve la de actividad más reciente (empate: `sessionId` ascendente); `interruptedAt` = la marca o, si no la hay, última actividad + 6 h; `summary` = la versión apuntada por `session_summaries` (desde `memory_versions.snapshot`) o `null`.
+- **D-T5-6:** inferencia en nivel 11: `inferredSessions` excluye las sesiones marcadas y exige actividad en las últimas 6 h (la ventana de 6 h sustituye a la de 7 días **solo** en nivel 11). Es lo que evita `AMBIGUOUS_SESSION` por sesiones viejas que quedaron abiertas.
+- **D-T5-7:** `memory_session_start` (MCP) y `session-start` (CLI) devuelven `previous` (`PreviousSession`) solo cuando la sesión se **crea** en esa llamada, nunca en una repetición tras compactar; es el canal para clientes sin gancho de arranque. El bloque de arranque (T6) usará `previousInterrupted` para el caso de > 6 h sin necesidad de un arranque previo. Qué hace la IA con `previous` lo define el protocolo v4 (T7).
+- **D-T5-8:** sin cambios en `Session`, en la réplica (`session_activity` queda fuera de los formatos 1–3; formato 4 en 1.8.0), en `toolSchemas` ni en las descripciones MCP.
+
+**Files:**
+- Create: `src/infrastructure/sqlite/activity.ts` (+ `activity.test.ts`)
+- Modify: `src/modules/sessions/rules.ts`, `src/modules/sessions/types.ts`, `src/modules/sessions/index.ts`, `src/index.ts`
+- Modify: `src/infrastructure/sqlite/sessions.ts`, `src/infrastructure/sqlite/writes.ts`
+- Modify: `src/app/memory-store.ts`, `src/app/project-context.ts`, `src/app/project-context.test.ts`
+- Modify: `src/interfaces/mcp/sessions-tools.ts`, `src/interfaces/mcp/sessions-tools.test.ts`, `src/interfaces/cli/commands.ts`
+- Modify (guardas del contrato público): `src/index.test.ts`, `tests/fixtures/sdk-contract.ts`
+
+**Interfaces:**
+- Consumes: `intelligenceEnabled(db)` y la tabla `session_activity` (T1), `session_summaries` y `memory_versions` (nivel 6+), `projectIdentity` de `modules/projects`.
+- Produces:
+  ```ts
+  // src/modules/sessions/rules.ts
+  export const INACTIVITY_HOURS = 6;
+  // src/modules/sessions/types.ts
+  export interface PreviousSession {sessionId:string;interruptedAt:string;summary:MemoryVersion|null}
+  // src/infrastructure/sqlite/activity.ts
+  export function touchSession(db, sessionId: string, at: string): void;
+  export function interruptOtherSessions(db, projectId: string, sessionId: string, at: string): void;
+  export function inactivityThreshold(now: string): string;
+  export function previousInterrupted(db, projectId: string, now?: string): PreviousSession | null;
+  // src/app/memory-store.ts
+  previousInterrupted(projectId: string): PreviousSession | null;
+  // src/app/project-context.ts
+  startProjectSessionWithNotices(...): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession };
+  // memory_session_start (MCP) y session-start (CLI): { ...session, previous?, notices? }
+  ```
+
+- [ ] **Step 1: Pruebas que fallan**
+
+`src/infrastructure/sqlite/activity.test.ts`:
+
+```ts
+import { expect, setSystemTime, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { createProject } from "./projects";
+import { inferredSessions, manualSession } from "./sessions";
+import { enableIntelligence, enableSearchReinforcement } from "./schema";
+import { endSession, saveSessionSummary, saveWithSession, startSession } from "./writes";
+import { previousInterrupted, touchSession } from "./activity";
+
+test("below intelligence level, touchSession is inert, previousInterrupted is null and inference keeps the seven-day window", () => withDatabase(db => {
+  enableSearchReinforcement(db);
+  const p = createProject(db, "Pre11");
+  startSession(db, p.projectId, "old", "/dir");
+  expect(() => touchSession(db, "old", new Date().toISOString())).not.toThrow();
+  expect(previousInterrupted(db, p.projectId)).toBeNull();
+  db.query("UPDATE sessions SET startedAt=? WHERE sessionId='old'").run(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString());
+  expect(inferredSessions(db, p.projectId, "/dir", new Date().toISOString())).toEqual(["old"]);
+}));
+
+test("starting a new runtime session marks every other open runtime session of the project, never itself", () => withDatabase(db => {
+  enableIntelligence(db);
+  const p = createProject(db, "P"), other = createProject(db, "Other");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  try {
+    // An already-ended session and another project's session are set up first so their own starts
+    // (which would otherwise mark A and B too) happen before A and B even exist.
+    startSession(db, p.projectId, "E");
+    endSession(db, p.projectId, "E");
+    startSession(db, other.projectId, "X", "/x");
+    const manualId = manualSession(db, p.projectId, new Date().toISOString());
+    startSession(db, p.projectId, "A", "/a");
+    startSession(db, p.projectId, "B", "/b"); // marks A; the summary save below clears that mark again
+    const summary = saveSessionSummary(db, p.projectId, "A",
+      { goal: "g", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] }, { requestKey: "r" });
+    setSystemTime(new Date("2026-01-01T01:00:00.000Z"));
+    startSession(db, p.projectId, "C", "/c");
+    const cStart = "2026-01-01T01:00:00.000Z";
+    expect(db.query("SELECT sessionId,interruptedAt FROM session_activity WHERE sessionId IN ('A','B') ORDER BY sessionId").all())
+      .toEqual([{ sessionId: "A", interruptedAt: cStart }, { sessionId: "B", interruptedAt: cStart }]);
+    expect(db.query("SELECT sessionId,interruptedAt FROM session_activity WHERE sessionId IN ('C','E','X') ORDER BY sessionId").all())
+      .toEqual([{ sessionId: "C", interruptedAt: null }, { sessionId: "E", interruptedAt: null }, { sessionId: "X", interruptedAt: null }]);
+    expect(db.query("SELECT count(*) AS n FROM session_activity WHERE sessionId=?").get(manualId)).toEqual({ n: 0 });
+    expect(previousInterrupted(db, p.projectId)).toEqual({ sessionId: "A", interruptedAt: cStart, summary: summary.memory });
+    startSession(db, p.projectId, "C", "/c"); // replay: marks nobody
+    expect(db.query("SELECT sessionId,interruptedAt FROM session_activity WHERE sessionId IN ('A','B') ORDER BY sessionId").all())
+      .toEqual([{ sessionId: "A", interruptedAt: cStart }, { sessionId: "B", interruptedAt: cStart }]);
+    setSystemTime(new Date("2026-01-01T02:00:00.000Z"));
+    startSession(db, p.projectId, "D", "/d");
+    expect(db.query("SELECT interruptedAt FROM session_activity WHERE sessionId='A'").get()).toEqual({ interruptedAt: cStart });
+  } finally { setSystemTime(); }
+}));
+
+test("a session idle past the inactivity window is reported and any activity clears the mark", () => withDatabase(db => {
+  enableIntelligence(db);
+  const p = createProject(db, "P");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  try {
+    startSession(db, p.projectId, "S", "/s");
+    expect(previousInterrupted(db, p.projectId, "2026-01-01T05:00:00.000Z")).toBeNull();
+    expect(previousInterrupted(db, p.projectId, "2026-01-01T06:01:00.000Z"))
+      .toEqual({ sessionId: "S", interruptedAt: "2026-01-01T06:00:00.000Z", summary: null });
+    setSystemTime(new Date("2026-01-01T05:00:00.000Z"));
+    saveWithSession(db, { projectId: p.projectId, title: "Note", content: "Body", type: "fact" }, { sessionId: "S" });
+    expect(previousInterrupted(db, p.projectId, "2026-01-01T06:01:00.000Z")).toBeNull();
+    setSystemTime(new Date("2026-01-01T05:30:00.000Z"));
+    startSession(db, p.projectId, "other", "/o");
+    expect(db.query("SELECT interruptedAt FROM session_activity WHERE sessionId='S'").get())
+      .toEqual({ interruptedAt: "2026-01-01T05:30:00.000Z" });
+    setSystemTime(new Date("2026-01-01T05:45:00.000Z"));
+    saveWithSession(db, { projectId: p.projectId, title: "Note2", content: "Body2", type: "fact" }, { sessionId: "S" });
+    expect(db.query("SELECT interruptedAt FROM session_activity WHERE sessionId='S'").get()).toEqual({ interruptedAt: null });
+    setSystemTime(new Date("2026-01-01T06:00:00.000Z"));
+    startSession(db, p.projectId, "other2", "/o2");
+    expect(db.query("SELECT interruptedAt FROM session_activity WHERE sessionId='S'").get())
+      .toEqual({ interruptedAt: "2026-01-01T06:00:00.000Z" });
+    const ended = endSession(db, p.projectId, "S");
+    expect(ended.endedAt).not.toBeNull();
+    expect(db.query("SELECT interruptedAt FROM session_activity WHERE sessionId='S'").get()).toEqual({ interruptedAt: null });
+    expect(previousInterrupted(db, p.projectId, "2026-06-01T00:00:00.000Z")?.sessionId).not.toBe("S");
+  } finally { setSystemTime(); }
+}));
+
+test("inference at level 11 excludes marked and stale sessions; manual sessions stay untouched", () => withDatabase(db => {
+  enableIntelligence(db);
+  const marked = createProject(db, "Marked"), idle = createProject(db, "Idle");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  try {
+    startSession(db, marked.projectId, "old", "/dir");
+    setSystemTime(new Date("2026-01-01T01:00:00.000Z"));
+    startSession(db, marked.projectId, "new", "/dir");
+    expect(inferredSessions(db, marked.projectId, "/dir", "2026-01-01T01:00:00.000Z")).toEqual(["new"]);
+    startSession(db, idle.projectId, "fresh", "/dir");
+    expect(inferredSessions(db, idle.projectId, "/dir", "2026-01-01T06:59:00.000Z")).toEqual(["fresh"]);
+    expect(inferredSessions(db, idle.projectId, "/dir", "2026-01-01T07:01:00.000Z")).toEqual([]);
+    manualSession(db, marked.projectId, new Date().toISOString());
+    expect(db.query("SELECT count(*) AS n FROM session_activity").get()).toEqual({ n: 3 });
+  } finally { setSystemTime(); }
+}));
+```
+
+`src/app/project-context.test.ts`: reemplazar la línea `import { bindProjectContext, resolveProjectContext, saveProjectMemoryWithSession, startProjectSession } from "./project-context";` por:
+
+```ts
+import { bindProjectContext, resolveProjectContext, saveProjectMemoryWithSession, startProjectSession, startProjectSessionWithNotices } from "./project-context";
+```
+
+y agregar al final del archivo:
+
+```ts
+test("a new session reports the project's previously interrupted session only once intelligence is enabled", () => {
+  const directory = mkdtempSync(join(tmpdir(),"engram-context-previous-"));
+  const store = new MemoryStore(":memory:");
+  try {
+    store.enableSessions();
+    const first = startProjectSessionWithNotices(store,directory,"first");
+    expect(first).not.toHaveProperty("previous");
+    store.enableIntelligence();
+    const second = startProjectSessionWithNotices(store,directory,"second");
+    expect(second.previous).toEqual({sessionId:"first",interruptedAt:expect.any(String),summary:null});
+    const replay = startProjectSessionWithNotices(store,directory,"second");
+    expect(replay).not.toHaveProperty("previous");
+  } finally { store.close(); rmSync(directory,{recursive:true,force:true}); }
+});
+```
+
+`src/interfaces/mcp/sessions-tools.test.ts`: agregar esta prueba (seguida de una línea en blanco) justo antes de la línea `const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };`:
+
+```ts
+test("memory_session_start reports the previous interrupted session once intelligence is enabled, but not on replay", async () => {
+  const h=await sdkHarness(registerSessionTools);
+  try {
+    h.store.enableIntelligence();
+    await h.call("memory_session_start",{sessionId:"first"});
+    const second=await h.call("memory_session_start",{sessionId:"second"});
+    expect(second.data.previous).toMatchObject({sessionId:"first"});
+    const replay=await h.call("memory_session_start",{sessionId:"second"});
+    expect(replay.data).not.toHaveProperty("previous");
+  } finally {await h.close();}
+});
+```
+
+- [ ] **Step 2: Rojo**
+
+Run: `bun test src/infrastructure/sqlite/activity.test.ts src/app/project-context.test.ts src/interfaces/mcp/sessions-tools.test.ts`
+Expected: FAIL (módulo `activity` inexistente; `startProjectSessionWithNotices` y `memory_session_start` no devuelven `previous`).
+
+- [ ] **Step 3: Módulo de sesiones**
+
+`src/modules/sessions/rules.ts`: justo después de la línea `import type { SummaryFields } from "./types";` agregar:
+
+```ts
+// Hours of inactivity before an open runtime session counts as interrupted (T5, level 11).
+export const INACTIVITY_HOURS = 6;
+```
+
+`src/modules/sessions/types.ts`: agregar al final del archivo:
+
+```ts
+export interface PreviousSession {sessionId:string;interruptedAt:string;summary:MemoryVersion|null}
+```
+
+`src/modules/sessions/index.ts` (archivo completo):
+
+```ts
+export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession } from "./types";
+export { sessionIdentity,summaryContent,INACTIVITY_HOURS } from "./rules";
+```
+
+`src/index.ts`: reemplazar la línea `export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields } from "./modules/sessions";` por:
+
+```ts
+export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession } from "./modules/sessions";
+```
+
+- [ ] **Step 4: Actividad de sesión**
+
+`src/infrastructure/sqlite/activity.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import type { MemoryVersion } from "../../modules/memory";
+import { projectIdentity } from "../../modules/projects";
+import { INACTIVITY_HOURS, type PreviousSession } from "../../modules/sessions";
+import { intelligenceEnabled } from "./intelligence";
+
+/** Records session activity and clears any interruption mark; a no-op before intelligence is enabled. */
+export function touchSession(db: Database, sessionId: string, at: string): void {
+  if (!intelligenceEnabled(db)) return;
+  db.query(`INSERT INTO session_activity(sessionId,lastActivityAt,interruptedAt) VALUES(?,?,NULL)
+    ON CONFLICT(sessionId) DO UPDATE SET lastActivityAt=excluded.lastActivityAt,interruptedAt=NULL`)
+    .run(sessionId, at);
+}
+
+/** Marks every other open runtime session of the project as interrupted at `at`, keeping any earlier mark. */
+export function interruptOtherSessions(db: Database, projectId: string, sessionId: string, at: string): void {
+  if (!intelligenceEnabled(db)) return;
+  db.query(`INSERT INTO session_activity(sessionId,lastActivityAt,interruptedAt)
+    SELECT s.sessionId,
+      coalesce(sa.lastActivityAt,(SELECT max(e.recordedAt) FROM session_entries e WHERE e.sessionId=s.sessionId),s.startedAt),
+      ?
+    FROM sessions s LEFT JOIN session_activity sa ON sa.sessionId=s.sessionId
+    WHERE s.projectId=? AND s.kind='runtime' AND s.endedAt IS NULL AND s.sessionId<>?
+    ON CONFLICT(sessionId) DO UPDATE SET interruptedAt=excluded.interruptedAt WHERE interruptedAt IS NULL`)
+    .run(at, projectId, sessionId);
+}
+
+/** now minus INACTIVITY_HOURS, ISO. */
+export function inactivityThreshold(now: string): string {
+  return new Date(Date.parse(now) - INACTIVITY_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+/** The project's most recently active marked-or-idle open runtime session, or null; null below level 11. */
+export function previousInterrupted(db: Database, projectId: string, now: string = new Date().toISOString()): PreviousSession | null {
+  const project = projectIdentity(projectId);
+  if (!intelligenceEnabled(db)) return null;
+  const threshold = inactivityThreshold(now);
+  const row = db.query(`SELECT s.sessionId AS sessionId,
+      coalesce(sa.lastActivityAt,(SELECT max(e.recordedAt) FROM session_entries e WHERE e.sessionId=s.sessionId),s.startedAt) AS lastActivity,
+      sa.interruptedAt AS interruptedAt
+    FROM sessions s LEFT JOIN session_activity sa ON sa.sessionId=s.sessionId
+    WHERE s.projectId=? AND s.kind='runtime' AND s.endedAt IS NULL
+      AND (sa.interruptedAt IS NOT NULL OR
+        coalesce(sa.lastActivityAt,(SELECT max(e.recordedAt) FROM session_entries e WHERE e.sessionId=s.sessionId),s.startedAt) < ?)
+    ORDER BY lastActivity DESC,s.sessionId ASC LIMIT 1`).get(project, threshold) as
+    { sessionId: string; lastActivity: string; interruptedAt: string | null } | null;
+  if (!row) return null;
+  const interruptedAt = row.interruptedAt ?? new Date(Date.parse(row.lastActivity) + INACTIVITY_HOURS * 60 * 60 * 1000).toISOString();
+  const pointer = db.query("SELECT memoryId,version FROM session_summaries WHERE sessionId=?").get(row.sessionId) as
+    { memoryId: string; version: number } | null;
+  const summary = pointer === null ? null : (JSON.parse((db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?")
+    .get(pointer.memoryId, pointer.version) as { snapshot: string }).snapshot) as MemoryVersion);
+  return { sessionId: row.sessionId, interruptedAt, summary };
+}
+```
+
+- [ ] **Step 5: Arranque, cierre, inferencia y guardados**
+
+`src/infrastructure/sqlite/sessions.ts`:
+1. Justo después de la línea `import { MemoryError } from "../../shared/errors";` agregar:
+
+```ts
+import { inactivityThreshold,interruptOtherSessions,touchSession } from "./activity";
+import { intelligenceEnabled } from "./intelligence";
+```
+
+2. Reemplazar la función `startRuntimeSession` completa (desde `export function startRuntimeSession(` hasta su `}` de cierre; el comentario de dos líneas que la precede no cambia) por:
+
+```ts
+export function startRuntimeSession(db: Database, projectId: string, sessionId: string, runtimeDirectory?: string): Session {
+  const at = new Date().toISOString();
+  const existing = sessionRow(db, sessionId);
+  let created = false;
+  if (existing) {
+    if (existing.projectId !== projectId || existing.kind !== "runtime" || existing.endedAt !== null) {
+      throw new MemoryError("SESSION_CONFLICT", "El identificador de sesión no está disponible.");
+    }
+  } else {
+    const project = db.query("SELECT 1 FROM projects WHERE projectId=?").get(projectId);
+    if (!project) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado en esta base.");
+    db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt,endedAt) VALUES(?,?,'runtime',?,NULL)")
+      .run(sessionId, projectId, at);
+    created = true;
+  }
+  if (runtimeDirectory !== undefined) {
+    db.query("INSERT OR IGNORE INTO local_session_bindings(sessionId,directory) VALUES(?,?)")
+      .run(sessionId, runtimeDirectory);
+  }
+  // A brand-new runtime session interrupts every other open runtime session of the project; a replay never does.
+  touchSession(db, sessionId, at);
+  if (created) interruptOtherSessions(db, projectId, sessionId, at);
+  return sessionRow(db, sessionId)!;
+}
+```
+
+3. En `endRuntimeSession`, reemplazar
+
+```ts
+  if (existing.endedAt === null) {
+    db.query("UPDATE sessions SET endedAt=? WHERE sessionId=? AND endedAt IS NULL")
+      .run(new Date().toISOString(), sessionId);
+  }
+```
+
+por
+
+```ts
+  if (existing.endedAt === null) {
+    const at = new Date().toISOString();
+    db.query("UPDATE sessions SET endedAt=? WHERE sessionId=? AND endedAt IS NULL")
+      .run(at, sessionId);
+    touchSession(db, sessionId, at);
+  }
+```
+
+4. En `inferredSessions`, justo después de la línea `export function inferredSessions(db: Database, projectId: string, directory: string, requestNow: string): string[] {` agregar (la consulta de 7 días que sigue queda intacta):
+
+```ts
+    // At level 11 a stale or explicitly interrupted session must never be silently inferred: the six-hour
+    // activity window (session_activity) replaces the plain seven-day window used below that level.
+    if (intelligenceEnabled(db)) {
+      const threshold = inactivityThreshold(requestNow);
+      return (db.query(`SELECT s.sessionId FROM sessions s LEFT JOIN session_activity sa ON sa.sessionId=s.sessionId
+        WHERE s.projectId=? AND s.kind='runtime' AND s.endedAt IS NULL
+        AND EXISTS (SELECT 1 FROM local_session_bindings b WHERE b.sessionId=s.sessionId AND b.directory=?)
+        AND sa.interruptedAt IS NULL
+        AND coalesce(sa.lastActivityAt,(SELECT max(e.recordedAt) FROM session_entries e WHERE e.sessionId=s.sessionId),s.startedAt) >= ?
+        ORDER BY s.sessionId`).all(projectId,directory,threshold) as {sessionId:string}[]).map(row=>row.sessionId);
+    }
+```
+
+`src/infrastructure/sqlite/writes.ts`:
+1. Justo después de la línea `import { MemoryError } from "../../shared/errors";` agregar `import { touchSession } from "./activity";`.
+2. En `saveCore` (rama de confirmación), justo después de las dos líneas
+
+```ts
+          db.query("INSERT INTO confirmations(confirmationId,memoryId,version,recordedAt,sessionId) VALUES(?,?,?,?,?)")
+            .run(confirmationId,confirmed.id,confirmed.version,now,selected);
+```
+
+agregar:
+
+```ts
+          if (selected !== null && source !== "manual") touchSession(db, selected, now);
+```
+
+3. En `saveCore` (versión nueva), justo después de las dos líneas
+
+```ts
+      if (selected !== null) db.query("INSERT INTO session_entries(sessionId,memoryId,version,recordedAt) VALUES(?,?,?,?)")
+        .run(selected,id,version,now);
+```
+
+agregar:
+
+```ts
+      if (selected !== null && source !== "manual") touchSession(db, selected, now);
+```
+
+- [ ] **Step 6: Fachada, app, interfaces y guardas del contrato**
+
+`src/app/memory-store.ts`:
+1. Como primera línea del archivo (antes de `import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";`) agregar `import { previousInterrupted } from "../infrastructure/sqlite/activity";`.
+2. Reemplazar `import { type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";` por `import { type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";`.
+3. Justo después de la línea `  enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }` agregar:
+
+```ts
+  previousInterrupted(projectId: string): PreviousSession | null { return previousInterrupted(this.db, projectId); }
+```
+
+`src/app/project-context.ts`:
+1. Reemplazar `import type { Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";` por `import type { PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";`.
+2. Reemplazar la función `startProjectSessionWithNotices` completa (desde la línea `/** Like startProjectSession, also reporting the identity notices (for example the file just written). */` hasta el `}` de cierre que precede a `export function startProjectSession(`) por:
+
+```ts
+/** Like startProjectSession, also reporting the identity notices (for example the file just written) and,
+ * for a session created by this call, the project's previously interrupted session (if any). */
+export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession } {
+  const canonical = canonicalProject(directory);
+  const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
+  const root = identityRoot(directory, canonical);
+  const identity = applyIdentityFile(store, canonical.directory, root);
+  const notices = [...identity.notices];
+  // Level 11 only: whether this id already names a session, read before starting (a replay never reports `previous`).
+  const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
+  const existed = known !== null && store.getSession(known, sessionId) !== null;
+  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
+  const project = store.getProject(session.projectId);
+  if (project) notices.push(...publishIdentity(store, project, root, true));
+  const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;
+  return { session, notices, ...(previous ? { previous } : {}) };
+}
+```
+
+`src/interfaces/mcp/sessions-tools.ts`: reemplazar `    return started.notices.length ? {...started.session,notices:started.notices} : started.session;` por:
+
+```ts
+    return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.notices.length?{notices:started.notices}:{})};
+```
+
+`src/interfaces/cli/commands.ts`: reemplazar la línea completa que empieza con `    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));` (la única del comando `session-start`) por:
+
+```ts
+    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.notices.length?{notices:started.notices}:{})},null,2));}finally{store.close();}return;
+```
+
+`src/index.test.ts`: reemplazar `const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled"];` por:
+
+```ts
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted"];
+```
+
+`tests/fixtures/sdk-contract.ts`:
+1. En el bloque `import type {` inicial, justo después de la línea `  WorkspaceSettings, MemoryStore, Group, GroupSummary, IdentityEvent, MembershipSource, ProjectGroup,` agregar la línea `  PreviousSession,`.
+2. Reemplazar `  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};` por:
+
+```ts
+  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;
+```
+
+- [ ] **Step 7: Verde**
+
+Run: `bun test src/infrastructure/sqlite/activity.test.ts src/app/project-context.test.ts src/interfaces/mcp/sessions-tools.test.ts`
+Expected: PASS (`activity.test.ts` 4, `project-context.test.ts` 3, `sessions-tools.test.ts` 6: 13 en total, 6 nuevas).
+
+- [ ] **Step 8: Suite completa y tipos**
+
+Run: `bun test` y `bun run typecheck`. Expected: 642 pass / 10 skip / 0 fail; typecheck sin errores. La suite completa tarda ~30 s; si el entorno la corta, córrela por grupos **sin repetir carpetas** (`bun test src/modules`, `bun test src/infrastructure`, `bun test src/app src/interfaces src/shared src/index.test.ts`, `bun test tests scripts`).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/modules/sessions/rules.ts src/modules/sessions/types.ts src/modules/sessions/index.ts src/index.ts src/infrastructure/sqlite/activity.ts src/infrastructure/sqlite/activity.test.ts src/infrastructure/sqlite/sessions.ts src/infrastructure/sqlite/writes.ts src/app/memory-store.ts src/app/project-context.ts src/app/project-context.test.ts src/interfaces/mcp/sessions-tools.ts src/interfaces/mcp/sessions-tools.test.ts src/interfaces/cli/commands.ts src/index.test.ts tests/fixtures/sdk-contract.ts
+git commit -m "feat(sessions): activity tracking, interrupted sessions and previous-session handoff (level 11)"
+```
+
+- [ ] **Step 10: Documentación (prompt aparte, sesión nueva, commit propio)**
+
+Los textos exactos se redactan tras aprobar el commit del paso 9, contra los capítulos reales y simulados en una copia (como en T3). Alcance fijado: `docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md` (sección «Sesiones y contexto»: `session-start` devuelve `previous` en nivel 11), `docs/es/04-sdk-typescript.md` y `docs/en/04-typescript-sdk.md` (sección «Memoria inteligente»: `previousInterrupted`, `PreviousSession`, actividad y marca), `docs/es/05-arquitectura-interna-y-formulas.md` y `docs/en/05-internal-architecture-and-formulas.md` (regla de la marca, 6 h y la inferencia), `docs/es/06-resolucion-de-errores.md` y `docs/en/06-troubleshooting.md` (sección «Memoria inteligente»: `AMBIGUOUS_SESSION` ya no lo causan sesiones viejas abiertas) y `CHANGELOG.md` (viñeta en `## 1.7.0 — en desarrollo`, antes de «La replicación de grupos…»). `docs/notion-map.json` solo cambia si una entrada de 03 existe y aún no está marcada (06 ya está marcado; 04 y 05 no tienen entrada). Commit: `docs: session activity, interrupted sessions and previous-session handoff in CLI, SDK, architecture, troubleshooting and changelog`.
 
 ### Task 4: Reglas del tablero *(detalle tras aprobar T5; plan con solo pruebas y contratos — experimento)*
 
