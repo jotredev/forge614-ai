@@ -1,4 +1,4 @@
-# Estándar de Nodo Forge614 — versión 1.0.0
+# Estándar de Nodo Forge614 — versión 1.0.2
 
 > Norma vinculante para todo repositorio del ecosistema Forge614. "Debe" significa que el verificador lo comprueba o que la revisión humana lo exige antes de fusionar. Las decisiones que lo originan están en `docs/decisions/` de `forge614-ai`.
 

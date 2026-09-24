@@ -5,15 +5,15 @@
     {
       "es": "docs/es/00-resumen-y-guia-rapida.md",
       "en": "docs/en/00-summary-and-quickstart.md",
-      "sha256Es": "b12763bcbcfb93edc88d36bab5def4ff2c663e97dd81e564cce6c9a4d3e65453",
-      "sha256En": "9859bf9474609dd5bfff7bf9fa3aad84a688fc74095662a283cb8ed566719490",
+      "sha256Es": "860dab928aefff03115dfdf9d649b49e5bba9be24c053f81fe4f55ec39283ffe",
+      "sha256En": "802d2d8641eb7caaf3ca70709d0cfdcc60d2f15a6e1112946ff78c366be19224",
       "notionPageId": null
     },
     {
       "es": "docs/es/01-estandar-de-nodo.md",
       "en": "docs/en/01-node-standard.md",
-      "sha256Es": "d69b0ff671e46ade7380c299984eb4f3f4c9257c221bb7cab0476373c7e90185",
-      "sha256En": "1a8f6f962d5de73873a81c9913de9b49e72687a9c910ec8ecd12f9a1c1821cd4",
+      "sha256Es": "3452828b60cfac8d4f33318b2bb3f1e5a93ea40be600acf8d2c36dc7c02bee71",
+      "sha256En": "af6b7f2f726ec5cf26a3d0d9d5cd6be54d7a01c4e65f10373dd1a8985f460d68",
       "notionPageId": null
     },
     {
