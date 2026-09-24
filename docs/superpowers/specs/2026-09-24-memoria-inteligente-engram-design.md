@@ -1,6 +1,6 @@
 # Memoria inteligente de Engram (diseño)
 
-**Fecha:** 2026-09-24 · **Estado:** en revisión del propietario · **Sesión:** forge614-ai-2026-09-24-plan-a2-brainstorm-2
+**Fecha:** 2026-09-24 · **Estado:** aprobada por el propietario el 2026-09-24 · **Sesión:** forge614-ai-2026-09-24-plan-a2-brainstorm-2
 **Nodos afectados:** `forge614-engram` (cerebro), `forge614-engines` (instalador y gancho), `forge614-shell` (chat), `forge614-ai` (reglas y verificación).
 **Actas que rigen:** 0013, 0017, 0020, 0021, 0022, 0023, 0024, 0026. **Acta nueva:** 0027 (este diseño).
 **Referencias investigadas (2026-09-24, solo lectura):** Engram de Gentleman Programming v2.1.0 y gentle-ai v3.7.0; hermes-agent (Nous Research, v2026.9.24); Mem0, Letta/MemGPT, Zep/Graphiti, memoria de Claude y Claude Code, memoria de ChatGPT y Codex, LangMem, SQLite FTS5. Resumen en Engram: `forge614-ai/engram/memoria-inteligente-investigacion`.
@@ -62,7 +62,7 @@ Principios transversales: lo garantizable lo garantiza el servidor; nada depende
   2. `groupIntent` nombra **al menos dos proyectos del grupo** a los que afecta;
   3. no existe ya en el tablero un recuerdo con el mismo tema (si existe, se actualiza ese);
   4. el tablero no pasa de su tope (**40 recuerdos activos**, valor inicial ajustable con datos). Lleno → rechazo con `ECOSYSTEM_BOARD_FULL` y la lista de títulos actuales para que la IA consolide.
-- **Excepción (propuesta, a confirmar en la revisión): nota de estado del ecosistema.** Un solo recuerdo con `topicKey` fijo `forge614/ecosystem/estado-actual` (frente abierto, paso en curso, siguiente) que **solo puede escribir el proyecto fuente de verdad del grupo** (`forge614-ai`), exento de la regla 1, fijado y con tope de 600 caracteres. Sin ella, ninguna sesión fuera de `forge614-ai` puede responder "¿con qué estamos trabajando?" (caso real de Shell, 2026-09-24).
+- **Excepción (aprobada): nota de estado del ecosistema.** Un solo recuerdo con `topicKey` fijo `forge614/ecosystem/estado-actual` (frente abierto, paso en curso, siguiente) que **solo puede escribir el proyecto fuente de verdad del grupo** (`forge614-ai`), exento de la regla 1, fijado y con tope de 600 caracteres. Sin ella, ninguna sesión fuera de `forge614-ai` puede responder "¿con qué estamos trabajando?" (caso real de Shell, 2026-09-24).
 - **Libreta personal (`shared`):** solo preferencias de la persona que valen en cualquier proyecto; exige `globalIntent`.
 - Todo subido al tablero aparece en el resumen vivo ("subí 1 al tablero: …") y se puede **bajar** (`ecosystem-demote`), conservando historial.
 
@@ -146,7 +146,7 @@ Solo si hay **duda real** que las reglas no resuelven, **consecuencia importante
 
 "Primero aprende el que recibe" (lección de Sentinel 0.1.1):
 
-1. **Engram** — protocolo v4, buscador, bloque de arranque, duplicados, vigencia, sesiones interrumpidas, reglas del tablero y de la libreta. Nueva versión menor.
+1. **Engram 1.7.0** — protocolo v4, buscador, bloque de arranque, duplicados, vigencia, sesiones interrumpidas, reglas del tablero y de la libreta, nota de estado del ecosistema.
 2. **Engines** — acepta y renderiza v4 completo; el gancho inyecta el bloque de Engram. Nueva versión.
 3. **Shell** — inyecta el bloque de Engram. Nueva versión.
 4. **forge614-ai** — acta 0027, runbook y checklist, `context-budget` con arranque real, revisión única de recuerdos existentes.
@@ -164,8 +164,8 @@ Mientras un nodo no se actualice, sigue funcionando como hoy (campos y comandos 
 
 | # | Riesgo | Mitigación |
 |---|---|---|
-| R1 | **Versión de Engram:** 1.7.0 está reservada para la réplica del ecosistema (esbozo sin código, `.agents/plans/2026-09-23--1.7.0-ecosystem-replication.md`). | Propuesta: esta memoria inteligente es **1.7.0** y la réplica pasa a 1.8.0. Lo confirma el propietario. |
-| R2 | **Réplica bloqueada:** hoy la réplica rechaza con `SYNC_ECOSYSTEM_UNSUPPORTED` si existen recuerdos del tablero; subir recuerdos (M3, M11) la mantiene bloqueada. | Si el propietario usa réplica, la revisión única (M11) espera a 1.8.0; si no la usa, no afecta. |
+| R1 | **Versión de Engram:** 1.7.0 estaba reservada para la réplica del ecosistema (esbozo sin código, `.agents/plans/2026-09-23--1.7.0-ecosystem-replication.md`). | **Decidido:** esta memoria inteligente es **Engram 1.7.0**; la réplica pasa a 1.8.0 (el plan de Engram renombra su esbozo). |
+| R2 | **Réplica bloqueada:** la réplica rechaza con `SYNC_ECOSYSTEM_UNSUPPORTED` si existen recuerdos del tablero. | **Verificado 2026-09-24:** el Engram del propietario usa solo SQLite local (`STORAGE="sqlite"`, sin réplica configurada); no afecta. La revisión única (M11) va en este trabajo. Quien active la réplica antes de 1.8.0 verá el rechazo documentado. |
 | R3 | Raíces y trigramas traen resultados de más. | Umbral mínimo y conjunto de 20 consultas reales antes de dar por bueno. |
 | R4 | Índice doble agranda la base (estimado 30–50 %, sin medir). | Se mide en la primera tarea del buscador. |
 | R5 | Modelos débiles no obedecen el manual. | Lo crítico vive en el servidor; banco de comportamiento con números por modelo. |
