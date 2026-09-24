@@ -11,7 +11,11 @@
 
 1. El plan vive en `forge614-ai` (`docs/superpowers/plans/`) y cada tarea trae modelo y razonamiento recomendados.
 2. **Una tarea = una sesión nueva** en el repositorio que toca. El propietario pega el prompt, la sesión trabaja y reporta, el propietario pega el reporte aquí.
-3. El orquestador revisa el reporte **y verifica por su cuenta en solo lectura** (`git -C <repo> show`, `gh pr view`, `gh release view`) antes de aprobar.
+3. El orquestador revisa el reporte **y verifica por su cuenta**, sin tocar el otro repositorio (autorización del propietario, 2026-09-24):
+   - lee el diff completo del commit contra el plan, línea por línea (`git -C <repo> diff/show`), y lo revisa como experto;
+   - corre pruebas y typecheck en una copia temporal: `git -C <repo> archive <commit> | tar -x -C <scratchpad>/verif-<tarea>`, luego `bun install --frozen-lockfile --ignore-scripts`, `bun test` y `bun run typecheck`, leyendo el código de salida de cada comando por separado;
+   - registra el conteo **medido**, no el reportado, y borra la copia.
+   A futuro, Sentinel hará esta verificación de forma automática.
 4. Al cerrar cada tarea, el orquestador mide la corrida desde el registro de la herramienta (§5) y agrega la fila en Notion; si aprendió algo, agrega o actualiza una lección.
 5. Los prompts se entregan en la página "Prompts Forge614": tarjeta "Ahora" con el paso numerado y botón Copiar; en el chat solo se dice qué hacer ahora. Un solo paso a la vez.
 
