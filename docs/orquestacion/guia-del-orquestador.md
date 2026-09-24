@@ -84,6 +84,7 @@ Bloqueos: <lista o "ninguno">
   - Claude Code: `~/.claude/projects/<carpeta>/<sesión>.jsonl` — por mensaje: `message.model`, `usage` (`input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `output_tokens`, `output_tokens_details.thinking_tokens`), `effort`, `tool_use` con nombre (incluye `mcp__*` y `Skill`).
   - Codex: `~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl` — `session_meta` (cwd, versión), `turn_context` (`model`, `reasoning_effort`), `event_msg`/`token_count` acumulado (entrada, caché, salida, razonamiento, total) y `rate_limits.primary.used_percent` (límite semanal).
 - **Exacto:** tokens, modelo, razonamiento, horas, mensajes, herramientas y tamaño de sus resultados. **Estimado (marcado):** tokens atribuidos a una herramienta concreta. **Sin registro:** "no medido".
+- **Comportamiento medido en cada corrida:** archivos que tocó fuera del plan y acciones no pedidas (comparando el commit con la lista del plan, en solo lectura, y las ediciones del registro), paradas correctas ante fallos, si respetó el formato del reporte y su largo en caracteres. Con esto se decide, por modelo y razonamiento, qué hay que pedir o prohibir explícitamente (por ejemplo "no documentes todavía").
 - **Métrica principal:** tokens por tarea aprobada, sumando las rondas de corrección. Una conclusión del tipo "X es mejor para Y" exige ≥ 3 tareas comparables del mismo tipo; se cambia una sola variable a la vez.
 
 | Regla | Estado | Evidencia |
