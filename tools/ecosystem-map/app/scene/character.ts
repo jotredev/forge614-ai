@@ -46,9 +46,9 @@ function limb(length: number, radius: number, color: string): { pivot: THREE.Gro
 // small wheels.
 function officeChair(seatHeight: number): THREE.Group {
   const chair = new THREE.Group();
-  const seat = part(new RoundedBoxGeometry(0.72, 0.1, 0.66, 3, 0.05), SEAT, 0.55);
+  const seat = part(new RoundedBoxGeometry(0.72, 0.1, 0.66, 2, 0.05), SEAT, 0.55);
   seat.position.y = seatHeight;
-  const back = part(new RoundedBoxGeometry(0.66, 0.7, 0.08, 3, 0.04), SEAT, 0.55);
+  const back = part(new RoundedBoxGeometry(0.66, 0.7, 0.08, 2, 0.04), SEAT, 0.55);
   back.position.set(0, seatHeight + 0.45, -0.34);
   back.rotation.x = -0.12;
   const post = part(new THREE.CylinderGeometry(0.04, 0.04, seatHeight - 0.12, 10), "#8a93a6", 0.3);

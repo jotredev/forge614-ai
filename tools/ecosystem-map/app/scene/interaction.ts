@@ -28,7 +28,15 @@ export type Selectable = {
   anchor?: number; // height above the plate where the line starts
 };
 
-export type Interaction = { select(id: string): void; clear(): void; dispose(): void };
+export type Interaction = {
+  select(id: string): void;
+  clear(): void;
+  // Change the view the camera returns to when a node is closed.
+  setHome(view: { target: THREE.Vector3; zoom: number }): void;
+  // Whether a node is open.
+  isOpen(): boolean;
+  dispose(): void;
+};
 
 const FOCUS_ZOOM = Math.min(2.4, ZOOM_LIMITS.max);
 const FLIGHT_MS = 800;
@@ -49,7 +57,7 @@ const RIGHT = new THREE.Vector3(Math.SQRT1_2, 0, -Math.SQRT1_2);
 const DOWN = new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2);
 
 export function createInteraction(stage: Stage, viewSize: number, items: Selectable[]): Interaction {
-  const home = stage.view();
+  let home = stage.view();
   const byId = new Map(items.map((item) => [item.id, item]));
 
   const boxes = items.map((item) => {
@@ -180,6 +188,10 @@ export function createInteraction(stage: Stage, viewSize: number, items: Selecta
   return {
     select,
     clear,
+    setHome: (view) => {
+      home = view;
+    },
+    isOpen: () => selected !== null,
     dispose: () => {
       stage.input.removeEventListener("pointerdown", onDown);
       stage.input.removeEventListener("pointerup", onUp);

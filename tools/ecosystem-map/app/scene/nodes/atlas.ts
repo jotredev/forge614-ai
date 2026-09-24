@@ -71,7 +71,7 @@ export function createAtlas(top: number, towards: THREE.Vector2[], workers: numb
 
   // The drafting table with the sheet where the map gets drawn.
   const table = new THREE.Group();
-  const board = solid(new RoundedBoxGeometry(3.2, 0.08, 1.8, 3, 0.03), "#d9c7a6", 0.7);
+  const board = solid(new RoundedBoxGeometry(3.2, 0.08, 1.8, 2, 0.03), "#d9c7a6", 0.7);
   board.rotation.x = 0.25;
   board.position.y = 1.45;
   table.add(board);

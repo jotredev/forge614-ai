@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 // Floor decoration: one complete, connected circuit drawn very faintly. A
 // closed loop runs around the center with 45° corners like board traces,
@@ -65,52 +66,89 @@ function branch(rand: () => number, from: THREE.Vector2, outward: boolean): THRE
   return [from.clone(), ...octilinear(from, end)];
 }
 
-function lineOf(points: THREE.Vector2[], opacity: number): THREE.Line {
-  const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(p.x, Y, p.y)));
-  return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: TRACE, transparent: true, opacity }));
+// The fixed part of the circuit is the same around every node (the same seed
+// draws the same pattern), so it is built once and shared. All the traces of
+// one strength go in a single set of segments and all the pads in a single
+// mesh: a handful of draw calls per floor instead of dozens.
+type Layout = {
+  loop: THREE.Vector2[];
+  lengths: number[]; // cumulative lengths along the loop
+  total: number;
+  traces: Array<{ opacity: number; geometry: THREE.BufferGeometry }>;
+  pads: THREE.BufferGeometry;
+};
+
+function buildLayout(): Layout {
+  const rand = random(614);
+  const segments = new Map<number, number[]>();
+  const padSpots: THREE.Vector2[] = [];
+  const addTrace = (points: THREE.Vector2[], opacity: number): void => {
+    const list = segments.get(opacity) ?? [];
+    for (let i = 0; i < points.length - 1; i++) list.push(points[i]!.x, Y, points[i]!.y, points[i + 1]!.x, Y, points[i + 1]!.y);
+    segments.set(opacity, list);
+  };
+
+  // The main loop the light travels, and a wider, fainter outer ring.
+  const loop = ringLoop(rand, 11, 3, 12);
+  addTrace(loop, LOOP_OPACITY);
+  const outer = ringLoop(rand, 21, 4, 18);
+  addTrace(outer, OUTER_OPACITY);
+
+  // Branches off every other corner of the loop, alternating in and out, so
+  // the whole pattern stays connected.
+  for (let i = 0; i < loop.length - 1; i += 2) {
+    const trace = branch(rand, loop[i]!, i % 4 === 0);
+    addTrace(trace, BRANCH_OPACITY);
+    padSpots.push(trace[trace.length - 1]!);
+  }
+  // Short spurs off the outer ring toward the edge of the floor.
+  for (let i = 0; i < outer.length - 1; i += 3) {
+    const trace = branch(rand, outer[i]!, true);
+    addTrace(trace, OUTER_OPACITY);
+    padSpots.push(trace[trace.length - 1]!);
+  }
+
+  // Cumulative lengths along the loop, so any distance maps to a point.
+  const lengths = [0];
+  for (let i = 1; i < loop.length; i++) lengths.push(lengths[i - 1]! + loop[i]!.distanceTo(loop[i - 1]!));
+
+  const ring = new THREE.RingGeometry(0.1, 0.17, 20).rotateX(-Math.PI / 2);
+  return {
+    loop,
+    lengths,
+    total: lengths[lengths.length - 1]!,
+    traces: [...segments].map(([opacity, list]) => ({
+      opacity,
+      geometry: new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(list, 3)),
+    })),
+    pads: mergeGeometries(padSpots.map((p) => ring.clone().translate(p.x, Y, p.y)))!,
+  };
 }
+
+let layout: Layout | null = null;
+const traceMaterials = new Map<number, THREE.LineBasicMaterial>();
+const traceMaterial = (opacity: number): THREE.LineBasicMaterial => {
+  let material = traceMaterials.get(opacity);
+  if (!material) {
+    material = new THREE.LineBasicMaterial({ color: TRACE, transparent: true, opacity });
+    traceMaterials.set(opacity, material);
+  }
+  return material;
+};
+let padMaterial: THREE.MeshBasicMaterial | null = null;
 
 export type Floor = { object: THREE.Object3D; setTime(seconds: number): void };
 
 // Every node gets the same circuit around it; `phase` shifts its signal so
 // the lights of different nodes do not move in step.
 export function createFloor(center = new THREE.Vector2(0, 0), phase = 0): Floor {
+  const { loop, lengths, total, traces, pads } = (layout ??= buildLayout());
+  padMaterial ??= new THREE.MeshBasicMaterial({ color: TRACE, transparent: true, opacity: BRANCH_OPACITY * 1.8 });
   const group = new THREE.Group();
   group.position.set(center.x, 0, center.y);
-  const rand = random(614);
-  const padGeometry = new THREE.RingGeometry(0.1, 0.17, 20);
-  const padMaterial = new THREE.MeshBasicMaterial({ color: TRACE, transparent: true, opacity: BRANCH_OPACITY * 1.8 });
-  const addPad = (p: THREE.Vector2): void => {
-    const pad = new THREE.Mesh(padGeometry, padMaterial);
-    pad.rotation.x = -Math.PI / 2;
-    pad.position.set(p.x, Y, p.y);
-    group.add(pad);
-  };
+  for (const { opacity, geometry } of traces) group.add(new THREE.LineSegments(geometry, traceMaterial(opacity)));
+  group.add(new THREE.Mesh(pads, padMaterial));
 
-  // The main loop the light travels, and a wider, fainter outer ring.
-  const loop = ringLoop(rand, 11, 3, 12);
-  group.add(lineOf(loop, LOOP_OPACITY));
-  const outer = ringLoop(rand, 21, 4, 18);
-  group.add(lineOf(outer, OUTER_OPACITY));
-
-  // Branches off every other corner of the loop, alternating in and out, so
-  // the whole pattern stays connected.
-  for (let i = 0; i < loop.length - 1; i += 2) {
-    const trace = branch(rand, loop[i]!, i % 4 === 0);
-    group.add(lineOf(trace, BRANCH_OPACITY));
-    addPad(trace[trace.length - 1]!);
-  }
-  // Short spurs off the outer ring toward the edge of the floor.
-  for (let i = 0; i < outer.length - 1; i += 3) {
-    const trace = branch(rand, outer[i]!, true);
-    group.add(lineOf(trace, OUTER_OPACITY));
-    addPad(trace[trace.length - 1]!);
-  }
-
-  // Cumulative lengths along the loop, so any distance maps to a point.
-  const lengths = [0];
-  for (let i = 1; i < loop.length; i++) lengths.push(lengths[i - 1]! + loop[i]!.distanceTo(loop[i - 1]!));
-  const total = lengths[lengths.length - 1]!;
   const pointAt = (distance: number): THREE.Vector2 => {
     const d = ((distance % total) + total) % total;
     let i = 1;

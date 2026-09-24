@@ -15,14 +15,23 @@ export type Stage = {
   input: HTMLElement;
   // Where the camera looks and how far it is zoomed in.
   view(): { target: THREE.Vector3; zoom: number };
+  // Put the camera at `target` and `zoom` right away, keeping its angle.
+  setView(target: THREE.Vector3, zoom: number): void;
   // Glide the camera to look at `target` at `zoom`. Any pan or zoom by the
   // person cancels the flight.
   flyTo(target: THREE.Vector3, zoom: number, ms?: number): void;
+  // What drawing has cost so far. `frames` and `renderMs` only grow, so a
+  // reader takes two samples and divides the difference; `calls` and
+  // `triangles` are those of the last frame drawn.
+  stats(): { frames: number; renderMs: number; calls: number; triangles: number };
   // Ask for a new frame after changing the scene. Pass `shadows` when
   // something moved, so the shadow map is recomputed too.
   invalidate(options?: { shadows?: boolean }): void;
   // Run something on every animation tick (at most 30 times a second).
   onTick(listener: (seconds: number) => void): void;
+  // Advance everything that animates to `seconds` on the map's clock, without
+  // drawing anything.
+  simulate(seconds: number): void;
   // Run something right after every frame is drawn, e.g. to keep an overlay
   // pinned to the scene while the camera moves.
   onRender(listener: () => void): void;
@@ -76,6 +85,10 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   controls.maxZoom = ZOOM_LIMITS.max;
   controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+  // Aim the camera now. Until the first frame is drawn it is not looking at
+  // the target in the isometric angle, and anything that measures the scene
+  // with it (such as framing the view) would measure it from the wrong angle.
+  controls.update();
 
   scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x1a1d26, 1.1));
   const sun = new THREE.DirectionalLight(0xfff4e6, 2.2);
@@ -103,13 +116,18 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   scene.add(floor);
 
   let frame = 0;
+  let framesDrawn = 0;
+  let renderMs = 0;
   const renderListeners: Array<() => void> = [];
   const draw = (): void => {
     frame = 0;
     // While the camera is still gliding (damping), keep asking for frames.
     const moving = controls.update();
+    const began = performance.now();
     renderer.render(scene, camera);
     labels.render(scene, camera);
+    renderMs += performance.now() - began;
+    framesDrawn += 1;
     for (const listener of renderListeners) listener();
     if (moving) invalidate();
   };
@@ -128,11 +146,15 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   const tickListeners: Array<(seconds: number) => void> = [];
   let ambient = 0;
   let lastTick = 0;
+  // `?freeze=12.5` stops the map's clock at that second, so the same moment
+  // can be drawn again and again (to compare two versions image by image).
+  const freezeParam = new URLSearchParams(window.location.search).get("freeze");
+  const frozenAt = freezeParam !== null && Number.isFinite(Number(freezeParam)) ? Number(freezeParam) : null;
   const tick = (now: number): void => {
     ambient = requestAnimationFrame(tick);
     if (now - lastTick < FRAME_MS) return;
     lastTick = now;
-    for (const listener of tickListeners) listener(now / 1000);
+    for (const listener of tickListeners) listener(frozenAt ?? now / 1000);
     invalidate();
   };
   const setAmbient = (on: boolean): void => {
@@ -171,6 +193,15 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
     flight = requestAnimationFrame(step);
   };
 
+  const setView = (to: THREE.Vector3, zoom: number): void => {
+    cancelFlight();
+    camera.position.add(to.clone().sub(controls.target));
+    controls.target.copy(to);
+    camera.zoom = THREE.MathUtils.clamp(zoom, ZOOM_LIMITS.min, ZOOM_LIMITS.max);
+    camera.updateProjectionMatrix();
+    invalidate();
+  };
+
   const resize = (): void => {
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -192,6 +223,11 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
     camera,
     input: labels.domElement,
     view: () => ({ target: controls.target.clone(), zoom: camera.zoom }),
+    setView,
+    simulate: (seconds) => {
+      for (const listener of tickListeners) listener(seconds);
+    },
+    stats: () => ({ frames: framesDrawn, renderMs, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
     flyTo,
     onRender: (listener) => {
       renderListeners.push(listener);

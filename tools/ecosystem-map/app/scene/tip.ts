@@ -26,9 +26,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
   return node;
 }
 
-export function createTip(): Tip {
+export function createTip(id = "info-tip"): Tip {
   const root = el("div", "tip");
-  root.id = "info-tip";
+  root.id = id;
   root.setAttribute("role", "tooltip");
   const shape = el("div", "tip__shape");
   root.append(shape);

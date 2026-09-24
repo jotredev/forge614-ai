@@ -155,9 +155,9 @@ function softGlowTexture(): THREE.Texture {
 // glow of Shell's color behind it.
 function glassWindow(width: number, height: number, title: string, script: Script): { group: THREE.Group } & Omit<Terminal, "mesh"> {
   const group = new THREE.Group();
-  const frame = solid(new RoundedBoxGeometry(width + 0.3, height + 0.3, 0.14, 5, 0.12), "#141a23", 0.35, 0.4);
+  const frame = solid(new RoundedBoxGeometry(width + 0.3, height + 0.3, 0.14, 3, 0.12), "#141a23", 0.35, 0.4);
   const rim = new THREE.Mesh(
-    new RoundedBoxGeometry(width + 0.42, height + 0.42, 0.06, 5, 0.16),
+    new RoundedBoxGeometry(width + 0.42, height + 0.42, 0.06, 3, 0.16),
     new THREE.MeshPhysicalMaterial({ color: "#bfe0ff", transparent: true, opacity: 0.18, roughness: 0.1, clearcoat: 1, depthWrite: false }),
   );
   rim.position.z = -0.02;
@@ -193,7 +193,7 @@ function projector(top: number, beamHeight: number): THREE.Group {
 // coffee mug.
 function desk(top: number): THREE.Group {
   const group = new THREE.Group();
-  const surface = solid(new RoundedBoxGeometry(3.8, 0.12, 1.7, 3, 0.04), "#d9c7a6", 0.7);
+  const surface = solid(new RoundedBoxGeometry(3.8, 0.12, 1.7, 2, 0.04), "#d9c7a6", 0.7);
   surface.position.set(0, top + DESK_TOP - 0.06, 0.9);
   group.add(surface);
   for (const x of [-1.75, 1.75]) {

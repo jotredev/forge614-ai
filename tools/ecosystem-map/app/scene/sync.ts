@@ -25,7 +25,28 @@ export type SyncOptions = {
   inlet: THREE.Vector3; // where the cable enters, relative to the destination center
   trips: Trip[];
 };
-export type Sync = { group: THREE.Group; update(seconds: number): void };
+export type Sync = {
+  // What moves: the flashes and the arrival glows.
+  group: THREE.Group;
+  // What never does (cable, glass core, plugs, sockets, clips), left out of
+  // `group` so all cables can be joined into a few meshes (see batch.ts).
+  staticParts: THREE.Mesh[];
+  update(seconds: number): void;
+};
+
+// The same few materials for every cable, so their parts can be joined.
+const CABLE = new THREE.MeshStandardMaterial({ color: "#1f2430", roughness: 0.4, metalness: 0.3 });
+const METAL = new THREE.MeshStandardMaterial({ color: "#8d96a8", roughness: 0.3, metalness: 0.7 });
+const SOCKET = new THREE.MeshStandardMaterial({ color: "#2a2f3d", roughness: 0.5 });
+const cores = new Map<string, THREE.MeshBasicMaterial>();
+const coreMaterial = (color: string): THREE.MeshBasicMaterial => {
+  let material = cores.get(color);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, depthWrite: false });
+    cores.set(color, material);
+  }
+  return material;
+};
 
 const FLASH = 0.6; // seconds the arrival flash lasts
 const TRAIL = 4; // glowing dots trailing the flash
@@ -37,27 +58,20 @@ export function createSync(options: SyncOptions): Sync {
   const path = new THREE.CatmullRomCurve3([start, ...options.route, end], false, "centripetal");
   path.arcLengthDivisions = 400;
   const trailGap = 0.8 / path.getLength(); // trail dots 0.8 units apart
-  const cable = new THREE.Mesh(
-    new THREE.TubeGeometry(path, 120, 0.09, 10),
-    new THREE.MeshStandardMaterial({ color: "#1f2430", roughness: 0.4, metalness: 0.3 }),
-  );
+  const cable = new THREE.Mesh(new THREE.TubeGeometry(path, 80, 0.09, 6), CABLE);
   // The core: a faint colored line along the cable, like glass fiber.
-  const core = new THREE.Mesh(
-    new THREE.TubeGeometry(path, 120, 0.1, 10),
-    new THREE.MeshBasicMaterial({ color: options.color, transparent: true, opacity: 0.12, depthWrite: false }),
-  );
+  const core = new THREE.Mesh(new THREE.TubeGeometry(path, 80, 0.1, 6), coreMaterial(options.color));
   // A metal plug at each end, lined up with the cable, and a socket plate
   // behind it, so each end reads as plugged in.
-  const metal = new THREE.MeshStandardMaterial({ color: "#8d96a8", roughness: 0.3, metalness: 0.7 });
   const up = new THREE.Vector3(0, 1, 0);
   const plugs = [
     { at: start, along: path.getTangent(0) },
     { at: end, along: path.getTangent(1).negate() },
   ].flatMap(({ at, along }) => {
-    const plug = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.34, 16), metal);
+    const plug = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.34, 16), METAL);
     plug.quaternion.setFromUnitVectors(up, along);
     plug.position.copy(at).addScaledVector(along, 0.12);
-    const socket = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.06), new THREE.MeshStandardMaterial({ color: "#2a2f3d", roughness: 0.5 }));
+    const socket = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.06), SOCKET);
     socket.lookAt(along);
     socket.position.copy(at).addScaledVector(along, -0.03);
     return [plug, socket];
@@ -65,11 +79,11 @@ export function createSync(options: SyncOptions): Sync {
   // Metal clips hold the cable where it lies on a plate and where it leaves
   // an edge, like real cables are fastened.
   const clips = options.clips.map((at) => {
-    const clip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.34), metal);
+    const clip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.34), METAL);
     clip.position.copy(at);
     return clip;
   });
-  group.add(cable, core, ...plugs, ...clips);
+  const staticParts = [cable, core, ...plugs, ...clips];
 
   // Each trip: a bright flash with a short fading trail, and a glow on the
   // plug it reaches.
@@ -87,6 +101,7 @@ export function createSync(options: SyncOptions): Sync {
 
   return {
     group,
+    staticParts,
     update: (seconds) => {
       for (const { trip, flashes, arrival } of trips) {
         const since = (((seconds - trip.leaves) % CYCLE) + CYCLE) % CYCLE;

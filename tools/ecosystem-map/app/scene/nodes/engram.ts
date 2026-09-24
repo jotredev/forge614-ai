@@ -139,7 +139,7 @@ export function createEngram(top: number): EngramNode {
 
   // The server rack with rows of blinking lights.
   const rackHeight = 3.4;
-  const rack = solid(new RoundedBoxGeometry(1.8, rackHeight, 1.3, 3, 0.05), "#1d222c", 0.4, 0.5);
+  const rack = solid(new RoundedBoxGeometry(1.8, rackHeight, 1.3, 2, 0.05), "#1d222c", 0.4, 0.5);
   rack.position.set(0, top + rackHeight / 2, -0.3);
   face.add(rack);
   const lights: THREE.Mesh[] = [];

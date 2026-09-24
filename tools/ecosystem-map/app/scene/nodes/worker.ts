@@ -39,7 +39,7 @@ export function createWorker(top: number, index: number, schedule: WorkerSchedul
   const group = new THREE.Group();
   const face = new THREE.Group();
 
-  const desk = solid(new RoundedBoxGeometry(2.0, 0.08, 1.0, 3, 0.03), "#d9c7a6", 0.7);
+  const desk = solid(new RoundedBoxGeometry(2.0, 0.08, 1.0, 2, 0.03), "#d9c7a6", 0.7);
   desk.position.set(0, top + 1.2, -0.3);
   face.add(desk);
   for (const x of [-0.9, 0.9]) {

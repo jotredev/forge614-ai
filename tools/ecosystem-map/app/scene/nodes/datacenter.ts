@@ -27,7 +27,11 @@ function solid(geometry: THREE.BufferGeometry, color: string, roughness = 0.6, m
   return mesh;
 }
 
-export function glowSprite(color: string, opacity: number, size: number): THREE.Sprite {
+// Every glow is the same white gradient, tinted by its material, so they all
+// share one texture instead of each drawing and uploading its own.
+let glowTexture: THREE.CanvasTexture | null = null;
+function sharedGlowTexture(): THREE.CanvasTexture {
+  if (glowTexture) return glowTexture;
   const canvas = document.createElement("canvas");
   canvas.width = 64;
   canvas.height = 64;
@@ -37,8 +41,13 @@ export function glowSprite(color: string, opacity: number, size: number): THREE.
   gradient.addColorStop(1, "rgba(255,255,255,0)");
   context.fillStyle = gradient;
   context.fillRect(0, 0, 64, 64);
+  glowTexture = new THREE.CanvasTexture(canvas);
+  return glowTexture;
+}
+
+export function glowSprite(color: string, opacity: number, size: number): THREE.Sprite {
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }),
+    new THREE.SpriteMaterial({ map: sharedGlowTexture(), color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }),
   );
   sprite.scale.setScalar(size);
   return sprite;
@@ -47,7 +56,7 @@ export function glowSprite(color: string, opacity: number, size: number): THREE.
 // A rack with rows of lights; returns the lights so they can blink.
 function rack(height: number): { group: THREE.Group; lights: THREE.Mesh[] } {
   const group = new THREE.Group();
-  const body = solid(new RoundedBoxGeometry(1.2, height, 1.2, 3, 0.05), "#20232e", 0.4, 0.5);
+  const body = solid(new RoundedBoxGeometry(1.2, height, 1.2, 2, 0.05), "#20232e", 0.4, 0.5);
   body.position.y = height / 2;
   group.add(body);
   const lights: THREE.Mesh[] = [];

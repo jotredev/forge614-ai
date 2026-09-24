@@ -150,6 +150,37 @@ export const TERMS: Term[] = [
     here: "Así Engines nunca cambia una IA sin que la persona lo vea antes.",
   },
   {
+    name: "FPS",
+    aliases: ["FPS"],
+    what: "Cuántas veces por segundo se dibuja el mapa. En un videojuego, 60 se siente fluido.",
+    here: "Este mapa se limita a 30 a propósito, para gastar menos batería y procesador. Si baja de 30, la animación se ve entrecortada.",
+  },
+  {
+    name: "tiempo por cuadro",
+    aliases: ["tiempo por cuadro"],
+    what: "Lo que tarda el programa en preparar cada imagen del mapa, medido en ms (milésimas de segundo).",
+    look: "A 30 cuadros por segundo hay unos 33 ms para cada uno. Si tarda más, se pierde fluidez.",
+    here: "Es el tiempo del procesador; no incluye lo que tarda la tarjeta gráfica en pintarlo.",
+  },
+  {
+    name: "RAM",
+    aliases: ["RAM"],
+    what: "La memoria de trabajo que un programa usa mientras corre. Se vacía al cerrarlo.",
+    here: "Aquí se cuenta solo la de este mapa (su parte de JavaScript), no la de todo el navegador ni la de la tarjeta gráfica. Si sube y sube sin bajar con el tiempo, algo no se está liberando.",
+  },
+  {
+    name: "llamadas de dibujo",
+    aliases: ["llamadas de dibujo"],
+    what: "Cada vez que el programa le pide a la tarjeta gráfica que pinte un grupo de cosas.",
+    here: "Más llamadas significan más trabajo en cada cuadro.",
+  },
+  {
+    name: "triángulos",
+    aliases: ["triángulos"],
+    what: "Las figuras mínimas con las que se arma todo lo 3D: cada objeto es una malla de miles de triángulos.",
+    here: "Más triángulos, más carga para la tarjeta gráfica.",
+  },
+  {
     name: "puertos y adaptadores",
     aliases: ["puertos y adaptadores"],
     what: "Una forma de organizar un programa: una parte central que no cambia y una pieza «traductora» por cada cosa externa.",

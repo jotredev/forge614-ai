@@ -32,7 +32,7 @@ export function createPlatform(accent: string, floating = false, size = 7.6): Pl
     group.add(column);
   }
 
-  const plate = solid(new RoundedBoxGeometry(size, 0.3, size, 4, 0.12), PLATE, 0.5);
+  const plate = solid(new RoundedBoxGeometry(size, 0.3, size, 3, 0.12), PLATE, 0.5);
   plate.position.y = 1.55;
 
   const edge = solid(new RoundedBoxGeometry(size + 0.1, 0.06, size + 0.1, 2, 0.03), accent, 0.5);

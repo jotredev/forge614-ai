@@ -514,6 +514,102 @@ html, body {
   overflow-wrap: anywhere;
 }
 
+/* Corner counters: what the map costs to run. Small and quiet, in the same
+   glass and cut corners as the panels. Below the panel (z-index 3). */
+.hud {
+  --accent: #7fb2d9;
+  --cut: 10px;
+  position: fixed;
+  z-index: 2;
+  left: 16px;
+  bottom: 16px;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 16%, transparent));
+}
+
+.hud.is-hidden {
+  display: none;
+}
+
+.hud__shape {
+  position: relative;
+  isolation: isolate;
+  padding: 11px 15px 10px;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.hud__shape::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  --inner: calc(var(--cut) - 1px);
+  clip-path: polygon(0 0, calc(100% - var(--inner)) 0, 100% var(--inner), 100% 100%, var(--inner) 100%, 0 calc(100% - var(--inner)));
+  background: rgba(8, 12, 17, 0.86);
+}
+
+.hud__list {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 18px;
+  row-gap: 3px;
+  margin: 0;
+}
+
+.hud__label,
+.hud__value {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hud__label {
+  color: var(--muted);
+}
+
+/* The button of an explained word keeps the panel's dotted underline, but
+   here it takes the muted color of a label. */
+.hud__label .info__term {
+  color: inherit;
+  font-size: inherit;
+}
+
+.hud__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+
+.hud__value[data-level="good"] {
+  color: #8fbf7a;
+}
+
+.hud__value[data-level="warn"] {
+  color: #e0b458;
+}
+
+.hud__value[data-level="bad"] {
+  color: #e07a6b;
+}
+
+.hud__goal {
+  color: var(--muted);
+}
+
+.hud__hint {
+  margin: 7px 0 0;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+
+@media (max-width: 720px) {
+  .hud {
+    display: none;
+  }
+}
+
 /* The line from the node to its panel. Opening it draws it once. */
 .leader {
   --accent: #9aa0b0;

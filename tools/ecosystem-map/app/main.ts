@@ -10,6 +10,9 @@ import { createEngram } from "./scene/nodes/engram";
 import { ENGINES, createEngines } from "./scene/nodes/engines";
 import { type Led, createLed } from "./scene/led";
 import { NODE_INFO } from "./scene/nodes/info";
+import { batchStatic, mergeByMaterial } from "./scene/batch";
+import { fitView } from "./scene/framing";
+import { createHud } from "./scene/hud";
 import { type Selectable, createInteraction } from "./scene/interaction";
 import { SENTINEL, createSentinel } from "./scene/nodes/sentinel";
 import { WORKERS, createWorker } from "./scene/nodes/worker";
@@ -94,6 +97,13 @@ try {
   // Each plate's LED lights when a message arrives at it, by cable.
   const leds = new Map<string, Led>();
   const selectables: Selectable[] = [];
+  // Points that must fit on screen: the corners of every plate and the spot
+  // of each floating title. The camera is framed from these.
+  const extent: THREE.Vector3[] = [];
+  const remember = (at: THREE.Vector2, half: number, baseY: number, cardY: number): void => {
+    for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) extent.push(new THREE.Vector3(at.x + sx * half, baseY, at.y + sz * half));
+    extent.push(new THREE.Vector3(at.x, cardY, at.y));
+  };
   NODES.forEach((node, index) => {
     const center = centerOf(node.id);
 
@@ -114,6 +124,7 @@ try {
     const card = createCard({ name: node.name, role: node.role, accent: node.accent });
     card.position.set(center.x, platform.top + 8.5, center.y);
     stage.scene.add(card);
+    remember(center, 3.8, 1.4, platform.top + 8.5);
     selectables.push({ id: node.id, name: node.name, role: node.role, accent: node.accent, center, card, info: NODE_INFO[node.id] });
   });
 
@@ -140,6 +151,7 @@ try {
   const cloudCard = createCard({ name: "PostgreSQL", role: "Opcional", accent: CLOUD, kind: "nube" });
   cloudCard.position.set(cloudAt.x, CLOUD_LIFT + cloudPlate.top + 6, cloudAt.y);
   stage.scene.add(cloudPlate.group, dataCenter.group, cloudCard);
+  remember(cloudAt, 3.8, CLOUD_LIFT + 1.4, CLOUD_LIFT + cloudPlate.top + 6);
   stage.onTick((seconds) => dataCenter.update(seconds));
 
   // The cable, fully in view like a real one: out of the side of Engram's
@@ -179,6 +191,7 @@ try {
       },
     })),
   });
+  const cables: Sync[] = [sync];
   stage.scene.add(sync.group);
   stage.onTick((seconds) => sync.update(seconds));
 
@@ -391,6 +404,7 @@ try {
     const card = createCard({ name: `Worker ${i + 1}`, role: "Obrero", accent: WORKERS, kind: "worker" });
     card.position.set(at.x, PLATE_TOP + 5.2, at.y);
     stage.scene.add(plate.group, worker.group, card);
+    remember(at, 2.3, 1.4, PLATE_TOP + 5.2);
     selectables.push({
       id: `worker-${i}`,
       name: `Worker ${i + 1}`,
@@ -416,13 +430,58 @@ try {
   for (const c of [save, recall, ...shellEngines, ...shellAtlas, ...atlasEngines, ...atlasEngram, ...atlasSentinel, ...workerCables]) {
     stage.scene.add(c.group);
     stage.onTick((seconds) => c.update(seconds));
+    cables.push(c);
   }
+  // The cables' fixed parts (tubes, plugs, sockets, clips) never move, so they
+  // are joined: a few meshes for all the cables instead of ten for each.
+  stage.scene.add(...mergeByMaterial(cables.flatMap((c) => c.staticParts)));
   // After every cable has reported its arrivals this tick.
   stage.onTick((seconds) => {
     for (const led of leds.values()) led.update(seconds);
   });
 
-  createInteraction(stage, VIEW_SIZE, selectables);
+  // Join the pieces that never move. It watches one whole cycle of the story
+  // without drawing it, then merges the solids that stayed still into a few
+  // meshes. It must run before anything invisible is added to the scene (the
+  // click boxes), and before the first frame.
+  batchStatic(stage.scene, { step: (seconds) => stage.simulate(seconds), to: CYCLE, every: 0.2 });
+
+  // Frame the whole map: fitted to the content and centered in the free area
+  // (below the top bar), now and whenever the window changes size, as long as
+  // the person has not moved the view themselves.
+  const topbar = document.querySelector(".topbar");
+  const frame = (): { target: THREE.Vector3; zoom: number } => {
+    // Room for the titles at the sides: they keep their size while the map
+    // shrinks, so a narrow screen needs at least 80px on each side.
+    const side = Math.min(130, Math.max(80, container.clientWidth * 0.07));
+    const view = fitView(
+      {
+        camera: stage.camera,
+        points: extent,
+        width: container.clientWidth,
+        height: container.clientHeight,
+        viewSize: VIEW_SIZE,
+        // 32px of air above and below; the top also counts half a title's height.
+        pad: { left: side, right: side, top: (topbar?.getBoundingClientRect().height ?? 44) + 57, bottom: 32 },
+        maxZoom: 1.6,
+        minZoom: 0.85,
+      },
+      stage.view(),
+    );
+    stage.setView(view.target, view.zoom);
+    return view;
+  };
+  frame();
+  const interaction = createInteraction(stage, VIEW_SIZE, selectables);
+  createHud(stage);
+  let moved = false;
+  stage.input.addEventListener("wheel", () => (moved = true), { passive: true });
+  stage.input.addEventListener("pointermove", (event) => {
+    if (event.buttons !== 0) moved = true;
+  });
+  window.addEventListener("resize", () => {
+    if (!moved && !interaction.isOpen()) interaction.setHome(frame());
+  });
 
   stage.start();
   // Labels measure their text, so draw again once the typeface has loaded.
