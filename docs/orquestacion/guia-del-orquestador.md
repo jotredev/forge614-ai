@@ -76,7 +76,7 @@ Bloqueos: <lista o "ninguno">
 
 | Regla | Estado | Evidencia |
 |---|---|---|
-| **Documentación tarea por tarea:** cada tarea actualiza en su mismo commit los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica |
+| **Documentación tarea por tarea:** al terminar cada tarea, un prompt aparte (etiqueta `· docs`, misma sesión, medido por separado) actualiza en un commit propio los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica |
 
 ## 5. Medición
 
