@@ -23,7 +23,7 @@
 - Mensajes de error para personas en español; comentarios de código, texto del protocolo y descripciones MCP en inglés; documentación es/en con el mismo contenido.
 - Commits convencionales en inglés, **sin líneas de atribución ni menciones a ninguna IA**; sin merge, tag ni release (los autoriza el propietario tras la revisión de `forge614-ai`).
 - Sin nombres de productos externos en código, pruebas ni docs (acta 0012); el protocolo v4 no puede contener `claude|openai|anthropic` (misma regla que la prueba de v3).
-- **Documentación tarea por tarea (regla del propietario, 2026-09-24):** cada tarea actualiza en su mismo commit los capítulos es/en que describen lo que cambió, agrega su viñeta a la sección `## 1.7.0 — en desarrollo` de `CHANGELOG.md` y marca `"notionSyncPending": true` en las entradas de `docs/notion-map.json` que tocó. El orquestador verifica en cada revisión que código, pruebas y documentación digan lo mismo; T8 solo hace la pasada final de coherencia y la versión.
+- **Documentación tarea por tarea (regla del propietario, 2026-09-24):** al terminar cada tarea, con un **prompt aparte** (etiqueta `[Engram · T<n> · docs]`, misma sesión) para medir su costo por separado, se actualizan en **un commit propio** los capítulos es/en que describen lo que cambió, agrega su viñeta a la sección `## 1.7.0 — en desarrollo` de `CHANGELOG.md` y marca `"notionSyncPending": true` en las entradas de `docs/notion-map.json` que tocó. El orquestador verifica en cada revisión que código, pruebas y documentación digan lo mismo; T8 solo hace la pasada final de coherencia y la versión.
 
 ## Review Focus
 
@@ -535,7 +535,15 @@ git diff --check
 ```
 Expected: todo en verde; el conteo total = línea base + pruebas nuevas; `typecheck` y `git diff --check` sin salida.
 
-- [ ] **Step 8b: Documentación de esta tarea**
+- [ ] **Step 9: Commit**
+
+```bash
+git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/app/index.ts src/interfaces/cli
+git commit -m "feat(schema): level 11 memory intelligence structure with explicit, verified enrollment"
+```
+Verificar el mensaje: una línea, sin atribución.
+
+- [ ] **Step 10: Documentación de la tarea (prompt aparte, commit propio)**
 
 `docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md`, después de la línea de `reinforcement-enable` (misma alineación, columna 41):
 
@@ -571,13 +579,12 @@ Memoria inteligente; esta sección crece tarea por tarea.
 
 `docs/notion-map.json`: agregar `"notionSyncPending": true` a las cuatro entradas de los capítulos 03 y 05 (es y en), igual que en 1.6.0.
 
-- [ ] **Step 9: Commit**
+Verificación: `git diff --check` sin salida y `bun test` en verde (la documentación no cambia pruebas).
 
 ```bash
-git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/app/index.ts src/interfaces/cli docs CHANGELOG.md
-git commit -m "feat(schema): level 11 memory intelligence structure with explicit, verified enrollment"
+git add docs CHANGELOG.md
+git commit -m "docs: schema 11 and intelligence-enable in CLI reference, architecture and changelog"
 ```
-Verificar el mensaje: una línea, sin atribución.
 
 ---
 
