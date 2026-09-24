@@ -1,0 +1,1001 @@
+:root {
+  --bg: #0e1015;
+  --card-bg: rgba(38, 42, 54, 0.92);
+  --card-border: #3a4052;
+  --text: #e8e6df;
+  --muted: #9aa0b0;
+  --font-display: ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--card-border);
+  background: linear-gradient(var(--bg), rgba(14, 16, 21, 0.6));
+  pointer-events: none;
+}
+
+.topbar__brand { font-weight: 700; }
+.topbar__divider, .topbar__title { color: var(--muted); }
+
+#office {
+  position: fixed;
+  inset: 0;
+}
+
+#office canvas,
+.label-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* Node title: small caps role in the node's color above a large serif
+   name, with no box so the scene stays uncluttered. */
+.node-card {
+  --accent: #9aa0b0;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.node-card__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+}
+
+.node-card__name {
+  margin-top: 4px;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--text);
+  transition: color 0.15s;
+}
+
+/* Hovering or selecting a node lights its name in the node's color. */
+/* The titles of the nodes taking part in the current process take their color. */
+.node-card.is-active .node-card__name,
+.node-card.is-hover .node-card__name,
+.node-card.is-selected .node-card__name {
+  color: var(--accent);
+}
+
+/* Node panel: a pane of tinted glass in the node's color, with two corners
+   cut on the map's own diagonal, joined to its node by a line (.leader).
+   One scroll holds everything; a rail of dots on the left follows the
+   reading. On narrow screens it is a sheet at the bottom. */
+.info {
+  --accent: #9aa0b0;
+  --cut: 22px;
+  position: fixed;
+  z-index: 3;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 424px; /* plus the 16px margin: PANEL_WIDTH in interaction.ts */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--accent) 22%, transparent));
+}
+
+.info.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The shape is the edge (a 1px band of the accent); ::before is the glass
+   inside it, cut on the same diagonals, so the edge glows all around. */
+.info__shape {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.info__shape::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  --inner: calc(var(--cut) - 1px);
+  clip-path: polygon(0 0, calc(100% - var(--inner)) 0, 100% var(--inner), 100% 100%, var(--inner) 100%, 0 calc(100% - var(--inner)));
+  background: color-mix(in srgb, var(--accent) 9%, rgba(8, 12, 17, 0.93));
+}
+
+.info__head {
+  position: relative;
+  padding: 22px 64px 14px 46px;
+}
+
+.info__name {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.info__role {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.info__close {
+  position: absolute;
+  top: 14px;
+  right: 30px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.info__close:hover,
+.info__close:focus-visible {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.info__main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* The rail: a ruler of short marks, one per part. The one being read is
+   longer and lit. Marks, not dots, so it never looks like the steps' trace. */
+.info__rail {
+  position: relative;
+  flex: none;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.info__dot {
+  position: relative;
+  width: 40px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.info__dot::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: width 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.info__dot:hover::before {
+  background: var(--accent);
+}
+
+.info__dot.is-active::before {
+  width: 22px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.info__dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -6px;
+  border-radius: 6px;
+}
+
+.info__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px 24px 28px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 40%, transparent) transparent;
+}
+
+.info__scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.info__section {
+  padding-bottom: 26px;
+}
+
+.info__lead {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.info__title {
+  margin: 22px 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.info__title::after {
+  content: "";
+  display: block;
+  width: 22px;
+  height: 2px;
+  margin-top: 6px;
+  background: var(--accent);
+}
+
+.info__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text) 92%, transparent);
+}
+
+.info__code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* What the node never does: a dashed edge, like a line it does not cross. */
+.info__never {
+  margin-top: 18px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.info__never-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* How it works: a trace in the node's color with a stop for each step. */
+.info__trace {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.info__stop {
+  position: relative;
+  padding: 0 0 20px 26px;
+}
+
+.info__stop::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.info__stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 22px;
+  bottom: 3px;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.info__stop-title {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+/* Connections: one port per neighbor, what comes in and what goes out. */
+.info__port {
+  padding: 12px 0 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.info__port-name {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.info__flow {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 10px;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.info__flow-label {
+  font-size: 12px;
+  font-weight: 600;
+  padding-top: 1px;
+  color: var(--muted);
+}
+
+.info__flow--out .info__flow-label {
+  color: var(--accent);
+}
+
+/* Details: a spec sheet, label and value on each row. */
+.info__facts {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  column-gap: 14px;
+  margin: 0;
+}
+
+.info__fact-label,
+.info__fact-value {
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.info__fact-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.info__fact-value {
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.info__fact-line {
+  margin: 0 0 6px;
+}
+
+.info__fact-line:last-child {
+  margin-bottom: 0;
+}
+
+/* A technical word with an explanation: dotted underline in the node's
+   color, and a help cursor. */
+.info__term {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+
+.info__term:hover {
+  text-decoration-style: solid;
+}
+
+.info__term:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The bubble that explains it: the same glass and cut corners as the panel,
+   smaller. Above the panel (z-index 3). */
+.tip {
+  --accent: #9aa0b0;
+  --cut: 12px;
+  position: fixed;
+  z-index: 4;
+  top: 0;
+  left: 0;
+  width: 330px;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 25%, transparent));
+}
+
+.tip.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Laid out but not seen, to measure it before placing it. */
+.tip.is-measuring {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.tip__shape {
+  position: relative;
+  isolation: isolate;
+  padding: 14px 16px 15px;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.tip__shape::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  --inner: calc(var(--cut) - 1px);
+  clip-path: polygon(0 0, calc(100% - var(--inner)) 0, 100% var(--inner), 100% 100%, var(--inner) 100%, 0 calc(100% - var(--inner)));
+  background: color-mix(in srgb, var(--accent) 10%, rgba(8, 12, 17, 0.97));
+}
+
+.tip__term {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.tip__label {
+  margin: 10px 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tip__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.tip__look {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The counters of what the map costs to run: a strip, each with its name over
+   its measured value, no box. */
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+
+.hud.is-hidden {
+  display: none;
+}
+
+.hud__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hud__label {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The button of an explained word keeps the dotted underline, but takes the
+   muted color of a label. */
+.hud__label .info__term {
+  color: inherit;
+  font-size: inherit;
+}
+
+.hud__value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.hud__value[data-level="good"] {
+  color: #8fbf7a;
+}
+
+.hud__value[data-level="warn"] {
+  color: #e0b458;
+}
+
+.hud__value[data-level="bad"] {
+  color: #e07a6b;
+}
+
+.hud__goal {
+  color: var(--muted);
+}
+
+@media (max-width: 1400px) {
+  .hud__item:nth-child(2),
+  .hud__item:nth-child(5) {
+    display: none;
+  }
+}
+
+/* The bottom-left corner: the process the system is running (above) and what
+   the map costs to run (below). No boxes: they float over the map like the
+   titles of the nodes, on a soft dark fade so the letters read. */
+.stack {
+  position: fixed;
+  z-index: 2;
+  --room-blocks: 22px; /* between the process and the counters */
+  --room-name: 10px; /* above the name */
+  --room-goal: 20px; /* below what it is for */
+  --room-steps: 11px; /* between steps */
+  --room-bars: 22px; /* above the bars */
+  --room-counters: 18px; /* above the counters, under the rule */
+  left: 30px;
+  bottom: 28px;
+  width: max-content;
+  max-width: calc(100vw - 60px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--room-blocks);
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.95);
+}
+
+.stack::before {
+  content: "";
+  position: absolute;
+  inset: -44px -90px -34px -54px;
+  z-index: -1;
+  background: radial-gradient(ellipse at 25% 62%, rgba(8, 12, 17, 0.82), rgba(8, 12, 17, 0.55) 52%, rgba(8, 12, 17, 0) 76%);
+  pointer-events: none;
+}
+
+.tracker {
+  --accent: #7fb2d9;
+  width: min(456px, calc(100vw - 60px));
+}
+
+.stack__metrics {
+  padding-top: var(--room-counters);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tracker__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.tracker__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 10px;
+}
+
+.tracker__state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8fbf7a;
+  box-shadow: 0 0 8px #8fbf7a;
+  animation: tracker-live 1.6s ease-in-out infinite;
+}
+
+.tracker.is-paused .tracker__state::before {
+  background: #e0b458;
+  box-shadow: 0 0 8px #e0b458;
+  animation: none;
+}
+
+.tracker__name {
+  margin: var(--room-name) 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 26px color-mix(in srgb, var(--accent) 55%, transparent), 0 2px 12px rgba(0, 0, 0, 0.9);
+}
+
+/* The nodes of the process, in the order they act. */
+/* What the process is for, in one line. */
+.tracker__goal {
+  margin: 0 0 var(--room-goal);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* The steps, as the objectives of a mission: done are checked, the one under
+   way is bright and pulses, the rest are dim. Each is marked in the color of
+   whoever acts. */
+.tracker__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--room-steps);
+}
+
+.tracker__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  transition: color 0.3s;
+}
+
+.tracker__mark {
+  position: relative;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border: 2px solid var(--c);
+  border-radius: 50%;
+  opacity: 0.45;
+  transition: opacity 0.3s, background 0.3s, box-shadow 0.3s;
+}
+
+.tracker__item.is-done {
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+}
+
+.tracker__item.is-done .tracker__mark {
+  background: var(--c);
+  opacity: 0.85;
+}
+
+/* The check mark inside a done step. */
+.tracker__item.is-done .tracker__mark::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 3px;
+  height: 6px;
+  border: solid #0b0f14;
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.tracker__item.is-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tracker__item.is-current .tracker__mark {
+  background: var(--c);
+  opacity: 1;
+  box-shadow: 0 0 12px var(--c);
+}
+
+.tracker__item.is-current .tracker__mark::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1.5px solid var(--c);
+  border-radius: 50%;
+  animation: tracker-pulse 1.3s ease-out infinite;
+}
+
+/* One dot per process, each in its color; they fill as the processes are done. */
+.tracker__pips {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--room-bars);
+}
+
+.tracker__pip {
+  position: relative;
+  flex: 1 1 0;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c) 22%, rgba(255, 255, 255, 0.06));
+}
+
+.tracker__pip.is-current {
+  height: 7px;
+  margin-top: -1px;
+}
+
+.tracker__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--c);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* A new process: its name comes in. */
+.tracker.is-entering .tracker__name {
+  animation: tracker-name 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes tracker-name {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes tracker-live {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes tracker-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+/* Short or narrow screens: the same layout with less air, so it does not sit
+   on top of the map. */
+@media (max-height: 900px), (max-width: 1500px) {
+  .stack {
+    --room-blocks: 14px;
+    --room-name: 4px;
+    --room-goal: 12px;
+    --room-steps: 7px;
+    --room-bars: 12px;
+    --room-counters: 12px;
+    left: 24px;
+    bottom: 20px;
+  }
+
+  .tracker__name {
+    font-size: 26px;
+  }
+}
+
+/* A short screen: the steps already say what the process does, so the line
+   about what it is for goes. */
+@media (max-height: 820px) {
+  .tracker__goal {
+    display: none;
+  }
+
+  .tracker__name {
+    margin-bottom: 12px;
+  }
+}
+
+/* Very short: tighter still. */
+@media (max-height: 760px) {
+  .stack {
+    --room-blocks: 10px;
+    --room-steps: 5px;
+    --room-bars: 9px;
+    --room-counters: 9px;
+    bottom: 16px;
+  }
+
+  .tracker__name {
+    margin-bottom: 8px;
+    font-size: 24px;
+  }
+
+  .tracker__item {
+    font-size: 13.5px;
+    line-height: 1.3;
+  }
+}
+
+/* Too little room: it would sit on top of the map. */
+@media (max-width: 1100px) {
+  .stack {
+    display: none;
+  }
+}
+
+/* The line from the node to its panel. Opening it draws it once. */
+.leader {
+  --accent: #9aa0b0;
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.leader.is-open {
+  opacity: 1;
+}
+
+.leader__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.leader.is-open .leader__line {
+  animation: leader-draw 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s forwards;
+}
+
+.leader__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.4;
+}
+
+.leader__dot,
+.leader__cap {
+  fill: var(--accent);
+}
+
+.leader__cap {
+  opacity: 0;
+}
+
+.leader.is-open .leader__cap {
+  animation: leader-cap 0.2s linear 0.6s forwards;
+}
+
+@keyframes leader-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes leader-cap {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .info {
+    --cut: 16px;
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    height: 56vh;
+  }
+
+  .info__head {
+    padding: 16px 52px 10px 38px;
+  }
+
+  .info__name {
+    font-size: 26px;
+  }
+
+  .info__close {
+    right: 22px;
+  }
+
+  .info__rail {
+    width: 32px;
+  }
+
+  .info__scroll {
+    padding-right: 18px;
+  }
+
+  .info__facts {
+    grid-template-columns: 96px 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info,
+  .tip,
+  .node-card__name,
+  .info__dot::before {
+    transition: none;
+  }
+
+  .tracker.is-entering .tracker__name,
+  .tracker__state::before,
+  .tracker__item.is-current .tracker__mark::after {
+    animation: none;
+  }
+
+  .leader.is-open .leader__line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .leader.is-open .leader__cap {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.fatal {
+  margin: 80px auto;
+  max-width: 560px;
+  padding: 20px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--card-bg);
+}

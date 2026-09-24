@@ -1,0 +1,243 @@
+# forge614-ai — Visual ecosystem map
+
+**Date:** 2026-09-23
+**Status:** Draft for product owner review
+**Governs:** the `tools/ecosystem-map/` folder of `forge614-ai`
+**Sister translation:** `2026-09-23-mapa-del-ecosistema-design.md`
+**Related decisions:** `0002` (delivery order), `0012` (forbidden mentions), `0016` (bilingualism), `0018` (three operating systems), `0024` (additive evolution), `0026` (Bun as the single version)
+
+---
+
+## 1. Purpose
+
+The Forge614 ecosystem is described across 26 decision records, one contract, one node guide, five audits and several handoffs. To understand it, you have to read all of it. Contradictions between documents only surface through line-by-line reading.
+
+The visual map turns that documentation into **an interactive 3D office in the browser**:
+
+- each node is a platform;
+- each internal piece is a desk;
+- connections are animated lines;
+- rules are plaques on the walls;
+- contradictions are marked where you can see them.
+
+It serves two uses:
+
+1. **Understand:** the owner fully understands how the nodes connect, who depends on whom, who orchestrates, who executes, who judges, and which rules apply.
+2. **Show:** present the ecosystem to other people without explaining it out loud.
+
+It also acts as a **visual contradiction detector**. When two documents disagree, the map shows the clash with its sources instead of silently picking one.
+
+### 1.1 Out of scope
+
+- Live data: running tasks, working agents or metrics. The map shows how the ecosystem is **defined**, not what is happening right now.
+- Editing documents from the map. The map is read-only.
+- Wiring it into `bun verify` or forge614-ai CI. That decision comes later.
+
+## 2. Location and boundaries
+
+```
+forge614-ai/
+└── tools/ecosystem-map/
+    ├── package.json      own dependencies, separate from the core
+    ├── tsconfig.json     own; browser and Bun use different types
+    ├── extractor/        reads the repository and builds the data
+    ├── curated/          hand-curated data, each item with its receipt
+    ├── data/             generated: ecosystem.json and findings.json
+    ├── app/              the page: 3D office and panels
+    └── tests/
+```
+
+**Boundary rules:**
+
+- **Nothing lives in `src/`.** `tests/architecture/import-rules.test.ts` rejects any file in `src/` outside the four layers, and the map belongs to none of them.
+- **No map file is imported from `src/`, and the map imports nothing from `src/`.** It only reads the repository's documents as files.
+- **Portability.** The folder must be movable to its own repository by copying it, with no code changes. Its only reference to the parent repository is a configurable root path, `--root`, which defaults to `../..`.
+- **Isolation.** The core's `package.json`, `tsconfig.json` and `bun verify` are not modified.
+
+## 3. Technology
+
+| Piece | Use |
+|---|---|
+| Bun 1.4.2 | Bundles the page, serves it in development, runs the extractor and tests (decision 0026) |
+| Three.js | 3D scene, camera, lights, shadows |
+| TypeScript with no UI framework | Panels, search, screen state |
+| Zod | Schemas for generated and curated data |
+| YAML | Curated file format |
+
+There is no server and no UI framework. `map:build` outputs a static folder that opens in any modern browser on macOS, Linux and Windows (decision 0018).
+
+## 4. Visual style
+
+- **Camera.** Isometric diagonal view from above, with orthographic projection. Dark blue-grey background.
+- **Platforms.** One per node, each in its own muted color. The palette has measured contrast and stays distinguishable for color-vision deficiencies.
+- **Desks and characters.** Simple geometric "toy" figures built in code, with no external models.
+- **Light.** Soft ambient light, ambient occlusion and contact shadows.
+- **Text.** Always sharp: labels and cards are an HTML layer over the scene, not 3D text.
+- **Motion.** The camera flies with smooth easing. Only informative elements animate, and the system reduced-motion preference is respected.
+- **Performance.** Target is 60 frames per second on a mid-range laptop.
+
+### 4.0 Owner decisions (2026-09-23)
+
+- **Each node is recognized by a signature object** that shows what it is without reading anything. From afar you see that object; up close, its real pieces.
+- **Engram ("la memoria"):** a vault that works on its own, with no people: a server rack with blinking lights and, above it, a hologram of the neuron network (Engram's original idea). At the foot of the rack, on the side facing Shell, it has two ports: an inlet and an outlet. When a memory arrives, the inlet flashes, a pulse rises through the rack and the hologram brightens: the memory is saved. When memories are requested, the hologram brightens and a pulse goes down to the outlet. Its color is soft pink (`#d98ca0`).
+- **Connections:** information travels on its own, with no one carrying it: fiber cables that leave one port and enter another, resting on the plates with metal clips and taut in the air between them. Each cable runs one way; when two nodes talk both ways, two cables run side by side. Each transfer is a flash with a trail that runs along the cable at an even speed, and the receiving port lights up. The relations come from the contracts table (section 11 of the ecosystem contract). Each flash carries the color of its sender. So far: Shell ↔ Engram (Shell saves in blue, Engram returns memories in pink), Shell ↔ Engines (Shell asks in blue, Engines answers in amber), Atlas ↔ Shell, Atlas ↔ Engines, Atlas ↔ Engram and Atlas ↔ each worker (Atlas in green, workers in coral). Only what really travels between two nodes is drawn as a cable; an installation dependency (for example, Engram bringing Engines along) is not a cable and will be shown in the rules and dependencies layer.
+- **One clock:** the whole map follows the rhythm of Shell's terminal, in the real order, and the terminal waits for each answer before typing the line that depends on it. Shell types `forge614 prepare` and asks, at the same time, Engram (memories) and Engines (AI engines installed); Engines finds them one by one and answers; Shell asks for a preview of the change and Engines sends it without touching anything; the person confirms in the terminal (`¿aplicar cambios? (s/n) s`); Engines applies only that and reports back (`cambios aplicados`); Shell asks whether to contextualize the project (`¿contextualizar el proyecto? (s/n) s`) and tells Atlas to start; Atlas asks Engines which engines its workers can use and Engram for saved progress, tells Shell (`atlas: revisando repositorio…`), hands out the tasks to its workers one at a time, checks each report, writes what it learned in Engram (which stores it, answers and copies it to the cloud) and gives Shell its final report (`contexto guardado en engram`); finally Shell saves its summary in Engram, which also copies it to the cloud. The terminal scrolls up when full. Nothing moves on its own schedule. A full loop lasts about 42 seconds.
+- **Atlas ("orquestador de contexto"):** it does the project's initial contextualization, optional (acta 0004). It is drawn as a cartographer at a drafting table: above it floats a holographic city of the repository (one building per folder, 24). Atlas does not read the code itself: it sends each task to a worker and, when the report comes back, a holographic lens hops from building to building over that part of the city; each checked folder turns solid with a green dot and the streets light up, while the person draws the map of what is already checked on the sheet and a panel counts the folders. When done, a card with what it learned rises and travels to Engram. Its cables: with Shell (start and reports), with Engines (engines), with Engram (saved progress and writing, through two ports on the front of the rack) and two with each worker. Its color is soft green (`#86c2a4`).
+- **Workers ("los obreros"):** three small nodes fanned out below Atlas, with no circuit of their own because they are part of Workers. On each one a person works at a computer: while they have a task, the screen fills with code and the tower light turns coral; when done it reads "informe enviado". They work one at a time and each task starts from scratch (no state of its own); they only hand the raw analysis back to Atlas and never write to Engram (section 7 of the contract). Each one has two cables with Atlas: the task comes in through one and the result goes back through the other. Its color is coral (`#d9876f`).
+- **Engines ("los motores"):** a test bench. A projector with an amber rim casts a beam into a hologram of a working engine (pistons moving up and down, a spinning pulley), always swept by a scan ring that goes faster and brighter while looking for engines. Beside it floats a "motores de IA" panel with four engines that go from "buscando…" to "listo", and the one that gets the change shows "vista previa" and then "aplicado"; when applying, the hologram turns amber for a moment. To the left, in profile, a toy person holds a tablet in both hands with the same list and taps it while Engines works. Engines has no screen of its own and changes nothing by itself: everything goes through Shell (section 5 of the contract). Its cables reach the projector base and, on Shell's side, leave a small network box next to the desk. Its color is amber (`#d9a95b`).
+- **Layout:** nodes stand 44 units from each other, so their circuits never overlap: Shell and Engram side by side and, in the row below, Engines (centered under them) and Atlas (to the right); Atlas' workers sit below it.
+- **The cloud (PostgreSQL, optional):** Engram's optional copy (section 6 of the contract) is shown as a remote data center with three racks, with no people, floating up and to the right of Engram, with no circuit under it because it is outside the ecosystem. A fiber cable leaves Engram's rack and enters the foot of the middle rack. Its card reads `NUBE · OPCIONAL`, in lilac (`#a99bd6`).
+- **Each node shows someone doing that node's job**, not just an object. This is the reference level of detail for the remaining nodes.
+- **Shell ("la terminal"):** a toy person seated on an office chair at a light wooden desk, with a keyboard, a mouse and a mug. Behind it, a holographic screen floats above a small projector and shows the session with real commands (`forge614 status`, `forge614 prepare`), Engines' preview, the confirmation and the result; the person types only their own lines (the commands and their confirmation). Its color is soft blue (`#7fb2d9`).
+- **Each node has its own circuit** (the same floor pattern, with its own signal), and nodes sit far enough apart that the circuits do not overlap.
+- **Platform:** a thin plate floating above the floor, held by a column, with a line of the node's color under its edge.
+- **Card:** no box. A small uppercase line with the role (`NODO · LA MEMORIA`) in the node's color, above the large name in a classic serif typeface.
+- **Name typeface:** Manrope, bundled inside the project (no internet dependency).
+- **Background:** one complete, connected circuit drawn very faintly. A closed loop around the center with 45° corners, branches leaving it inward and outward and ending in a pad, and an even fainter outer ring. A single light with a tail travels the loop without stopping, like data moving. It animates at 30 frames per second at most and stays still when the system asks for reduced motion.
+- **Performance:** the scene is drawn only when something changes (camera or animated floor), shadows are computed once, and no ambient occlusion is used.
+- **Discarded:** the neon blueprint style. Background and lighting stay as in the first version, and new visual references only add details.
+
+### 4.1 Ecosystem layout
+
+| Element | Representation |
+|---|---|
+| Engram | Central platform: the memory everyone connects to |
+| Shell, Engines, Atlas, Workers | Platforms around the center |
+| Hub, Sentinel | Semi-transparent hologram platforms (planned) |
+| forge614-ai | The building: shared floor, with rules as plaques on the walls |
+| Each node's internal pieces | Labeled desks |
+| Planned pieces (`forge614` init/prepare, run ledger…) | Empty desks marked as planned |
+
+## 5. Interactions
+
+- **Screen.** A top bar (search, layers, tours, language, theme), a left detail panel, the office in the center, a right findings panel and a timeline at the bottom.
+- **Explore.** Clicking a platform flies the camera to it. The left panel then shows the tabs *What it does · Its pieces · Depends on · Rules that apply · Decisions · Findings*. Desks, lines and plaques are clickable too. Esc returns to the overview.
+- **Layers.** Toggles for install dependencies, runtime contracts, rules, findings and planned items.
+- **Tours.** A light travels across platforms while a narration explains each step. Tours can be paused, stepped forward or stepped back. Tours: `init`, `prepare`, Atlas contextualization, Sentinel judgment, retries and circuit breaker, and a change traveling to release.
+- **Findings.** A filterable list. Each finding flies the camera to its location and shows the conflicting sources side by side.
+- **Timeline.** From E0 to E3, the office builds itself following the delivery order (decision 0002).
+- **Finishing.** Search, Spanish and English, light and dark themes, a link per view, and full keyboard use.
+
+## 6. Data
+
+### 6.1 Flow
+
+```
+repository documents
+   ├── automatic: decisions INDEX.json, support-matrix.json, standard/rules/*,
+   │              packs, forge614.node.json
+   └── curated: curated/*.yaml (content that is plain prose)
+                    ↓
+               extractor (validates, compares, detects clashes)
+                    ↓
+      data/ecosystem.json  +  data/findings.json   ← the page reads only these
+```
+
+### 6.2 Receipts
+
+Every curated item carries at least one **receipt** with three parts: `file` (path relative to the root), `line`, and `quote`, a short verbatim quote.
+
+The extractor:
+
+1. **Rejects** any item without a receipt.
+2. **Checks** that the quote still exists in the file, near the given line.
+3. If the quote is gone, it marks the item **stale**. A stale finding is also marked **possibly resolved**. Nothing is ever deleted silently.
+
+### 6.3 Findings
+
+A finding is one of three kinds:
+
+- **contradiction:** two or more receipts disagree;
+- **pending:** planned but not done;
+- **gap:** something cited that does not exist.
+
+Each finding states which nodes it affects. When the hierarchy is clear, it also states which source prevails; for example, an accepted decision prevails over a checklist.
+
+Automatic findings come from comparing structured sources, for example:
+
+- the decision count in the index against the count stated in the guides;
+- the rules a pack cites against the rules that exist.
+
+Prose findings are recorded in `curated/findings.yaml`.
+
+### 6.4 Schemas
+
+Zod validates `curated/*.yaml` on read and `data/*.json` on generation. The page validates again on load. On failure it shows a clear error instead of an incomplete scene.
+
+Schemas only grow: fields are added, never renamed or removed (decision 0024).
+
+## 7. Commands
+
+| Command | Effect |
+|---|---|
+| `bun run map:extract` | Regenerates `data/` from the repository |
+| `bun run map:check` | Fails if `data/` is out of date or any receipt is no longer valid |
+| `bun run map:dev` | Serves the office in the browser with live reload |
+| `bun run map:build` | Produces the static folder for sharing |
+| `bun run test` | Extractor and schema tests |
+
+Map tests use the `.check.ts` suffix so the forge614-ai root `bun test` does not pick them up.
+
+All commands run inside `tools/ecosystem-map/`. Output and errors follow the machine contract convention (decision 0013):
+
+- JSON with `schemaVersion` on stdout;
+- `{schemaVersion, code, error}` on stderr;
+- exit codes 0, 1 and 2.
+
+## 8. Building in visible steps
+
+Nothing is built all at once. Each step ends with:
+
+- a screenshot;
+- the office open in the owner's browser.
+
+The next step starts only after the owner's approval. If a step shows that part of this design does not work, the design is corrected here before continuing.
+
+| # | Visible deliverable | Owner's decision |
+|---|---|---|
+| 1 | Atmosphere: background, isometric camera, light, shadows and one test platform | Overall tone |
+| 2 | The eight platforms with real colors and names, from `data/` | Layout and palette |
+| 3 | One test desk and character on Engines | Look of the workers |
+| 4 | All platforms with their pieces | Clarity of who does what |
+| 5 | Animated connections between platforms | Clarity of what travels where |
+| 6 | Click, camera flight and left panel | Navigation feel |
+| 7 | Rules as wall plaques | Rule readability |
+| 8 | Finding markers and right panel | At-a-glance detection |
+| 9 | Animated tours | Teaching value |
+| 10 | E0 to E3 timeline | Understanding the delivery order |
+| 11 | Search, languages, themes, links | Finishing touches |
+
+The extractor and schemas grow with the steps:
+
+- step 2 adds only the nodes;
+- step 4 adds the pieces;
+- step 5 adds the connections;
+- and so on.
+
+The full extractor is never built before something is visible on screen.
+
+## 9. Verification
+
+- **Automated tests** (`bun run test`) cover:
+  - schemas;
+  - receipt validation;
+  - detection of vanished quotes;
+  - computation of automatic findings.
+- **Automated visual check:** an automated browser opens the office, visits the nodes and takes screenshots to confirm it renders and responds. This complements the owner's review at each step; it does not replace it.
+- **No fabricated validations:** a step is declared done only with the real output of these commands and the matching screenshot.
+
+## 10. Ecosystem rules that apply
+
+- **Decision 0012.** No document, comment or commit of the map cites external products or projects as reference or inspiration. The design is described as Forge614's own. Using a library as a dependency is not a mention of inspiration.
+- **Decision 0016.** On-screen text is in Spanish and English; code is in English. This spec has its sister translation.
+- **Decision 0018.** Commands work on macOS, Linux and Windows. Nothing relies on hard-coded `/` paths.
+- **Decision 0024.** Data schemas only grow.
+
+## 11. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Curated data goes stale as documents change | Receipts with verbatim quotes, detected by `map:check` |
+| The map is taken as the source of truth | Every item shows its source, and the footer states that the documents are the source of truth |
+| 3D gets heavy with many pieces | Level-of-detail by zoom, shared geometry, and a measured 60 frames-per-second target |
+| Touching in-progress phase 0.2 work | Everything happens on the `feat/ecosystem-map` branch, in a separate worktree, inside `tools/ecosystem-map/` |
