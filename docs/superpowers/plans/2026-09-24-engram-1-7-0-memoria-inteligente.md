@@ -2359,7 +2359,72 @@ git commit -m "feat(sessions): activity tracking, interrupted sessions and previ
 
 - [ ] **Step 10: Documentación (prompt aparte, sesión nueva, commit propio)**
 
-Los textos exactos se redactan tras aprobar el commit del paso 9, contra los capítulos reales y simulados en una copia (como en T3). Alcance fijado: `docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md` (sección «Sesiones y contexto»: `session-start` devuelve `previous` en nivel 11), `docs/es/04-sdk-typescript.md` y `docs/en/04-typescript-sdk.md` (sección «Memoria inteligente»: `previousInterrupted`, `PreviousSession`, actividad y marca), `docs/es/05-arquitectura-interna-y-formulas.md` y `docs/en/05-internal-architecture-and-formulas.md` (regla de la marca, 6 h y la inferencia), `docs/es/06-resolucion-de-errores.md` y `docs/en/06-troubleshooting.md` (sección «Memoria inteligente»: `AMBIGUOUS_SESSION` ya no lo causan sesiones viejas abiertas) y `CHANGELOG.md` (viñeta en `## 1.7.0 — en desarrollo`, antes de «La replicación de grupos…»). `docs/notion-map.json` solo cambia si una entrada de 03 existe y aún no está marcada (06 ya está marcado; 04 y 05 no tienen entrada). Commit: `docs: session activity, interrupted sessions and previous-session handoff in CLI, SDK, architecture, troubleshooting and changelog`.
+Borrador redactado por un subagente de contexto limpio (Sonnet, solo lectura sobre una copia con `c763f5e`) con cada afirmación ligada a la línea del código que la prueba, y revisado por el orquestador (una corrección de vocabulario: «réplica» en Engram es la copia a PostgreSQL, no repetir el arranque de una sesión). **Simulado sobre la copia: 9 archivos, 15 inserciones, 0 borrados, `git diff --check` limpio.**
+
+Archivos: `docs/es/03-referencia-cli.md`, `docs/en/03-cli-reference.md`, `docs/es/04-sdk-typescript.md`, `docs/en/04-typescript-sdk.md`, `docs/es/05-arquitectura-interna-y-formulas.md`, `docs/en/05-internal-architecture-and-formulas.md`, `docs/es/06-resolucion-de-errores.md`, `docs/en/06-troubleshooting.md` y `CHANGELOG.md`. **Sin cambios:** `docs/notion-map.json` (03 y 06 ya tienen `"notionSyncPending": true`; 04 y 05 no tienen entrada y nunca se crean entradas), `docs/es/09-protocolo-publico-de-memoria.md` y `docs/en/09-public-memory-protocol.md` (la conducta ante `previous` la define el protocolo v4, T7) y los capítulos 10 (el bloque de arranque cambia en T6).
+
+1. `docs/es/03-referencia-cli.md`, sección «Sesiones y contexto»: párrafo nuevo justo después del párrafo que empieza con `` `context --project-id` de un proyecto que pertenece a un grupo añade al resultado la clave `ecosystem` `` (antes de «Ejecuta `forge614-engram help`…»), separado por líneas en blanco:
+
+```markdown
+Con el esquema 11, `session-start` añade `previous` (`{ sessionId, interruptedAt, summary }`) cuando la llamada crea la sesión y el proyecto tiene una sesión anterior interrumpida; repetir el arranque con el mismo `session-id` nunca lo añade.
+```
+
+2. `docs/en/03-cli-reference.md`, sección «Sessions and context»: párrafo nuevo justo después del párrafo que empieza con `` `context --project-id` for a project that belongs to a group adds an `ecosystem` key to the result `` (antes de "Run `forge614-engram help`…"), separado por líneas en blanco:
+
+```markdown
+With schema 11, `session-start` adds `previous` (`{ sessionId, interruptedAt, summary }`) when the call creates the session and the project has an interrupted previous session; a repeated start with the same `session-id` never adds it.
+```
+
+3. `docs/es/04-sdk-typescript.md`: al final del archivo, después de una línea en blanco (queda dentro de la sección «Memoria inteligente», tras el párrafo que termina en `` Tipo nuevo exportado: `SimilarCandidate { id, title, version, score }`. ``):
+
+```markdown
+Con el esquema 11, una sesión runtime nueva marca como interrumpida, sin cerrarla, a cualquier otra sesión runtime abierta del mismo proyecto; repetir el arranque con el mismo `sessionId` no marca a nadie. Iniciar o repetir una sesión, guardar un recuerdo o una confirmación con sesión runtime, y cerrar la sesión registran actividad y limpian la marca; una sesión sin actividad por más de 6 horas cuenta como interrumpida al leerla aunque nadie la haya marcado. `store.previousInterrupted(projectId)` devuelve la sesión interrumpida más recientemente activa del proyecto (`PreviousSession { sessionId, interruptedAt, summary }`, con su último resumen si existe) o `null`. `memory_session_start` y `session-start` añaden `previous` solo cuando la llamada crea la sesión, nunca al repetir el arranque. La inferencia de sesión sin `sessionId` explícito ignora las sesiones marcadas o inactivas por más de 6 horas, en vez de la ventana de 7 días usada por debajo de este nivel; por debajo del esquema 11 nada de esto cambia. Tipo nuevo exportado: `PreviousSession`.
+```
+
+4. `docs/en/04-typescript-sdk.md`: al final del archivo, después de una línea en blanco (tras el párrafo que termina en `` New exported type: `SimilarCandidate { id, title, version, score }`. ``):
+
+```markdown
+With schema 11, a new runtime session marks every other open runtime session of the project as interrupted, without closing it; a repeated start with the same `sessionId` marks nobody. Starting or replaying a session, saving a memory or a confirmation with a runtime session, and closing the session record activity and clear the mark; a session with no activity for more than 6 hours counts as interrupted when read even if nobody marked it. `store.previousInterrupted(projectId)` returns the project's most recently active interrupted session (`PreviousSession { sessionId, interruptedAt, summary }`, with its last session summary if any) or `null`. `memory_session_start` and `session-start` add `previous` only when the call creates the session, never on a repeated start. Session inference without an explicit `sessionId` ignores sessions that are marked or idle for more than 6 hours, instead of the 7-day window used below this level; below schema 11 none of this changes. New exported type: `PreviousSession`.
+```
+
+5. `docs/es/05-arquitectura-interna-y-formulas.md`: párrafo nuevo justo después del párrafo de la búsqueda híbrida (el que termina en `a partir de 0,25 se reporta como parecido (hasta 3, consulta el capítulo 4).`) y antes de «La sincronización PostgreSQL…», separado por líneas en blanco:
+
+```markdown
+Con el esquema 11, iniciar o repetir una sesión runtime, guardar un recuerdo o una confirmación con sesión runtime (explícita o inferida, nunca manual) y cerrar la sesión cuentan como actividad y registran `session_activity.lastActivityAt`, limpiando cualquier marca de interrupción; la actividad efectiva de una sesión es `coalesce(lastActivityAt, max(session_entries.recordedAt), startedAt)`. Solo la creación de una sesión runtime marca como interrumpidas (`interruptedAt`) a las demás sesiones runtime abiertas del mismo proyecto; repetir el arranque no marca a nadie, y una sesión ya marcada conserva su `interruptedAt` original en los inicios posteriores. `previousInterrupted(projectId)` busca, entre las sesiones runtime abiertas, la más recientemente activa que esté marcada o inactiva por más de 6 horas (`INACTIVITY_HOURS`), con empate por `sessionId` ascendente; si la sesión no está marcada, reporta `interruptedAt` como su última actividad más 6 horas. La inferencia de sesión (`inferredSessions`) usa la misma ventana de 6 horas y excluye las sesiones marcadas, en vez de la ventana de 7 días usada por debajo del esquema 11.
+```
+
+6. `docs/en/05-internal-architecture-and-formulas.md`: párrafo nuevo justo después del párrafo de la búsqueda híbrida (el que termina en `a score of 0.25 or higher is reported as a look-alike (up to 3; see chapter 4).`) y antes de "PostgreSQL synchronization…", separado por líneas en blanco:
+
+```markdown
+With schema 11, starting or replaying a runtime session, saving a memory or a confirmation with a runtime session (explicit or inferred, never manual), and closing the session all count as activity and record `session_activity.lastActivityAt`, clearing any interruption mark; a session's effective activity is `coalesce(lastActivityAt, max(session_entries.recordedAt), startedAt)`. Only creating a runtime session marks every other open runtime session of the project as interrupted (`interruptedAt`); a repeated start marks nobody, and a session already marked keeps its original `interruptedAt` through later session starts. `previousInterrupted(projectId)` looks, among open runtime sessions, for the most recently active one that is marked or idle for more than 6 hours (`INACTIVITY_HOURS`), tie-broken by ascending `sessionId`; when the session is not marked, it reports `interruptedAt` as its last activity plus 6 hours. Session inference (`inferredSessions`) uses the same 6-hour window and excludes marked sessions, instead of the 7-day window used below schema 11.
+```
+
+7. `docs/es/06-resolucion-de-errores.md`, sección «Memoria inteligente»: viñeta nueva justo después de la viñeta que empieza con `` - `SUPERSEDES_NOT_FOUND`: ``:
+
+```markdown
+- `AMBIGUOUS_SESSION`: con el esquema 11 ya no lo provocan sesiones abiertas obsoletas (las marcadas como interrumpidas o inactivas por más de 6 horas se ignoran); si aun así aparece, hay dos sesiones de la misma carpeta genuinamente activas: indica `sessionId`.
+```
+
+8. `docs/en/06-troubleshooting.md`, sección «Memory intelligence»: viñeta nueva justo después de la viñeta que empieza con `` - `SUPERSEDES_NOT_FOUND`: ``:
+
+```markdown
+- `AMBIGUOUS_SESSION`: with schema 11 this no longer comes from stale open sessions (sessions marked as interrupted or idle for more than 6 hours are ignored); if it still appears, two sessions of the same folder are genuinely alive: pass `sessionId`.
+```
+
+9. `CHANGELOG.md`: línea nueva justo antes de `- La replicación de grupos (formato 4) pasa a la versión 1.8.0.`:
+
+```markdown
+- **Sesiones interrumpidas y actividad de sesión:** con el esquema 11, cada sesión runtime nueva marca como interrumpida (`session_activity.interruptedAt`) a cualquier otra sesión runtime abierta del mismo proyecto, sin cerrarla; repetir el arranque con el mismo `sessionId` no marca a nadie. Iniciar o repetir una sesión, guardar un recuerdo o una confirmación con sesión runtime, y cerrar la sesión registran `lastActivityAt` y limpian la marca. Una sesión abierta sin actividad por más de 6 horas cuenta como interrumpida al leerla. `store.previousInterrupted(projectId)` devuelve la sesión interrumpida más recientemente activa del proyecto con su último resumen si existe, o `null`; `memory_session_start` (MCP) y `session-start` (CLI) añaden `previous` solo cuando la llamada crea la sesión. La inferencia de sesión (`AMBIGUOUS_SESSION`) ignora sesiones marcadas o inactivas por más de 6 horas en vez de la ventana de 7 días usada por debajo del nivel 11. Tipo nuevo del SDK: `PreviousSession`; método nuevo: `previousInterrupted`.
+```
+
+Verificación: `git diff --check` sin salida y `git diff --stat` con exactamente esos 9 archivos (15 inserciones, 0 borrados). La documentación no cambia pruebas; el orquestador corre la suite en su copia.
+
+Commit:
+
+```bash
+git add docs/es/03-referencia-cli.md docs/en/03-cli-reference.md docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/05-arquitectura-interna-y-formulas.md docs/en/05-internal-architecture-and-formulas.md docs/es/06-resolucion-de-errores.md docs/en/06-troubleshooting.md CHANGELOG.md
+git commit -m "docs: session activity, interrupted sessions and previous-session handoff in CLI, SDK, architecture, troubleshooting and changelog"
+```
 
 ### Task 4: Reglas del tablero *(detalle tras aprobar T5; plan con solo pruebas y contratos — experimento)*
 
