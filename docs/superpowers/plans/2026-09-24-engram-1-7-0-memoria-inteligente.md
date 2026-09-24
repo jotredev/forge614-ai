@@ -23,6 +23,7 @@
 - Mensajes de error para personas en español; comentarios de código, texto del protocolo y descripciones MCP en inglés; documentación es/en con el mismo contenido.
 - Commits convencionales en inglés, **sin líneas de atribución ni menciones a ninguna IA**; sin merge, tag ni release (los autoriza el propietario tras la revisión de `forge614-ai`).
 - Sin nombres de productos externos en código, pruebas ni docs (acta 0012); el protocolo v4 no puede contener `claude|openai|anthropic` (misma regla que la prueba de v3).
+- **Documentación tarea por tarea (regla del propietario, 2026-09-24):** cada tarea actualiza en su mismo commit los capítulos es/en que describen lo que cambió, agrega su viñeta a la sección `## 1.7.0 — en desarrollo` de `CHANGELOG.md` y marca `"notionSyncPending": true` en las entradas de `docs/notion-map.json` que tocó. El orquestador verifica en cada revisión que código, pruebas y documentación digan lo mismo; T8 solo hace la pasada final de coherencia y la versión.
 
 ## Review Focus
 
@@ -534,10 +535,46 @@ git diff --check
 ```
 Expected: todo en verde; el conteo total = línea base + pruebas nuevas; `typecheck` y `git diff --check` sin salida.
 
+- [ ] **Step 8b: Documentación de esta tarea**
+
+`docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md`, después de la línea de `reinforcement-enable` (misma alineación, columna 41):
+
+```
+intelligence-enable                     habilita explícitamente la memoria inteligente (esquema 11); respalda antes de migrar
+```
+```
+intelligence-enable                     explicitly enable memory intelligence (schema 11); backs up before migrating
+```
+
+`docs/es/05-arquitectura-interna-y-formulas.md`: en el párrafo de sincronización, `(plan propio, 1.7.0)` pasa a `(plan propio, 1.8.0)`; y después del párrafo que empieza "SQLite es la fuente durable de verdad", agregar:
+
+```
+Desde el esquema 11 (memoria inteligente, 1.7.0) hay un segundo índice FTS5 por palabras completas (`unicode61`, sin distinguir acentos) junto al índice por trigramas, y tablas aparte para metadatos del recuerdo (versión corta, vigencia, reemplazo, proyectos afectados), actividad de sesión y proyecto fuente de cada grupo. Esas tablas quedan fuera de la versión del recuerdo, así que los formatos de réplica 1–3 no cambian. El nivel 11 se activa solo de forma explícita con `intelligence-enable`, con respaldo y verificación; el servidor MCP nunca migra la base.
+```
+
+`docs/en/05-internal-architecture-and-formulas.md`: `(its own plan, 1.7.0)` pasa a `(its own plan, 1.8.0)`; y después del párrafo que empieza "SQLite is the durable source of truth", agregar:
+
+```
+From schema 11 (memory intelligence, 1.7.0) a second FTS5 index over whole words (`unicode61`, accent-insensitive) sits next to the trigram index, together with side tables for memory metadata (short version, review date, replacement, affected projects), session activity and each group's source project. Those tables stay outside the memory version, so replication formats 1–3 do not change. Level 11 is enabled only explicitly with `intelligence-enable`, with a backup and verification; the MCP server never migrates the database.
+```
+
+`CHANGELOG.md`, justo debajo de `# Changelog`:
+
+```
+## 1.7.0 — en desarrollo
+
+Memoria inteligente; esta sección crece tarea por tarea.
+
+- **Esquema 11 (aditivo, con respaldo):** nivel nuevo = esquema 7 + ecosistema + inteligencia. Agrega tablas aparte (`memory_meta`, `session_activity`, `ecosystem_sources`) y un índice FTS5 por palabras sin distinguir acentos (`memories_words`); no reconstruye ninguna tabla existente. Se activa solo con `intelligence-enable`, que prueba primero que puede escribir, copia la base a `engram.db.v<versión>-pre-intelligence-<fecha>-<id>.bak` (permisos 0600; se omite si la base está vacía) y verifica recuento y suma SHA-256 de `memories` y `requests` en una sola transacción (`MIGRATION_VERIFY_FAILED` revierte todo). Una base en un nivel anterior encadena antes sus requisitos (ecosistema, sesiones, refuerzo). El servidor MCP nunca migra la base.
+- La replicación de grupos (formato 4) pasa a la versión 1.8.0.
+```
+
+`docs/notion-map.json`: agregar `"notionSyncPending": true` a las cuatro entradas de los capítulos 03 y 05 (es y en), igual que en 1.6.0.
+
 - [ ] **Step 9: Commit**
 
 ```bash
-git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/app/index.ts src/interfaces/cli
+git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/app/index.ts src/interfaces/cli docs CHANGELOG.md
 git commit -m "feat(schema): level 11 memory intelligence structure with explicit, verified enrollment"
 ```
 Verificar el mensaje: una línea, sin atribución.
@@ -575,9 +612,9 @@ Verificar el mensaje: una línea, sin atribución.
 **Objetivo:** contrato T7; SHA de v1–v3 intactos.
 **Terminado:** pruebas de topes (completo ≤ 2 500, MCP < 2 000), sin nombres prohibidos, v1–v3 byte-idénticos.
 
-### Task 8: Documentación, códigos, activación y versión *(detalle tras aprobar T7)*
+### Task 8: Coherencia final, activación en init/setup y versión *(detalle tras aprobar T7)*
 
-**Objetivo:** docs es/en (03, 05, 06, 09, 10, 11), CHANGELOG 1.7.0, `CONTRACT_CODES`, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
+**Objetivo:** pasada final de coherencia de docs es/en y CHANGELOG (cada tarea ya documentó lo suyo), `CONTRACT_CODES` completos, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
 
 ### Task 9: Revisión independiente *(prompt tras aprobar T8)*
 

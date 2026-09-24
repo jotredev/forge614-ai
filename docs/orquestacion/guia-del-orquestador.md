@@ -72,6 +72,12 @@ Bloqueos: <lista o "ninguno">
 | Antes de escribir un documento en `forge614-ai`, revisar `standard/forbidden-mentions.json`: no nombrar productos prohibidos (acta 0012) | provisional | spec de memoria inteligente: 2 menciones que habrían hecho fallar `verify` |
 | Indicar archivos y líneas exactos a tocar, para que la sesión no explore el repositorio | provisional (hipótesis a medir) | la entrada re-leída es el 99 % del costo (§5) |
 
+## 4b. Documentación
+
+| Regla | Estado | Evidencia |
+|---|---|---|
+| **Documentación tarea por tarea:** cada tarea actualiza en su mismo commit los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica |
+
 ## 5. Medición
 
 - **Fuente única: el registro de la herramienta**, nunca el reporte de la IA.
@@ -99,4 +105,5 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-24 — Regla firme del propietario: documentación tarea por tarea (§4b).
 - 2026-09-24 — Creada con 6 reglas provisionales de las primeras corridas medidas (Sentinel 0.1.1) y 2 hipótesis a medir.
