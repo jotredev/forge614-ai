@@ -605,11 +605,554 @@ git commit -m "docs: schema 11 and intelligence-enable in CLI reference, archite
 
 ---
 
-### Task 2: Filtro de secretos y metadatos del recuerdo *(detalle tras aprobar T1)*
+### Task 2: Filtro de secretos y metadatos del recuerdo
 
-**Objetivo:** rechazar secretos al guardar (`SECRET_REJECTED`, sin repetir el valor), guardar y leer `memory_meta` (versión corta ≤ 300, `reviewAfter` = +90 días para `decision`/`procedure`, "reemplazado por"), exponer `meta` y `marks` en `memory_get`/`memory_search`, y las entradas opcionales `short`, `supersedes`, `affects` en `memory_save` (MCP y SDK). Todo solo en nivel 11.
-**Archivos previstos:** `src/modules/memory/secrets.ts` (+test), `src/modules/memory/types.ts`, `src/infrastructure/sqlite/meta.ts` (+test), `src/infrastructure/sqlite/writes.ts`, `src/infrastructure/sqlite/search.ts`, `src/interfaces/mcp/{schemas,memory-tools}.ts` y pruebas.
-**Terminado:** secretos de al menos 8 patrones rechazados con prueba por patrón; texto sin secretos nunca rechazado (prueba con 20 textos reales del dominio); metadatos con pruebas de lectura/escritura; nada de esto cambia en nivel ≤ 10.
+**Experimento:** Codex · gpt-5.6-terra · **medium**, plan con código completo (comparar contra T1 Opus xhigh). Documentación en **sesión nueva** aparte (comparar contra T1 docs en la misma sesión).
+
+**Decisiones de esta tarea (escritas tras leer el código real, 2026-09-24):**
+- **D-T2-1:** el filtro de secretos aplica **en todos los niveles** de esquema (es validación de entrada, no depende del esquema; proteger la memoria vale más que conservar el comportamiento de 1.6.0 ante un secreto). Revisa título, contenido, tema y versión corta; el mensaje nombra el tipo de secreto, **nunca** el valor.
+- **D-T2-2:** `short`, `supersedes` y `affects` solo existen en nivel 11; enviarlos en un nivel menor es `INTELLIGENCE_REQUIRED` (nunca se descartan en silencio).
+- **D-T2-3:** los metadatos **no** entran al hash de la clave de petición ni a la versión del recuerdo (la réplica recalcula ese hash y valida las claves exactas). Una repetición con la misma `requestKey` devuelve lo guardado aunque cambien los metadatos.
+- **D-T2-4:** en un guardado que no crea versión (texto idéntico → confirmación), los metadatos enviados **sí** se aplican. Es la única forma de agregar la versión corta a un recuerdo existente sin cambiar su contenido (lo necesita T6).
+- **D-T2-5:** la versión corta se conserva si el contenido no cambia; si el contenido cambia y no llega una nueva, se borra (quedaría desactualizada; T6 usa entonces el inicio del contenido). `reviewAfter` = ahora + 90 días para `decision` y `procedure` en cada versión nueva; `null` para los demás tipos.
+- **D-T2-6:** `supersedes` marca "reemplazado por" en otro recuerdo **activo del mismo ámbito y dueño**; nunca lo archiva ni lo borra. Otro ámbito o inexistente → `SUPERSEDES_NOT_FOUND`; a sí mismo → `INVALID_INPUT`.
+- **D-T2-7:** `affects` se normaliza (sin espacios exteriores, sin repetidos, ordenado; 1–20 nombres de 1–64 caracteres) y se guarda; las reglas del tablero que lo exigen llegan en T4.
+- **D-T2-8:** `memory_get` y `memory_search` agregan `meta` y `marks` (`"superseded"`, `"verify"`) **solo en nivel 11**; en niveles menores la respuesta queda idéntica a 1.6.0.
+
+**Files:**
+- Create: `src/modules/memory/secrets.ts` (+ `secrets.test.ts`), `src/modules/memory/meta.ts` (+ `meta.test.ts`)
+- Modify: `src/modules/memory/types.ts` (`SaveInput`), `src/modules/memory/index.ts` (exports)
+- Create: `src/infrastructure/sqlite/meta.ts` (+ `meta.test.ts`), `src/infrastructure/sqlite/meta-save.test.ts`
+- Modify: `src/infrastructure/sqlite/writes.ts` (`saveCore`), `src/infrastructure/sqlite/search.ts` (`searchPreviews`, `getVersion`)
+- Modify: `src/modules/search/types.ts` (`PreviewResult`, `VersionRead`)
+- Modify: `src/index.ts` (tipos públicos `MemoryMeta`, `MemoryMark`)
+- Modify: `src/interfaces/mcp/schemas.ts`, `src/interfaces/mcp/memory-tools.ts`, `src/interfaces/mcp/schemas.test.ts`, `src/interfaces/mcp/memory-tools.test.ts`
+- Modify: `src/interfaces/cli/main.ts:10-11` (`CONTRACT_CODES`)
+
+**Interfaces:**
+- Consumes: `intelligenceEnabled(db)` (T1), `required` de `infrastructure/sqlite/memory.ts`, `MemoryError`.
+- Produces:
+  ```ts
+  // src/modules/memory/secrets.ts
+  export function findSecret(text: string): string | null;            // id del patrón o null
+  // src/modules/memory/meta.ts
+  export const REVIEW_AFTER_DAYS = 90; export const SHORT_MAX = 300; export const AFFECTS_MAX = 20;
+  export interface MemoryMeta { short: string | null; reviewAfter: string | null; supersededBy: string | null; affects: string[] | null }
+  export type MemoryMark = "superseded" | "verify";
+  export function reviewAfterFor(type: MemoryType, now: string): string | null;
+  export function marksFor(meta: MemoryMeta | null, now: string): MemoryMark[];
+  export function normalizeShort(value: string): string;              // INVALID_INPUT si vacío o > 300
+  export function normalizeAffects(value: readonly string[]): string[]; // INVALID_INPUT si 0, > 20 o nombre inválido
+  // SaveInput gana: short?: string; supersedes?: string; affects?: readonly string[]
+  // src/infrastructure/sqlite/meta.ts
+  export function readMeta(db: Database, memoryId: string): MemoryMeta | null;
+  export function readMetas(db: Database, ids: readonly string[]): Map<string, MemoryMeta>;
+  export function upsertMeta(db: Database, memoryId: string, patch: Partial<MemoryMeta>, now: string): void;
+  // PreviewResult y VersionRead ganan (opcionales, solo nivel 11): meta?: MemoryMeta; marks?: MemoryMark[]
+  // Códigos nuevos: SECRET_REJECTED, INTELLIGENCE_REQUIRED, SUPERSEDES_NOT_FOUND
+  ```
+
+- [ ] **Step 1: Pruebas que fallan del módulo**
+
+`src/modules/memory/secrets.test.ts` (las muestras se arman por partes para que el propio archivo de pruebas no contenga un secreto literal que un revisor de secretos marcaría):
+
+```ts
+import { expect, test } from "bun:test";
+import { findSecret } from "./secrets";
+
+const join = (...parts: string[]) => parts.join("");
+const SAMPLES: ReadonlyArray<readonly [string, string]> = [
+  ["private-key", join("-----BEGIN ", "RSA PRIVATE KEY-----\nMIIEow")],
+  ["aws-access-key-id", join("clave AK", "IAIOSFODNN7EXAMPLE en el archivo")],
+  ["github-token", join("gh", "p_", "a".repeat(36))],
+  ["slack-token", join("xo", "xb-", "1234567890-abcdefghij")],
+  ["sk-key", join("s", "k-", "b".repeat(40))],
+  ["jwt", join("ey", "JhbGciOiJIUzI1NiJ9.", "ey", "JzdWIiOiIxMjM0NTY3ODkwIn0.", "c".repeat(20))],
+  ["connection-string-with-credentials", join("postgres", "://admin:", "s3cret-value", "@db.internal:5432/app")],
+  ["password-assignment", join("pass", "word = ", "hunter2hunter2")],
+];
+
+test("every secret pattern is detected and only its id is returned", () => {
+  for (const [id, text] of SAMPLES) expect(findSecret(text)).toBe(id);
+});
+
+// Real texts from this ecosystem's memories: none of them may be rejected.
+const BENIGN = [
+  "El paso release:publish recibe GH_TOKEN desde github.token en la plantilla del reglamento 1.0.2.",
+  "Tokens totales: 8 857 497; salida 55 484; razonamiento 6 836.",
+  "Instalar con https://github.com/jotredev/forge614-sentinel/releases/download/v0.1.1/install.sh",
+  "sha256 10d036f02f767d54b0b7d710e96b21b249e034b480b0d83be124df5b2f97a4f5 del paquete del reglamento.",
+  "La réplica usa PostgreSQL; la URL se oculta en los mensajes de error.",
+  "Nunca guardar contraseñas, tokens, llaves privadas ni cadenas de conexión con credenciales.",
+  "sessionId y sessionProjectId son obligatorios juntos para shared.",
+  "project id 42007e73-ab93-4b4e-9e1a-a699e48674c1 y grupo e0b3e1c9-ffbb-4b6b-8a55-79fbf3e8f0b4.",
+  "La clave de ejemplo de AWS se describe en prosa: AKIA seguido del resto, nunca completa.",
+  "git@github.com:jotredev/forge614-ai.git es el remoto.",
+  "Correr bun test --timeout 30000 y bun run typecheck antes del commit.",
+  "El check versions compara package.json con el tag más alto v0.1.1.",
+  "Usar requestKey estable forge614-ai/plan-a2/decisiones/2026-09-24-q1-q2.",
+  "La tarea de riesgo alto usa Opus; la de riesgo bajo, Sonnet.",
+  "password y token aparecen como palabras sueltas en la documentación de seguridad.",
+  "http://localhost:3000/@scope/package es una ruta local de prueba.",
+  "ECOSYSTEM_BOARD_FULL devuelve los títulos actuales para consolidar.",
+  "El respaldo queda en engram.db.v10-pre-intelligence-20260924T180657787Z-0542aea7.bak.",
+  "Precio de Opus 5.5: entrada $4, salida $20 por millón de tokens.",
+  "La API key se configura como variable de entorno, nunca en la memoria.",
+];
+
+test("real domain texts are never rejected", () => {
+  for (const text of BENIGN) expect(findSecret(text)).toBeNull();
+});
+```
+
+`src/modules/memory/meta.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { marksFor, normalizeAffects, normalizeShort, reviewAfterFor } from "./meta";
+
+const NOW = "2026-09-24T12:00:00.000Z";
+
+test("decisions and procedures get a review date 90 days ahead; other types none", () => {
+  expect(reviewAfterFor("decision", NOW)).toBe("2026-12-23T12:00:00.000Z");
+  expect(reviewAfterFor("procedure", NOW)).toBe("2026-12-23T12:00:00.000Z");
+  for (const type of ["fact", "warning", "preference"] as const) expect(reviewAfterFor(type, NOW)).toBeNull();
+});
+
+test("marks: superseded when replaced, verify once the review date has passed", () => {
+  const base = { short: null, reviewAfter: null, supersededBy: null, affects: null };
+  expect(marksFor(null, NOW)).toEqual([]);
+  expect(marksFor(base, NOW)).toEqual([]);
+  expect(marksFor({ ...base, supersededBy: "other" }, NOW)).toEqual(["superseded"]);
+  expect(marksFor({ ...base, reviewAfter: "2026-09-24T11:59:59.000Z" }, NOW)).toEqual(["verify"]);
+  expect(marksFor({ ...base, reviewAfter: "2026-09-24T12:00:01.000Z" }, NOW)).toEqual([]);
+  expect(marksFor({ ...base, supersededBy: "x", reviewAfter: "2020-01-01T00:00:00.000Z" }, NOW)).toEqual(["superseded", "verify"]);
+});
+
+test("short is trimmed and bounded", () => {
+  expect(normalizeShort("  Resumen corto  ")).toBe("Resumen corto");
+  expect(normalizeShort("a".repeat(300))).toHaveLength(300);
+  for (const bad of ["", "   ", "a".repeat(301), "a\0b"]) expect(() => normalizeShort(bad)).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+});
+
+test("affects is trimmed, deduplicated, sorted and bounded", () => {
+  expect(normalizeAffects([" shell", "engram", "shell "])).toEqual(["engram", "shell"]);
+  for (const bad of [[], Array.from({ length: 21 }, (_, i) => `p${i}`), [""], ["x".repeat(65)], ["a\0b"]]) {
+    expect(() => normalizeAffects(bad)).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+  }
+});
+```
+
+- [ ] **Step 2: Rojo del módulo**
+
+Run: `bun test src/modules/memory/secrets.test.ts src/modules/memory/meta.test.ts`
+Expected: FAIL (módulos inexistentes).
+
+- [ ] **Step 3: Implementar el módulo**
+
+`src/modules/memory/secrets.ts`:
+
+```ts
+// Credentials that must never be stored in memory. The id names the kind of secret so the
+// caller can say what to remove; the matched value is never returned or echoed.
+const SECRET_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  ["private-key", /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/u],
+  ["aws-access-key-id", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/u],
+  ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b/u],
+  ["slack-token", /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/u],
+  ["sk-key", /\bsk-(?:[A-Za-z0-9_-]{2,20}-)?[A-Za-z0-9]{32,}\b/u],
+  ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/u],
+  ["connection-string-with-credentials", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@[^\s/]+/iu],
+  ["password-assignment", /\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["']?[^\s"']{8,}/iu],
+];
+
+/** Id of the first secret pattern found in the text, or null. */
+export function findSecret(text: string): string | null {
+  for (const [id, pattern] of SECRET_PATTERNS) if (pattern.test(text)) return id;
+  return null;
+}
+```
+
+`src/modules/memory/meta.ts`:
+
+```ts
+import { MemoryError } from "../../shared/errors";
+import type { MemoryType } from "./types";
+
+export const REVIEW_AFTER_DAYS = 90;
+export const SHORT_MAX = 300;
+export const AFFECTS_MAX = 20;
+const DAY_MS = 86_400_000;
+
+/** Metadata kept outside the memory version (schema level 11). */
+export interface MemoryMeta { short: string | null; reviewAfter: string | null; supersededBy: string | null; affects: string[] | null }
+export type MemoryMark = "superseded" | "verify";
+
+/** Decisions and procedures are re-checked after REVIEW_AFTER_DAYS; other types never expire. */
+export function reviewAfterFor(type: MemoryType, now: string): string | null {
+  if (type !== "decision" && type !== "procedure") return null;
+  return new Date(Date.parse(now) + REVIEW_AFTER_DAYS * DAY_MS).toISOString();
+}
+
+export function marksFor(meta: MemoryMeta | null, now: string): MemoryMark[] {
+  if (meta === null) return [];
+  const marks: MemoryMark[] = [];
+  if (meta.supersededBy !== null) marks.push("superseded");
+  if (meta.reviewAfter !== null && Date.parse(meta.reviewAfter) <= Date.parse(now)) marks.push("verify");
+  return marks;
+}
+
+export function normalizeShort(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > SHORT_MAX || trimmed.includes("\0")) {
+    throw new MemoryError("INVALID_INPUT", `short debe tener entre 1 y ${SHORT_MAX} caracteres, sin caracteres nulos.`);
+  }
+  return trimmed;
+}
+
+export function normalizeAffects(value: readonly string[]): string[] {
+  const names = [...new Set(value.map(name => name.trim()))].sort();
+  if (names.length === 0 || names.length > AFFECTS_MAX || names.some(name => !name || name.length > 64 || name.includes("\0"))) {
+    throw new MemoryError("INVALID_INPUT", `affects debe nombrar entre 1 y ${AFFECTS_MAX} proyectos de 1 a 64 caracteres.`);
+  }
+  return names;
+}
+```
+
+`src/modules/memory/types.ts`, en `SaveInput`, el primer objeto pasa a:
+
+```ts
+export type SaveInput = { title:string;content:string;type:MemoryType;topicKey?:string;pinned?:boolean;expectedVersion?:number;requestKey?:string;
+  short?:string;supersedes?:string;affects?:readonly string[] }
+```
+
+`src/modules/memory/index.ts`, agregar:
+
+```ts
+export { findSecret } from "./secrets";
+export { REVIEW_AFTER_DAYS, SHORT_MAX, AFFECTS_MAX, reviewAfterFor, marksFor, normalizeShort, normalizeAffects } from "./meta";
+export type { MemoryMeta, MemoryMark } from "./meta";
+```
+
+`src/index.ts`: en la línea `export type { MemoryType,… } from "./modules/memory";` agregar `MemoryMeta,MemoryMark` (solo tipos: la lista de exports de ejecución de `src/index.test.ts` no cambia).
+
+- [ ] **Step 4: Verde del módulo**
+
+Run: `bun test src/modules/memory`
+Expected: PASS.
+
+- [ ] **Step 5: Pruebas que fallan de almacenamiento**
+
+`src/infrastructure/sqlite/meta.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { createProject } from "./projects";
+import { readMeta, readMetas, upsertMeta } from "./meta";
+import { enableIntelligence } from "./schema";
+import { save } from "./writes";
+
+test("upsertMeta merges patches and readMeta/readMetas return the stored metadata", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Meta");
+  const a = save(db, { projectId: project.projectId, type: "fact", title: "A", content: "a" });
+  const b = save(db, { projectId: project.projectId, type: "fact", title: "B", content: "b" });
+  expect(readMeta(db, a.id)).toBeNull();
+  upsertMeta(db, a.id, { short: "corta" }, "2026-09-24T00:00:00.000Z");
+  upsertMeta(db, a.id, { affects: ["engram", "shell"] }, "2026-09-24T00:00:01.000Z");
+  expect(readMeta(db, a.id)).toEqual({ short: "corta", reviewAfter: null, supersededBy: null, affects: ["engram", "shell"] });
+  upsertMeta(db, a.id, { short: null }, "2026-09-24T00:00:02.000Z");
+  expect(readMeta(db, a.id)?.short).toBeNull();
+  expect([...readMetas(db, [a.id, b.id]).keys()]).toEqual([a.id]);
+}));
+```
+
+`src/infrastructure/sqlite/meta-save.test.ts`:
+
+```ts
+import { expect, setSystemTime, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { createProject } from "./projects";
+import { readMeta } from "./meta";
+import { enableIntelligence, enableSearchReinforcement } from "./schema";
+import { getVersion, searchPreviews } from "./search";
+import { save } from "./writes";
+
+const secretText = ["pass", "word = ", "hunter2hunter2"].join("");
+
+test("secrets are rejected at every schema level, naming the kind and never the value", () => {
+  for (const level of ["base", "intelligence"] as const) withDatabase(db => {
+    if (level === "intelligence") enableIntelligence(db);
+    const project = createProject(db, "Secrets");
+    let error: unknown;
+    try { save(db, { projectId: project.projectId, type: "fact", title: "Credenciales", content: secretText }); } catch (caught) { error = caught; }
+    expect(error).toMatchObject({ code: "SECRET_REJECTED" });
+    expect(String((error as Error).message)).not.toContain("hunter2");
+    expect(db.query("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 0 });
+  });
+});
+
+test("metadata fields below level 11 are rejected, never dropped", () => withDatabase(db => {
+  enableSearchReinforcement(db);
+  const project = createProject(db, "Old");
+  expect(() => save(db, { projectId: project.projectId, type: "fact", title: "T", content: "c", short: "corta" }))
+    .toThrow(expect.objectContaining({ code: "INTELLIGENCE_REQUIRED" }));
+}));
+
+test("decisions get a review date; short survives same content, is cleared on new content, and can be added by confirmation", () => withDatabase(db => {
+  enableIntelligence(db);
+  setSystemTime(new Date("2026-09-24T12:00:00.000Z"));
+  try {
+    const project = createProject(db, "Meta");
+    const v1 = save(db, { projectId: project.projectId, type: "decision", title: "D", content: "uno", topicKey: "d", short: "corta" });
+    expect(readMeta(db, v1.id)).toMatchObject({ short: "corta", reviewAfter: "2026-12-23T12:00:00.000Z" });
+    save(db, { projectId: project.projectId, type: "decision", title: "D", content: "dos", topicKey: "d", expectedVersion: 1 });
+    expect(readMeta(db, v1.id)?.short).toBeNull();
+    // Same content, same version: a confirmation, and the new short still applies (D-T2-4).
+    save(db, { projectId: project.projectId, type: "decision", title: "D", content: "dos", topicKey: "d", expectedVersion: 2, short: "nueva corta" });
+    expect(readMeta(db, v1.id)?.short).toBe("nueva corta");
+    expect(db.query("SELECT max(version) AS v FROM memory_versions WHERE memory_id=?").get(v1.id)).toEqual({ v: 2 });
+  } finally { setSystemTime(); }
+}));
+
+test("supersedes marks the replaced memory in the same scope and owner only", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Meta"), other = createProject(db, "Other");
+  const old = save(db, { projectId: project.projectId, type: "decision", title: "Vieja", content: "usar A" });
+  const foreign = save(db, { projectId: other.projectId, type: "decision", title: "Ajena", content: "usar Z" });
+  const fresh = save(db, { projectId: project.projectId, type: "decision", title: "Nueva", content: "usar B", supersedes: old.id });
+  expect(readMeta(db, old.id)?.supersededBy).toBe(fresh.id);
+  expect(() => save(db, { projectId: project.projectId, type: "fact", title: "X", content: "x", supersedes: foreign.id }))
+    .toThrow(expect.objectContaining({ code: "SUPERSEDES_NOT_FOUND" }));
+  expect(() => save(db, { projectId: project.projectId, type: "fact", title: "X", content: "x", supersedes: "missing" }))
+    .toThrow(expect.objectContaining({ code: "SUPERSEDES_NOT_FOUND" }));
+  const topic = save(db, { projectId: project.projectId, type: "fact", title: "T", content: "t", topicKey: "t" });
+  expect(() => save(db, { projectId: project.projectId, type: "fact", title: "T", content: "t2", topicKey: "t", expectedVersion: 1, supersedes: topic.id }))
+    .toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+}));
+
+test("get and search expose meta and marks at level 11 only, including verify after the review date", () => {
+  withDatabase(db => {
+    enableIntelligence(db);
+    const project = createProject(db, "Meta");
+    setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const saved = save(db, { projectId: project.projectId, type: "decision", title: "Regla del almacenamiento", content: "usar SQLite", affects: ["shell", "engram"] });
+    setSystemTime(new Date("2026-06-01T00:00:00.000Z"));
+    try {
+      expect(getVersion(db, project.projectId, saved.id)).toMatchObject({ meta: { affects: ["engram", "shell"] }, marks: ["verify"] });
+      expect(searchPreviews(db, project.projectId, "almacenamiento")[0]).toMatchObject({ marks: ["verify"] });
+    } finally { setSystemTime(); }
+  });
+  withDatabase(db => {
+    enableSearchReinforcement(db);
+    const project = createProject(db, "Old");
+    const saved = save(db, { projectId: project.projectId, type: "decision", title: "Regla vieja", content: "usar SQLite" });
+    const read = getVersion(db, project.projectId, saved.id)!;
+    expect(Object.keys(read).sort()).toEqual(["currentVersion", "memory", "state"]);
+    expect(Object.keys(searchPreviews(db, project.projectId, "vieja")[0]!).sort()).toEqual(["explanation", "memory"]);
+  });
+});
+```
+
+- [ ] **Step 6: Rojo de almacenamiento**
+
+Run: `bun test src/infrastructure/sqlite/meta.test.ts src/infrastructure/sqlite/meta-save.test.ts`
+Expected: FAIL (`./meta` inexistente y códigos nuevos sin implementar).
+
+- [ ] **Step 7: Implementar almacenamiento, guardado y lectura**
+
+`src/infrastructure/sqlite/meta.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import type { MemoryMeta } from "../../modules/memory";
+
+type MetaRow = { memory_id: string; short: string | null; review_after: string | null; superseded_by: string | null; affects: string | null };
+
+function fromRow(row: MetaRow): MemoryMeta {
+  return { short: row.short, reviewAfter: row.review_after, supersededBy: row.superseded_by, affects: row.affects === null ? null : JSON.parse(row.affects) as string[] };
+}
+
+export function readMeta(db: Database, memoryId: string): MemoryMeta | null {
+  const row = db.query("SELECT * FROM memory_meta WHERE memory_id=?").get(memoryId) as MetaRow | null;
+  return row ? fromRow(row) : null;
+}
+
+export function readMetas(db: Database, ids: readonly string[]): Map<string, MemoryMeta> {
+  const result = new Map<string, MemoryMeta>();
+  if (ids.length === 0) return result;
+  const rows = db.query(`SELECT * FROM memory_meta WHERE memory_id IN (${ids.map(() => "?").join(",")})`).all(...ids) as MetaRow[];
+  for (const row of rows) result.set(row.memory_id, fromRow(row));
+  return result;
+}
+
+/** Merge a patch into the memory's metadata row, creating it when missing. */
+export function upsertMeta(db: Database, memoryId: string, patch: Partial<MemoryMeta>, now: string): void {
+  const current = readMeta(db, memoryId) ?? { short: null, reviewAfter: null, supersededBy: null, affects: null };
+  const next = { ...current, ...patch };
+  db.query(`INSERT INTO memory_meta(memory_id,short,review_after,superseded_by,affects,updated_at) VALUES(?,?,?,?,?,?)
+    ON CONFLICT(memory_id) DO UPDATE SET short=excluded.short,review_after=excluded.review_after,
+    superseded_by=excluded.superseded_by,affects=excluded.affects,updated_at=excluded.updated_at`)
+    .run(memoryId, next.short, next.reviewAfter, next.supersededBy, next.affects === null ? null : JSON.stringify(next.affects), now);
+}
+```
+
+`src/infrastructure/sqlite/writes.ts`:
+- Imports: agregar `findSecret, normalizeAffects, normalizeShort, reviewAfterFor` a la importación de `../../modules/memory`; agregar `import { intelligenceEnabled } from "./intelligence";` y `import { readMeta, upsertMeta } from "./meta";`.
+- En `saveCore`, justo después del bloque de `expected` (la validación de `expectedVersion`), agregar:
+
+```ts
+    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : ""].join("\n"));
+    if (secret !== null) throw new MemoryError("SECRET_REJECTED", `El recuerdo parece contener un secreto (${secret}); guárdalo sin el valor.`);
+    const wantsMeta = input.short !== undefined || input.supersedes !== undefined || input.affects !== undefined;
+    if (wantsMeta && !intelligenceEnabled(db)) throw new MemoryError("INTELLIGENCE_REQUIRED", "short, supersedes y affects requieren la memoria inteligente (forge614-engram intelligence-enable).");
+    const short = input.short === undefined ? undefined : normalizeShort(input.short);
+    const affects = input.affects === undefined ? undefined : normalizeAffects(input.affects);
+    const supersedes = input.supersedes === undefined ? null : required(input.supersedes, "supersedes");
+```
+
+- Agregar, antes de `function saveCore`, este ayudante:
+
+```ts
+// Level-11 metadata for a save. The replaced memory must be active and in the same scope and owner.
+function applySaveMeta(db: Database, input: { id: string; type: SaveInput["type"]; now: string; newVersion: boolean; contentChanged: boolean;
+    short: string | undefined; affects: string[] | undefined; supersedes: string | null; scope: Memory["scope"]; ownerColumn: string; ownerId: string | null }): void {
+  if (input.supersedes !== null) {
+    if (input.supersedes === input.id) throw new MemoryError("INVALID_INPUT", "Un recuerdo no puede reemplazarse a sí mismo.");
+    const target = db.query(`SELECT id FROM memories WHERE scope=? AND ${input.ownerColumn} IS ? AND id=? AND state='active'`)
+      .get(input.scope, input.ownerId, input.supersedes) as { id: string } | null;
+    if (!target) throw new MemoryError("SUPERSEDES_NOT_FOUND", "El recuerdo a reemplazar no existe o no es del mismo alcance.");
+  }
+  const previous = readMeta(db, input.id);
+  const patch: Partial<MemoryMeta> = {};
+  if (input.newVersion) {
+    const reviewAfter = reviewAfterFor(input.type, input.now);
+    // Only touch review_after when there is something to store or to clear: plain facts get no metadata row.
+    if (reviewAfter !== null || previous?.reviewAfter) patch.reviewAfter = reviewAfter;
+    if (input.short === undefined && input.contentChanged && previous?.short) patch.short = null;
+  }
+  if (input.short !== undefined) patch.short = input.short;
+  if (input.affects !== undefined) patch.affects = input.affects;
+  if (Object.keys(patch).length > 0) upsertMeta(db, input.id, patch, input.now);
+  if (input.supersedes !== null) upsertMeta(db, input.supersedes, { supersededBy: input.id }, input.now);
+}
+```
+(agregar `type MemoryMeta` a la importación de tipos de `../../modules/memory`).
+
+- En la rama de confirmación (texto idéntico), justo antes de `return response;`:
+
+```ts
+          if (intelligenceEnabled(db) && wantsMeta) applySaveMeta(db, { id: confirmed.id, type: input.type, now, newVersion: false, contentChanged: false,
+            short, affects, supersedes, scope, ownerColumn, ownerId });
+```
+
+- En la rama de versión nueva, justo antes de `return {memory:snapshot,sessionId:selected,sessionSource:source};`:
+
+```ts
+      if (intelligenceEnabled(db)) applySaveMeta(db, { id, type: input.type, now, newVersion: true, contentChanged: existing?.content !== content,
+        short, affects, supersedes, scope, ownerColumn, ownerId });
+```
+
+`src/modules/search/types.ts`:
+
+```ts
+import type { Memory,MemoryMark,MemoryMeta,MemoryVersion,SearchResult } from "../memory";
+export interface PreviewResult{memory:MemoryPreview;explanation:SearchResult["explanation"];meta?:MemoryMeta;marks?:MemoryMark[]}
+export interface VersionRead{memory:MemoryVersion;currentVersion:number;state:Memory["state"];meta?:MemoryMeta;marks?:MemoryMark[]}
+```
+(las demás líneas del archivo no cambian).
+
+`src/infrastructure/sqlite/search.ts`: importar `marksFor` de `../../modules/memory`, `intelligenceEnabled` de `./intelligence` y `readMeta, readMetas` de `./meta`, y reemplazar las dos funciones exportadas:
+
+```ts
+export function searchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): PreviewResult[] {
+    const results = readSearchPreviews(db, projectId === null ? null : projectIdentity(projectId), query, limit, scope, groupId);
+    if (!intelligenceEnabled(db)) return results;
+    const metas = readMetas(db, results.map(result => result.memory.id)), now = new Date().toISOString();
+    return results.map(result => {
+      const meta = metas.get(result.memory.id) ?? null;
+      return meta === null ? result : { ...result, meta, marks: marksFor(meta, now) };
+    });
+  }
+
+export function getVersion(db: Database, owner: MemoryOwner, id: string, version?: number): VersionRead | null {
+    const read = readGetVersion(db, owner, id, version);
+    if (read === null || !intelligenceEnabled(db)) return read;
+    const meta = readMeta(db, read.memory.id);
+    return meta === null ? read : { ...read, meta, marks: marksFor(meta, new Date().toISOString()) };
+  }
+```
+
+`src/interfaces/cli/main.ts:10-11`: agregar `"SECRET_REJECTED","INTELLIGENCE_REQUIRED","SUPERSEDES_NOT_FOUND"` al conjunto `CONTRACT_CODES`.
+
+- [ ] **Step 8: Verde de almacenamiento**
+
+Run: `bun test src/infrastructure/sqlite src/modules`
+Expected: PASS. Si algo falla con el código literal del plan, detente y repórtalo.
+
+- [ ] **Step 9: MCP**
+
+`src/interfaces/mcp/schemas.ts`, en `memory_save`, agregar después de `requestKey:text(300).optional(),`:
+
+```ts
+      short:text(300).optional(),supersedes:id.optional(),affects:z.array(text(64)).min(1).max(20).optional(),
+```
+
+`src/interfaces/mcp/memory-tools.ts`, en el manejador de `memory_save`: el tipo de `saveInput` gana `short?:string; supersedes?:string; affects?:string[]` y, después de la línea de `requestKey`, agregar:
+
+```ts
+    if (input.short !== undefined) saveInput.short = input.short;
+    if (input.supersedes !== undefined) saveInput.supersedes = input.supersedes;
+    if (input.affects !== undefined) saveInput.affects = input.affects;
+```
+
+`src/interfaces/mcp/schemas.test.ts`, agregar:
+
+```ts
+test("memory_save accepts bounded metadata fields", () => {
+  const save = { title: "T", content: "c", type: "decision" as const };
+  expect(toolSchemas.memory_save.parse({ ...save, short: "  corta  ", supersedes: "id-1", affects: ["engram", "shell"] }))
+    .toMatchObject({ short: "corta", supersedes: "id-1", affects: ["engram", "shell"] });
+  expect(toolSchemas.memory_save.safeParse({ ...save, short: "x".repeat(301) }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, affects: [] }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, affects: Array.from({ length: 21 }, (_, i) => `p${i}`) }).success).toBe(false);
+});
+```
+
+`src/interfaces/mcp/memory-tools.test.ts`, agregar:
+
+```ts
+test("memory_save passes metadata through and memory_get returns it with marks at level 11", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const old=(await h.call("memory_save",{title:"Vieja",content:"usar A",type:"decision"})).data;
+    const fresh=(await h.call("memory_save",{title:"Nueva",content:"usar B",type:"decision",short:"B en vez de A",supersedes:old.id,affects:["shell","engram"]})).data;
+    expect((await h.call("memory_get",{id:fresh.id})).data).toMatchObject({meta:{short:"B en vez de A",affects:["engram","shell"]},marks:[]});
+    expect((await h.call("memory_get",{id:old.id})).data).toMatchObject({meta:{supersededBy:fresh.id},marks:["superseded"]});
+    expect((await h.call("memory_save",{title:"Clave",content:["pass","word = ","hunter2hunter2"].join(""),type:"fact"})).data.code).toBe("SECRET_REJECTED");
+  } finally {await h.close();}
+});
+```
+
+- [ ] **Step 10: Suite completa**
+
+```bash
+bun test 2>&1 | tail -3
+bun run typecheck; echo "typecheck exit: $?"
+git diff --check
+```
+Expected: todo en verde; conteo = 619 + pruebas nuevas; typecheck con código 0.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add src/modules/memory src/modules/search/types.ts src/index.ts src/infrastructure/sqlite/meta.ts src/infrastructure/sqlite/meta.test.ts src/infrastructure/sqlite/meta-save.test.ts src/infrastructure/sqlite/writes.ts src/infrastructure/sqlite/search.ts src/interfaces/mcp/schemas.ts src/interfaces/mcp/schemas.test.ts src/interfaces/mcp/memory-tools.ts src/interfaces/mcp/memory-tools.test.ts src/interfaces/cli/main.ts
+git commit -m "feat(memory): reject secrets on save and keep level-11 metadata (short, review date, supersedes, affects)"
+```
+
+- [ ] **Step 12: Documentación (prompt aparte, sesión nueva, commit propio)** — el orquestador escribe su texto exacto después de aprobar el código, leyendo los capítulos reales (04 SDK, 06 errores y el capítulo que describe `memory_save`).
 
 ### Task 3: Buscador nuevo y candidatos parecidos *(detalle tras aprobar T2)*
 
