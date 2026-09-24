@@ -3,7 +3,7 @@
 **Fecha:** 2026-09-24 · **Estado:** aprobada por el propietario el 2026-09-24 · **Sesión:** forge614-ai-2026-09-24-plan-a2-brainstorm-2
 **Nodos afectados:** `forge614-engram` (cerebro), `forge614-engines` (instalador y gancho), `forge614-shell` (chat), `forge614-ai` (reglas y verificación).
 **Actas que rigen:** 0013, 0017, 0020, 0021, 0022, 0023, 0024, 0026. **Acta nueva:** 0027 (este diseño).
-**Referencias investigadas (2026-09-24, solo lectura):** Engram de Gentleman Programming v2.1.0 y gentle-ai v3.7.0; hermes-agent (Nous Research, v2026.9.24); Mem0, Letta/MemGPT, Zep/Graphiti, memoria de Claude y Claude Code, memoria de ChatGPT y Codex, LangMem, SQLite FTS5. Resumen en Engram: `forge614-ai/engram/memoria-inteligente-investigacion`.
+**Referencias investigadas (2026-09-24, solo lectura):** dos sistemas abiertos de memoria para agentes (referencia A: servidor de memoria con SQLite y FTS5 y su instalador multiagente; referencia B: agente con memoria en archivos y búsqueda de sesiones), Mem0, Letta/MemGPT, Zep/Graphiti, memoria de Claude y Claude Code, memoria de ChatGPT y Codex, LangMem, SQLite FTS5. Nombres, versiones y enlaces en Engram: `forge614-ai/engram/memoria-inteligente-investigacion` (el acta 0012 prohíbe nombrarlas en el repositorio).
 
 > Como una biblioteca bien llevada: el sistema garantiza el orden de los estantes, el catálogo y que nadie se lleve libros de otra sala; el bibliotecario decide qué vale la pena archivar y lo escribe con letra clara.
 
@@ -21,7 +21,7 @@ Que cualquier IA, en cualquier proyecto y con cualquier modelo, **guarde cada re
 | P4 | Dos caminos de arranque con reglas distintas | Engines (`run-memory-hook.ts`: precedencia por caracteres, ignora resúmenes) vs Shell (`forge614-engram.ts:260-267`: 20 ítems en cuotas iguales) |
 | P5 | El buscador exige todas las palabras | `searchTerms` + FTS5 trigram con AND implícito; una palabra de menos de 3 letras pasa a modo literal sin ranking; la búsqueda en lenguaje natural de una sesión de Shell devolvió 0 resultados |
 | P6 | El tablero del ecosistema está casi vacío | Solo el puntero `forge614/ecosystem/source-of-truth-pointer`; lo decidido para todos vive en el cajón de `forge614-ai` (pendiente D9 del acta 0022) |
-| P7 | Todo depende de cerrar bien la sesión | El resumen se escribe al final; `/clear`, compactación, apagones y ventanas cerradas no lo disparan (gentle-ai #1118: 72 de 294 sesiones quedaron abiertas) |
+| P7 | Todo depende de cerrar bien la sesión | El resumen se escribe al final; `/clear`, compactación, apagones y ventanas cerradas no lo disparan (referencia A, reporte público: 72 de 294 sesiones quedaron abiertas) |
 
 ## 3. Decisiones tomadas con el propietario
 
