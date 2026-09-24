@@ -647,3 +647,13 @@ Revisión de solo lectura de toda la rama contra la spec y este plan, por otro p
 ### Task 10: Publicación *(prompt tras aprobar T9)*
 
 PR, CI verde, fusión con rebase, tag, release; en la Mac del propietario: instalar, `forge614-engram intelligence-enable` (con respaldo) y verificar la base real (107 recuerdos intactos).
+
+---
+
+## Impacto en el procedimiento de agentes (acta 0017), tarea por tarea
+
+Revisión de `standard/procedures/new-agent-checklist.md` al cerrar cada tarea. Los cambios al checklist se acumulan y se publican juntos en el reglamento 1.1.0.
+
+| Tarea | Impacto | Motivo / punto nuevo |
+|---|---|---|
+| T1 | **No** | El nivel 11 es estructura interna con activación explícita (`intelligence-enable`); el servidor MCP no migra la base y ningún asistente llama ese comando ni cambia su integración. Todo lo nuevo queda apagado hasta que el nivel 11 existe. **Hallazgo previo, pendiente para T7:** la sección `forge614-engram` del checklist sigue describiendo solo el protocolo v1 y los ámbitos `shared`/`project`; no menciona el ámbito `ecosystem` (1.6.0, protocolo v3). Se corrige junto con el protocolo v4. |
