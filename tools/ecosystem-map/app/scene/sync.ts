@@ -49,6 +49,7 @@ const coreMaterial = (color: string): THREE.MeshBasicMaterial => {
 };
 
 const FLASH = 0.6; // seconds the arrival flash lasts
+const GLOW_OPACITY = 0.3; // how strongly the whole cable lights while a message is in it
 const TRAIL = 4; // glowing dots trailing the flash
 
 export function createSync(options: SyncOptions): Sync {
@@ -85,6 +86,16 @@ export function createSync(options: SyncOptions): Sync {
   });
   const staticParts = [cable, core, ...plugs, ...clips];
 
+  // The whole cable glows while a message is in it, and fades a moment after
+  // it arrives. It is a separate object, shown only then, so the cables stay
+  // joined into a few meshes the rest of the time.
+  const glow = new THREE.Mesh(
+    new THREE.TubeGeometry(path, 80, 0.2, 6),
+    new THREE.MeshBasicMaterial({ color: options.color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  glow.visible = false;
+  group.add(glow);
+
   // Each trip: a bright flash with a short fading trail, and a glow on the
   // plug it reaches.
   const trips = options.trips.map((trip) => {
@@ -103,6 +114,7 @@ export function createSync(options: SyncOptions): Sync {
     group,
     staticParts,
     update: (seconds) => {
+      let lit = 0;
       for (const { trip, flashes, arrival } of trips) {
         const since = (((seconds - trip.leaves) % CYCLE) + CYCLE) % CYCLE;
         const t = since / TRAVEL;
@@ -118,7 +130,10 @@ export function createSync(options: SyncOptions): Sync {
         const amount = after >= 0 && after < FLASH ? 1 - after / FLASH : 0;
         arrival.material.opacity = amount * 0.8;
         trip.onArrive?.(amount);
+        lit = Math.max(lit, since <= TRAVEL ? 1 : amount);
       }
+      glow.visible = lit > 0.01;
+      (glow.material as THREE.MeshBasicMaterial).opacity = lit * GLOW_OPACITY;
     },
   };
 }

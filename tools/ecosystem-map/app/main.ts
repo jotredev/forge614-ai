@@ -1,5 +1,6 @@
 import "@fontsource-variable/manrope";
 import * as THREE from "three";
+import type { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { fatalMessage } from "./fatal";
 import { createCard } from "./scene/card";
 import { createFloor } from "./scene/floor";
@@ -11,8 +12,12 @@ import { ENGINES, createEngines } from "./scene/nodes/engines";
 import { type Led, createLed } from "./scene/led";
 import { NODE_INFO } from "./scene/nodes/info";
 import { batchStatic, mergeByMaterial } from "./scene/batch";
+import { createEmphasis } from "./scene/emphasis";
 import { fitView } from "./scene/framing";
 import { createHud } from "./scene/hud";
+
+import type { Palette } from "./scene/story";
+import { createTracker } from "./scene/tracker";
 import { type Selectable, createInteraction } from "./scene/interaction";
 import { SENTINEL, createSentinel } from "./scene/nodes/sentinel";
 import { WORKERS, createWorker } from "./scene/nodes/worker";
@@ -435,6 +440,27 @@ try {
   // The cables' fixed parts (tubes, plugs, sockets, clips) never move, so they
   // are joined: a few meshes for all the cables instead of ten for each.
   stage.scene.add(...mergeByMaterial(cables.flatMap((c) => c.staticParts)));
+  // The nodes in the current process keep their plate softly lit and the titles
+  // of the rest fade. It runs before the LEDs update below, so a jump in time
+  // shows in the same frame.
+  const titlesOf = (match: (id: string) => boolean): CSS2DObject[] => selectables.filter((item) => match(item.id)).map((item) => item.card);
+  createEmphasis(
+    stage,
+    {
+      shell: titlesOf((id) => id === "shell"),
+      engram: titlesOf((id) => id === "engram"),
+      engines: titlesOf((id) => id === "engines"),
+      atlas: titlesOf((id) => id === "atlas"),
+      sentinel: titlesOf((id) => id === "sentinel"),
+      workers: titlesOf((id) => id.startsWith("worker-")),
+      cloud: [cloudCard],
+    },
+    (party, amount) => {
+      if (party === "workers") for (let i = 0; i < WORKER_COUNT; i++) leds.get(`worker-${i}`)?.hit(amount);
+      else leds.get(party)?.hit(amount);
+    },
+  );
+
   // After every cable has reported its arrivals this tick.
   stage.onTick((seconds) => {
     for (const led of leds.values()) led.update(seconds);
@@ -445,6 +471,20 @@ try {
   // meshes. It must run before anything invisible is added to the scene (the
   // click boxes), and before the first frame.
   batchStatic(stage.scene, { step: (seconds) => stage.simulate(seconds), to: CYCLE, every: 0.2 });
+
+  // The time panel, in the map's own colors, with the counters inside it.
+  const accentOf = (id: NodeId): string => NODES.find((node) => node.id === id)!.accent;
+  const palette: Palette = {
+    shell: { name: "Shell", color: accentOf("shell") },
+    engram: { name: "Engram", color: accentOf("engram") },
+    engines: { name: "Engines", color: accentOf("engines") },
+    atlas: { name: "Atlas", color: accentOf("atlas") },
+    sentinel: { name: "Sentinel", color: accentOf("sentinel") },
+    workers: { name: "Workers", color: WORKERS },
+    cloud: { name: "PostgreSQL", color: CLOUD },
+  };
+  const tracker = createTracker(stage, palette);
+  createHud(stage, tracker.metrics);
 
   // Frame the whole map: fitted to the content and centered in the free area
   // (below the top bar), now and whenever the window changes size, as long as
@@ -461,7 +501,7 @@ try {
         width: container.clientWidth,
         height: container.clientHeight,
         viewSize: VIEW_SIZE,
-        // 32px of air above and below; the top also counts half a title's height.
+        // 32px of air above (and half a title's height more) and below.
         pad: { left: side, right: side, top: (topbar?.getBoundingClientRect().height ?? 44) + 57, bottom: 32 },
         maxZoom: 1.6,
         minZoom: 0.85,
@@ -473,7 +513,6 @@ try {
   };
   frame();
   const interaction = createInteraction(stage, VIEW_SIZE, selectables);
-  createHud(stage);
   let moved = false;
   stage.input.addEventListener("wheel", () => (moved = true), { passive: true });
   stage.input.addEventListener("pointermove", (event) => {
@@ -482,6 +521,7 @@ try {
   window.addEventListener("resize", () => {
     if (!moved && !interaction.isOpen()) interaction.setHome(frame());
   });
+
 
   stage.start();
   // Labels measure their text, so draw again once the typeface has loaded.

@@ -32,6 +32,18 @@ export type Stage = {
   // Advance everything that animates to `seconds` on the map's clock, without
   // drawing anything.
   simulate(seconds: number): void;
+  // The map's own clock: it starts at the beginning of the story, and can be
+  // paused, moved to any second and resumed.
+  clock: {
+    time(): number;
+    isPlaying(): boolean;
+    play(): void;
+    pause(): void;
+    // Go to `seconds` and draw that moment now, whether or not it is playing.
+    seek(seconds: number): void;
+    // Called after it is played, paused or moved.
+    onChange(listener: () => void): void;
+  };
   // Run something right after every frame is drawn, e.g. to keep an overlay
   // pinned to the scene while the camera moves.
   onRender(listener: () => void): void;
@@ -146,16 +158,35 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   const tickListeners: Array<(seconds: number) => void> = [];
   let ambient = 0;
   let lastTick = 0;
-  // `?freeze=12.5` stops the map's clock at that second, so the same moment
-  // can be drawn again and again (to compare two versions image by image).
+  // The map's clock. `?freeze=12.5` starts it paused at that second, so the
+  // same moment can be drawn again and again (to compare two versions image by
+  // image). It never jumps ahead by more than a moment, so coming back to a
+  // hidden tab does not skip the story.
   const freezeParam = new URLSearchParams(window.location.search).get("freeze");
   const frozenAt = freezeParam !== null && Number.isFinite(Number(freezeParam)) ? Number(freezeParam) : null;
+  let mapTime = frozenAt ?? 0;
+  // People who ask the system for less motion get the story paused; they can
+  // still step through it.
+  let playing = frozenAt === null && !reducedMotion;
+  const changeListeners: Array<() => void> = [];
+  const changed = (): void => {
+    for (const listener of changeListeners) listener();
+  };
+  let moved = true; // something changed the time: draw once even if paused
+  const MAX_STEP = 0.25;
+  const runListeners = (): void => {
+    for (const listener of tickListeners) listener(mapTime);
+    invalidate();
+  };
   const tick = (now: number): void => {
     ambient = requestAnimationFrame(tick);
     if (now - lastTick < FRAME_MS) return;
+    const seconds = lastTick === 0 ? 0 : Math.min((now - lastTick) / 1000, MAX_STEP);
     lastTick = now;
-    for (const listener of tickListeners) listener(frozenAt ?? now / 1000);
-    invalidate();
+    if (playing) mapTime += seconds;
+    else if (!moved) return; // paused and nothing changed: nothing to draw
+    moved = false;
+    runListeners();
   };
   const setAmbient = (on: boolean): void => {
     if (on && !reducedMotion && ambient === 0) ambient = requestAnimationFrame(tick);
@@ -226,6 +257,29 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
     setView,
     simulate: (seconds) => {
       for (const listener of tickListeners) listener(seconds);
+    },
+    clock: {
+      time: () => mapTime,
+      isPlaying: () => playing,
+      play: () => {
+        if (playing) return;
+        playing = true;
+        changed();
+      },
+      pause: () => {
+        if (!playing) return;
+        playing = false;
+        changed();
+      },
+      seek: (seconds) => {
+        mapTime = Math.max(0, seconds);
+        moved = false;
+        runListeners();
+        changed();
+      },
+      onChange: (listener) => {
+        changeListeners.push(listener);
+      },
     },
     stats: () => ({ frames: framesDrawn, renderMs, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
     flyTo,

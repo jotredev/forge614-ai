@@ -2,12 +2,12 @@ import { termFor } from "./glossary";
 import type { Stage } from "./stage";
 import { createTip } from "./tip";
 
-// A small panel in the bottom-left corner, like the counters of a video game,
-// with what the map really costs to run: how often it draws, how long each
-// image takes to prepare, how much memory it holds and how much it asks of the
-// graphics card. Every number is measured, none is made up: where the browser
-// does not give one (memory, outside Chrome and Edge) it says so. The `H` key
-// hides and shows it, and the choice is remembered.
+// What the map really costs to run, as a strip inside the time panel: how
+// often it draws, how long each image takes to prepare, how much memory it
+// holds and how much it asks of the graphics card. Every number is measured,
+// none is made up: where the browser does not give one (memory, outside
+// Chrome and Edge) it says so. The `H` key hides and shows it, and the choice
+// is remembered.
 
 const TARGET_FPS = 30; // the stage draws at most this often on purpose
 const INTERVAL_MS = 500;
@@ -56,37 +56,35 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
 
 export type Hud = { dispose(): void };
 
-export function createHud(stage: Stage): Hud {
-  const root = el("aside", "hud");
+export function createHud(stage: Stage, mount: HTMLElement): Hud {
+  const root = el("div", "hud");
   root.setAttribute("aria-label", "Rendimiento del mapa");
-  const shape = el("div", "hud__shape");
-  const list = el("dl", "hud__list");
-  shape.append(list, el("p", "hud__hint", "H oculta este panel"));
-  root.append(shape);
-  document.body.append(root);
+  mount.append(root);
 
-  // Its own bubble, so the corner and the node panel never share one.
+  // Its own bubble, so the strip and the node panel never share one.
   const tip = createTip("hud-tip");
   tip.setAccent("#7fb2d9");
 
-  // One row: the name (a word with an explanation) and its measured value.
-  const row = (name: string): HTMLElement => {
-    const label = el("dt", "hud__label");
+  // One item: the name (a word with an explanation) and its measured value.
+  const item = (name: string): HTMLElement => {
+    const box = el("div", "hud__item");
+    const label = el("span", "hud__label");
     // The word is looked up as written; it is shown with a capital letter.
     const button = el("button", "info__term", name.charAt(0).toUpperCase() + name.slice(1));
     button.type = "button";
     const term = termFor(name);
     if (term) tip.attach(button, term);
     label.append(button);
-    const value = el("dd", "hud__value", "…");
-    list.append(label, value);
+    const value = el("span", "hud__value", "…");
+    box.append(label, value);
+    root.append(box);
     return value;
   };
-  const fpsValue = row("FPS");
-  const costValue = row("tiempo por cuadro");
-  const memoryValue = row("RAM");
-  const callsValue = row("llamadas de dibujo");
-  const trianglesValue = row("triángulos");
+  const fpsValue = item("FPS");
+  const costValue = item("tiempo por cuadro");
+  const memoryValue = item("RAM");
+  const callsValue = item("llamadas de dibujo");
+  const trianglesValue = item("triángulos");
 
   let last = stage.stats();
   let lastAt = performance.now();
@@ -100,13 +98,18 @@ export function createHud(stage: Stage): Hud {
     const seconds = (now - lastAt) / 1000;
     const frames = stats.frames - last.frames;
     const fps = seconds > 0 ? frames / seconds : 0;
-    fpsValue.textContent = fps.toFixed(0);
-    fpsValue.dataset.level = levelOf(fps);
-    const goal = el("span", "hud__goal", ` de ${TARGET_FPS}`);
-    fpsValue.append(goal);
+    if (stage.clock.isPlaying()) {
+      fpsValue.textContent = fps.toFixed(0);
+      fpsValue.dataset.level = levelOf(fps);
+      fpsValue.append(el("span", "hud__goal", ` / ${TARGET_FPS}`));
+    } else {
+      // Paused: nothing is redrawn, so there is no rate to report.
+      fpsValue.textContent = "en pausa";
+      delete fpsValue.dataset.level;
+    }
     costValue.textContent = frames > 0 ? `${((stats.renderMs - last.renderMs) / frames).toFixed(1)} ms` : "—";
     const heap = heapBytes();
-    memoryValue.textContent = heap === null ? "no disponible aquí" : `${(heap / MB).toFixed(0)} MB`;
+    memoryValue.textContent = heap === null ? "no disponible" : `${(heap / MB).toFixed(0)} MB`;
     callsValue.textContent = String(stats.calls);
     trianglesValue.textContent = thousands(stats.triangles);
     last = stats;
