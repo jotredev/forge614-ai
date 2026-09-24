@@ -74,6 +74,560 @@ html, body {
   font-size: 26px;
   font-weight: 600;
   color: var(--text);
+  transition: color 0.15s;
+}
+
+/* Hovering or selecting a node lights its name in the node's color. */
+.node-card.is-hover .node-card__name,
+.node-card.is-selected .node-card__name {
+  color: var(--accent);
+}
+
+/* Node panel: a pane of tinted glass in the node's color, with two corners
+   cut on the map's own diagonal, joined to its node by a line (.leader).
+   One scroll holds everything; a rail of dots on the left follows the
+   reading. On narrow screens it is a sheet at the bottom. */
+.info {
+  --accent: #9aa0b0;
+  --cut: 22px;
+  position: fixed;
+  z-index: 3;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 424px; /* plus the 16px margin: PANEL_WIDTH in interaction.ts */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--accent) 22%, transparent));
+}
+
+.info.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The shape is the edge (a 1px band of the accent); ::before is the glass
+   inside it, cut on the same diagonals, so the edge glows all around. */
+.info__shape {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.info__shape::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  --inner: calc(var(--cut) - 1px);
+  clip-path: polygon(0 0, calc(100% - var(--inner)) 0, 100% var(--inner), 100% 100%, var(--inner) 100%, 0 calc(100% - var(--inner)));
+  background: color-mix(in srgb, var(--accent) 9%, rgba(8, 12, 17, 0.93));
+}
+
+.info__head {
+  position: relative;
+  padding: 22px 64px 14px 46px;
+}
+
+.info__name {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.info__role {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.info__close {
+  position: absolute;
+  top: 14px;
+  right: 30px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.info__close:hover,
+.info__close:focus-visible {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.info__main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* The rail: a ruler of short marks, one per part. The one being read is
+   longer and lit. Marks, not dots, so it never looks like the steps' trace. */
+.info__rail {
+  position: relative;
+  flex: none;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.info__dot {
+  position: relative;
+  width: 40px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.info__dot::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: width 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.info__dot:hover::before {
+  background: var(--accent);
+}
+
+.info__dot.is-active::before {
+  width: 22px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.info__dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -6px;
+  border-radius: 6px;
+}
+
+.info__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px 24px 28px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 40%, transparent) transparent;
+}
+
+.info__scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.info__section {
+  padding-bottom: 26px;
+}
+
+.info__lead {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.info__title {
+  margin: 22px 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.info__title::after {
+  content: "";
+  display: block;
+  width: 22px;
+  height: 2px;
+  margin-top: 6px;
+  background: var(--accent);
+}
+
+.info__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text) 92%, transparent);
+}
+
+.info__code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* What the node never does: a dashed edge, like a line it does not cross. */
+.info__never {
+  margin-top: 18px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.info__never-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* How it works: a trace in the node's color with a stop for each step. */
+.info__trace {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.info__stop {
+  position: relative;
+  padding: 0 0 20px 26px;
+}
+
+.info__stop::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.info__stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 22px;
+  bottom: 3px;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.info__stop-title {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+/* Connections: one port per neighbor, what comes in and what goes out. */
+.info__port {
+  padding: 12px 0 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.info__port-name {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.info__flow {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 10px;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.info__flow-label {
+  font-size: 12px;
+  font-weight: 600;
+  padding-top: 1px;
+  color: var(--muted);
+}
+
+.info__flow--out .info__flow-label {
+  color: var(--accent);
+}
+
+/* Details: a spec sheet, label and value on each row. */
+.info__facts {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  column-gap: 14px;
+  margin: 0;
+}
+
+.info__fact-label,
+.info__fact-value {
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.info__fact-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.info__fact-value {
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.info__fact-line {
+  margin: 0 0 6px;
+}
+
+.info__fact-line:last-child {
+  margin-bottom: 0;
+}
+
+/* A technical word with an explanation: dotted underline in the node's
+   color, and a help cursor. */
+.info__term {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+
+.info__term:hover {
+  text-decoration-style: solid;
+}
+
+.info__term:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The bubble that explains it: the same glass and cut corners as the panel,
+   smaller. Above the panel (z-index 3). */
+.tip {
+  --accent: #9aa0b0;
+  --cut: 12px;
+  position: fixed;
+  z-index: 4;
+  top: 0;
+  left: 0;
+  width: 330px;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 25%, transparent));
+}
+
+.tip.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Laid out but not seen, to measure it before placing it. */
+.tip.is-measuring {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.tip__shape {
+  position: relative;
+  isolation: isolate;
+  padding: 14px 16px 15px;
+  font-family: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.tip__shape::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  --inner: calc(var(--cut) - 1px);
+  clip-path: polygon(0 0, calc(100% - var(--inner)) 0, 100% var(--inner), 100% 100%, var(--inner) 100%, 0 calc(100% - var(--inner)));
+  background: color-mix(in srgb, var(--accent) 10%, rgba(8, 12, 17, 0.97));
+}
+
+.tip__term {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.tip__label {
+  margin: 10px 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tip__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.tip__look {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The line from the node to its panel. Opening it draws it once. */
+.leader {
+  --accent: #9aa0b0;
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.leader.is-open {
+  opacity: 1;
+}
+
+.leader__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.leader.is-open .leader__line {
+  animation: leader-draw 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s forwards;
+}
+
+.leader__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.4;
+}
+
+.leader__dot,
+.leader__cap {
+  fill: var(--accent);
+}
+
+.leader__cap {
+  opacity: 0;
+}
+
+.leader.is-open .leader__cap {
+  animation: leader-cap 0.2s linear 0.6s forwards;
+}
+
+@keyframes leader-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes leader-cap {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .info {
+    --cut: 16px;
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    height: 56vh;
+  }
+
+  .info__head {
+    padding: 16px 52px 10px 38px;
+  }
+
+  .info__name {
+    font-size: 26px;
+  }
+
+  .info__close {
+    right: 22px;
+  }
+
+  .info__rail {
+    width: 32px;
+  }
+
+  .info__scroll {
+    padding-right: 18px;
+  }
+
+  .info__facts {
+    grid-template-columns: 96px 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info,
+  .tip,
+  .node-card__name,
+  .info__dot::before {
+    transition: none;
+  }
+
+  .leader.is-open .leader__line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .leader.is-open .leader__cap {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .fatal {

@@ -22,7 +22,7 @@ const CAUTION = "#e0b458";
 const FACE_CAMERA = Math.PI / 4;
 
 // The checks of the rulebook (Sentinel 0.1), by their real names.
-const CHECK_NAMES = [
+export const CHECK_NAMES = [
   "layout",
   "node-pointer",
   "node-contract",

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { ZOOM_LIMITS, clampPixelRatio, frustumFor, isoOffset } from "./iso-camera";
+import { easeInOut } from "./pointer";
 import { theme } from "./theme";
 
 const DEFAULT_VIEW_SIZE = 24;
@@ -9,11 +10,22 @@ const CAMERA_DISTANCE = 60;
 
 export type Stage = {
   scene: THREE.Scene;
+  camera: THREE.OrthographicCamera;
+  // The element that receives pointer input (the label layer, on top).
+  input: HTMLElement;
+  // Where the camera looks and how far it is zoomed in.
+  view(): { target: THREE.Vector3; zoom: number };
+  // Glide the camera to look at `target` at `zoom`. Any pan or zoom by the
+  // person cancels the flight.
+  flyTo(target: THREE.Vector3, zoom: number, ms?: number): void;
   // Ask for a new frame after changing the scene. Pass `shadows` when
   // something moved, so the shadow map is recomputed too.
   invalidate(options?: { shadows?: boolean }): void;
   // Run something on every animation tick (at most 30 times a second).
   onTick(listener: (seconds: number) => void): void;
+  // Run something right after every frame is drawn, e.g. to keep an overlay
+  // pinned to the scene while the camera moves.
+  onRender(listener: () => void): void;
   start(): void;
   dispose(): void;
 };
@@ -91,12 +103,14 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
   scene.add(floor);
 
   let frame = 0;
+  const renderListeners: Array<() => void> = [];
   const draw = (): void => {
     frame = 0;
     // While the camera is still gliding (damping), keep asking for frames.
     const moving = controls.update();
     renderer.render(scene, camera);
     labels.render(scene, camera);
+    for (const listener of renderListeners) listener();
     if (moving) invalidate();
   };
 
@@ -129,6 +143,34 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
     }
   };
 
+  // A flight moves the camera and its target together, so the view keeps its
+  // isometric angle. People who ask for less motion get the jump.
+  let flight = 0;
+  const cancelFlight = (): void => {
+    if (flight !== 0) cancelAnimationFrame(flight);
+    flight = 0;
+  };
+  controls.addEventListener("start", cancelFlight);
+  const flyTo = (to: THREE.Vector3, zoom: number, ms = 800): void => {
+    cancelFlight();
+    const fromTarget = controls.target.clone();
+    const fromZoom = camera.zoom;
+    const duration = reducedMotion ? 0 : ms;
+    const began = performance.now();
+    const step = (): void => {
+      const t = duration <= 0 ? 1 : Math.min(1, (performance.now() - began) / duration);
+      const k = easeInOut(t);
+      const next = fromTarget.clone().lerp(to, k);
+      camera.position.add(next.clone().sub(controls.target));
+      controls.target.copy(next);
+      camera.zoom = THREE.MathUtils.clamp(THREE.MathUtils.lerp(fromZoom, zoom, k), ZOOM_LIMITS.min, ZOOM_LIMITS.max);
+      camera.updateProjectionMatrix();
+      invalidate();
+      flight = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    flight = requestAnimationFrame(step);
+  };
+
   const resize = (): void => {
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -147,6 +189,13 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
 
   return {
     scene,
+    camera,
+    input: labels.domElement,
+    view: () => ({ target: controls.target.clone(), zoom: camera.zoom }),
+    flyTo,
+    onRender: (listener) => {
+      renderListeners.push(listener);
+    },
     invalidate,
     onTick: (listener) => {
       tickListeners.push(listener);
@@ -156,6 +205,7 @@ export function createStage(container: HTMLElement, viewSize = DEFAULT_VIEW_SIZE
       invalidate({ shadows: true });
     },
     dispose: () => {
+      cancelFlight();
       setAmbient(false);
       cancelAnimationFrame(frame);
       frame = 0;

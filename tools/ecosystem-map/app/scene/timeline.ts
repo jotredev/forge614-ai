@@ -19,7 +19,7 @@ import { LINE_LENGTHS, TYPE_SPEED } from "./nodes/shell";
 // 6. Shell saves what it did in Engram; Engram stores it (a pulse rises into
 //    the hologram, which glows) and right after copies it to the cloud.
 
-export const TRAVEL = 0.7; // seconds a message takes through a cable
+export const TRAVEL = 0.5; // seconds a message takes through a cable
 
 // Lines of the terminal, by position in the session.
 const LINE = { status: 0, prepare: 3, preparing: 4, preview: 5, confirm: 6, applied: 7, context: 8, progress: 9, report: 10 } as const;

@@ -8,6 +8,9 @@ import { type Sync, type Trip, createSync } from "./scene/sync";
 import { ATLAS, createAtlas } from "./scene/nodes/atlas";
 import { createEngram } from "./scene/nodes/engram";
 import { ENGINES, createEngines } from "./scene/nodes/engines";
+import { type Led, createLed } from "./scene/led";
+import { NODE_INFO } from "./scene/nodes/info";
+import { type Selectable, createInteraction } from "./scene/interaction";
 import { SENTINEL, createSentinel } from "./scene/nodes/sentinel";
 import { WORKERS, createWorker } from "./scene/nodes/worker";
 import {
@@ -72,7 +75,8 @@ function centerOf(id: NodeId): THREE.Vector2 {
 
 try {
   // Framed so every node, the workers and the floating data center fit.
-  const stage = createStage(container, 84, new THREE.Vector3(35, 3, 4));
+  const VIEW_SIZE = 84;
+  const stage = createStage(container, VIEW_SIZE, new THREE.Vector3(35, 3, 4));
 
   // Direction on the floor from one node to another.
   const toward = (from: NodeId, to: NodeId): THREE.Vector2 => centerOf(to).sub(centerOf(from)).normalize();
@@ -87,6 +91,9 @@ try {
   const sentinelScene = createSentinel(PLATE_TOP);
   const scenes = { shell: shellScene, engram: engramScene, engines: enginesScene, atlas: atlasScene, sentinel: sentinelScene };
 
+  // Each plate's LED lights when a message arrives at it, by cable.
+  const leds = new Map<string, Led>();
+  const selectables: Selectable[] = [];
   NODES.forEach((node, index) => {
     const center = centerOf(node.id);
 
@@ -97,6 +104,7 @@ try {
     const platform = createPlatform(node.accent);
     platform.group.position.set(center.x, 0, center.y);
     stage.scene.add(platform.group);
+    leds.set(node.id, createLed(platform.light));
 
     const scene = scenes[node.id];
     scene.group.position.set(center.x, 0, center.y);
@@ -106,6 +114,7 @@ try {
     const card = createCard({ name: node.name, role: node.role, accent: node.accent });
     card.position.set(center.x, platform.top + 8.5, center.y);
     stage.scene.add(card);
+    selectables.push({ id: node.id, name: node.name, role: node.role, accent: node.accent, center, card, info: NODE_INFO[node.id] });
   });
 
   // Engram's optional cloud copy (contract, section 6: optional sync with
@@ -118,6 +127,7 @@ try {
   // Up and to the right on screen, so the ramp never crosses Engram's title.
   const cloudAt = engramAt.clone().add(new THREE.Vector2(3, -14));
   const cloudPlate = createPlatform(CLOUD, true);
+  leds.set("cloud", createLed(cloudPlate.light));
   cloudPlate.group.position.set(cloudAt.x, CLOUD_LIFT, cloudAt.y);
   const dataCenter = createDataCenter(cloudPlate.top);
   dataCenter.group.position.set(cloudAt.x, CLOUD_LIFT, cloudAt.y);
@@ -160,7 +170,14 @@ try {
     route: [outOfPlug, onPlate, alongPlate, engramEdge, cloudEdge, cloud3.clone().add(inlet).add(faceTurn(0, 0, 0.6)).setY(onCloud)],
     clips: [alongPlate.clone().setY(onEngram), engramEdge.clone().setY(onEngram), cloudEdge.clone().setY(onCloud)],
     inlet,
-    trips: [ATLAS_STORED_AT, COPY_LEAVES].map((leaves) => ({ color: "#e6c9f0", leaves, onArrive: (amount: number) => dataCenter.flash(amount) })),
+    trips: [ATLAS_STORED_AT, COPY_LEAVES].map((leaves) => ({
+      color: "#e6c9f0",
+      leaves,
+      onArrive: (amount: number) => {
+        dataCenter.flash(amount);
+        leds.get("cloud")?.hit(amount);
+      },
+    })),
   });
   stage.scene.add(sync.group);
   stage.onTick((seconds) => sync.update(seconds));
@@ -197,7 +214,7 @@ try {
     route: saveLane.route,
     clips: saveLane.clips,
     inlet: engramScene.inlet,
-    trips: [{ color: "#b9d7ee", leaves: SAVE_LEAVES }],
+    trips: [{ color: "#b9d7ee", leaves: SAVE_LEAVES, onArrive: (amount: number) => leds.get("engram")?.hit(amount) }],
   });
   const recallLane = lane(1.25, 0.05, engramScene.outlet);
   const recall = createSync({
@@ -208,7 +225,7 @@ try {
     route: [...recallLane.route].reverse(),
     clips: recallLane.clips,
     inlet: deskPlug(1.25),
-    trips: [{ color: "#f3b7c6", leaves: RECALL_LEAVES }],
+    trips: [{ color: "#f3b7c6", leaves: RECALL_LEAVES, onArrive: (amount: number) => leds.get("shell")?.hit(amount) }],
   });
   // Every other cable is laid the same way: out of its plug, down onto the
   // plate, to the plate's edge facing the other node, taut across the air,
@@ -216,6 +233,7 @@ try {
   // both ways get two cables side by side, one per direction; a single
   // cable can also carry both ways.
   type End = {
+    id: string; // which plate's LED lights when a message arrives here
     center: THREE.Vector3; // the node's center on the floor
     plugs: THREE.Vector3[]; // plug positions, relative to the center
     outward: THREE.Vector3 | undefined; // direction cables leave in; away from the center if none
@@ -223,7 +241,7 @@ try {
   };
   const endOf = (id: NodeId, plugs: THREE.Vector3[], outward?: THREE.Vector3, half = 3.8): End => {
     const at = centerOf(id);
-    return { center: new THREE.Vector3(at.x, 0, at.y), plugs, outward, half };
+    return { id, center: new THREE.Vector3(at.x, 0, at.y), plugs, outward, half };
   };
   const outwardOf = (end: End, plug: THREE.Vector3): THREE.Vector3 => end.outward ?? plug.clone().setY(0).normalize();
   const cable = (
@@ -254,6 +272,13 @@ try {
     const [bOut, bFloor] = leaving(b, bPlug);
     const aAlong = aFloor!.clone().lerp(aEdge, 0.5);
     const bAlong = bFloor!.clone().lerp(bEdge, 0.5);
+    const arriving = trips.map((trip) => ({
+      ...trip,
+      onArrive: (amount: number) => {
+        trip.onArrive?.(amount);
+        leds.get(b.id)?.hit(amount);
+      },
+    }));
     return createSync({
       from: new THREE.Vector2(a.center.x, a.center.z),
       to: new THREE.Vector2(b.center.x, b.center.z),
@@ -262,7 +287,7 @@ try {
       route: [aOut!, aFloor!, aAlong, aEdge, bEdge, bAlong, bFloor!, bOut!],
       clips: [aAlong, aEdge, bEdge, bAlong],
       inlet: bPlug,
-      trips,
+      trips: arriving,
     });
   };
   // Two cables between a and b, one per direction, each on its own side;
@@ -354,6 +379,7 @@ try {
     const node = { across: 44 + offset, down: 60 };
     const at = new THREE.Vector2((node.across + node.down) * Math.SQRT1_2, (node.down - node.across) * Math.SQRT1_2);
     const plate = createPlatform(WORKERS, false, 4.6);
+    leds.set(`worker-${i}`, createLed(plate.light));
     plate.group.position.set(at.x, 0, at.y);
     const worker = createWorker(
       PLATE_TOP,
@@ -365,8 +391,20 @@ try {
     const card = createCard({ name: `Worker ${i + 1}`, role: "Obrero", accent: WORKERS, kind: "worker" });
     card.position.set(at.x, PLATE_TOP + 5.2, at.y);
     stage.scene.add(plate.group, worker.group, card);
+    selectables.push({
+      id: `worker-${i}`,
+      name: `Worker ${i + 1}`,
+      role: "Obrero",
+      accent: WORKERS,
+      center: at,
+      card,
+      info: NODE_INFO.worker,
+      hit: { width: 5.6, height: 7.4 },
+      zoom: 2.9,
+      anchor: 3.4,
+    });
     stage.onTick((seconds) => worker.update(seconds));
-    const workerEnd: End = { center: new THREE.Vector3(at.x, 0, at.y), plugs: worker.ports, outward: undefined, half: 2.3 };
+    const workerEnd: End = { id: `worker-${i}`, center: new THREE.Vector3(at.x, 0, at.y), plugs: worker.ports, outward: undefined, half: 2.3 };
     return pair(
       endOf("atlas", atlasScene.workerPorts[i]!, faceTurn(1, 0, 0)),
       workerEnd,
@@ -379,6 +417,12 @@ try {
     stage.scene.add(c.group);
     stage.onTick((seconds) => c.update(seconds));
   }
+  // After every cable has reported its arrivals this tick.
+  stage.onTick((seconds) => {
+    for (const led of leds.values()) led.update(seconds);
+  });
+
+  createInteraction(stage, VIEW_SIZE, selectables);
 
   stage.start();
   // Labels measure their text, so draw again once the typeface has loaded.
