@@ -698,12 +698,34 @@ const BENIGN = [
   "El respaldo queda en engram.db.v10-pre-intelligence-20260924T180657787Z-0542aea7.bak.",
   "Precio de Opus 5.5: entrada $4, salida $20 por millón de tokens.",
   "La API key se configura como variable de entorno, nunca en la memoria.",
+  // Keyword followed by something that names or hides a value (errata 2026-09-24).
+  "La config usa apiKey: process.env.OPENAI_KEY",
+  "El error es secret: SECRET_REJECTED cuando el texto trae credenciales.",
+  "password: <redacted>",
+  "password: ********",
+  "Guarda el token en access_token = getTokenFromVault()",
+  "pwd = /Users/jorge/proyecto",
+  "api_key=${API_KEY} en el archivo de entorno.",
 ];
 
 test("real domain texts are never rejected", () => {
   for (const text of BENIGN) expect(findSecret(text)).toBeNull();
 });
+
+test("an assignment with a literal value is rejected whatever its form", () => {
+  const ASSIGNED = [
+    join("pass", "word: ", "hunter2hunter2."),
+    join("api", "_key=\"", "a8f3kd92mfk3", "\""),
+    join("sec", "ret: ", "AB12CD34EF56GH78"),
+    join("access", "Token = '", "x9Kd02mZq7", "'"),
+    join("pw", "d=", "Sup3r$ecret!", ", luego conectar"),
+    join("PASS", "WORD: ", "correcthorsebattery"),
+  ];
+  for (const text of ASSIGNED) expect(findSecret(text)).toBe("password-assignment");
+});
 ```
+
+> **Errata 2026-09-24 (tras T2 r1, commit `8d6dad2`):** el patrón `password-assignment` original rechazaba 5 de 8 textos normales medidos, incluido `password: <redacted>`, que es la forma que el propio error `SECRET_REJECTED` recomienda. Ahora el valor debe ser literal (termina en comilla, espacio, coma, punto y coma o fin del texto) y no cuenta si es un nombre de variable de entorno, una referencia con puntos (`process.env.X`) o una máscara (`****`). Verificado por el orquestador en una copia temporal: 634 pruebas, 0 fallos, typecheck 0. Límite aceptado: una clave real seguida de `)` o formada solo por mayúsculas sin dígitos no se detecta.
 
 `src/modules/memory/meta.test.ts`:
 
@@ -763,12 +785,18 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["sk-key", /\bsk-(?:[A-Za-z0-9_-]{2,20}-)?[A-Za-z0-9]{32,}\b/u],
   ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/u],
   ["connection-string-with-credentials", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@[^\s/]+/iu],
-  ["password-assignment", /\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["']?[^\s"']{8,}/iu],
 ];
+
+// A keyword assigned a literal value. The value must end at a quote, space, comma, semicolon or the
+// end of the text, so placeholders (<...>), paths and calls never match.
+const ASSIGNMENT = /\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["']?([A-Za-z0-9+=_.!@#$%^&*~-]{8,})(?=["'\s,;]|$)/giu;
+// Values that name a secret instead of holding it: environment variable names, dotted code references and masks.
+const NOT_A_VALUE = /^(?:[A-Z]+|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+|\*+)$/u;
 
 /** Id of the first secret pattern found in the text, or null. */
 export function findSecret(text: string): string | null {
   for (const [id, pattern] of SECRET_PATTERNS) if (pattern.test(text)) return id;
+  for (const match of text.matchAll(ASSIGNMENT)) if (!NOT_A_VALUE.test(match[1]!)) return "password-assignment";
   return null;
 }
 ```
