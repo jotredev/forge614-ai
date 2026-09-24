@@ -20,6 +20,7 @@
 - El servidor MCP no migra la base; la activación es explícita (`intelligence-enable`) o en `init`/`setup` (T8).
 - Datos nuevos fuera de `memory_versions.snapshot` (la réplica valida claves exactas en `src/modules/synchronization/snapshot.ts`).
 - Arquitectura: cada archivo `src/**/*.ts` con comportamiento tiene su `X.test.ts` hermano; los módulos cruzan solo por `index.ts`; `app` no importa `bun:sqlite`; `interfaces` solo importa `src/app/index.ts`.
+- **Contrato público del SDK:** todo método nuevo de `MemoryStore` (o export nuevo) se registra en `src/index.test.ts` (listas que solo crecen, con comentario `// Added in 1.7.0 …`) y en `ExpectedStore` de `tests/fixtures/sdk-contract.ts` con su firma exacta; ninguna firma existente cambia.
 - Mensajes de error para personas en español; comentarios de código, texto del protocolo y descripciones MCP en inglés; documentación es/en con el mismo contenido.
 - Commits convencionales en inglés, **sin líneas de atribución ni menciones a ninguna IA**; sin merge, tag ni release (los autoriza el propietario tras la revisión de `forge614-ai`).
 - Sin nombres de productos externos en código, pruebas ni docs (acta 0012); el protocolo v4 no puede contener `claude|openai|anthropic` (misma regla que la prueba de v3).
@@ -83,6 +84,7 @@ Orden: T1 → T2 → T3 → T5 → T4 → T6 → T7 → T8 → T9 → T10 (uno a
 - Modify: `src/infrastructure/sqlite/ecosystem-schema.test.ts` (líneas 51, 54, 61: `schemaState` gana `intelligence: false`; línea 191: versión futura 11 → 12)
 - Modify: `src/infrastructure/sqlite/schema.test.ts:71` y `src/infrastructure/sqlite/projects.test.ts:28` (versión futura 11 → 12)
 - Modify: `src/app/memory-store.ts` (+ su prueba hermana)
+- Modify: `src/index.test.ts` (lista `INTELLIGENCE_STORE_METHODS`) y `tests/fixtures/sdk-contract.ts` (`ExpectedStore`)
 - Modify: `src/interfaces/cli/arguments.ts:5`, `src/interfaces/cli/commands.ts` (junto a `reinforcement-enable`, ~línea 53), `src/interfaces/cli/help.ts` (tras la línea 27) y sus pruebas (`arguments.test.ts`, `commands.test.ts`, la prueba que fija el texto de ayuda)
 
 **Interfaces:**
@@ -494,7 +496,22 @@ En `src/app/memory-store.ts`: importar `enableIntelligence` y `type Intelligence
   intelligenceEnabled(): boolean { return intelligenceEnabled(this.db); }
   enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }
 ```
-Exportar `IntelligenceEnrolment` donde `src/app/index.ts` exporta `EcosystemEnrolment` (si lo hace; si no, no hace falta). En la prueba hermana de `memory-store.ts`, agregar:
+Exportar `IntelligenceEnrolment` donde `src/app/index.ts` exporta `EcosystemEnrolment` (si lo hace; si no, no hace falta).
+
+Contrato del SDK (errata 2026-09-24: la versión inicial del plan lo omitió). En `src/index.test.ts`, después de `ECOSYSTEM_STORE_METHODS`:
+
+```ts
+// Added in 1.7.0 with memory intelligence. The lists above only ever grow.
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled"];
+```
+y en la aserción: `.toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS].sort());`.
+
+En `tests/fixtures/sdk-contract.ts`, al final de `ExpectedStore`:
+
+```ts
+  // Added in 1.7.0 (memory intelligence). Purely additive: nothing above changed.
+  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};
+``` En la prueba hermana de `memory-store.ts`, agregar:
 
 ```ts
 test("memory store enrolls intelligence explicitly", () => {
@@ -538,7 +555,7 @@ Expected: todo en verde; el conteo total = línea base + pruebas nuevas; `typech
 - [ ] **Step 9: Commit**
 
 ```bash
-git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/app/index.ts src/interfaces/cli
+git add tests/fixtures/v1.6.0/schema-10.db src/infrastructure/sqlite src/app/memory-store.ts src/app/memory-store.test.ts src/interfaces/cli src/index.test.ts tests/fixtures/sdk-contract.ts
 git commit -m "feat(schema): level 11 memory intelligence structure with explicit, verified enrollment"
 ```
 Verificar el mensaje: una línea, sin atribución.
