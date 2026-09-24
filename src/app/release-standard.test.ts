@@ -6,9 +6,13 @@ import { NodePointerSchema } from "../modules/standard/schemas";
 import { releaseStandard, STANDARD_TAG_PATTERN } from "./release-standard";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
+// The tree's own version: these tests pack the real standard/, so the tag
+// must name whatever standard/VERSION declares today.
+const VERSION = readFileSync(join(REPO_ROOT, "standard/VERSION"), "utf8").trim();
+const TAG = `standard-v${VERSION}`;
 
 type Call = { cmd: string[]; cwd?: string };
-function fakeExec(calls: Call[], result = { exitCode: 0, stdout: "https://github.com/jotredev/forge614-ai/releases/tag/standard-v1.0.0\n", stderr: "" }) {
+function fakeExec(calls: Call[], result = { exitCode: 0, stdout: `https://github.com/jotredev/forge614-ai/releases/tag/${TAG}\n`, stderr: "" }) {
   return (cmd: string[], options?: { cwd?: string }) => {
     calls.push({ cmd, ...(options?.cwd === undefined ? {} : { cwd: options.cwd }) });
     return result;
@@ -25,14 +29,14 @@ test("dry run packs, verifies the pointer and returns the gh command without exe
   const out = mkdtempSync(join(tmpdir(), "standard-release-"));
   const calls: Call[] = [];
   try {
-    const r = releaseStandard({ root: REPO_ROOT, tag: "standard-v1.0.0", outDir: out, exec: fakeExec(calls), dryRun: true });
+    const r = releaseStandard({ root: REPO_ROOT, tag: TAG, outDir: out, exec: fakeExec(calls), dryRun: true });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.version).toBe("1.0.0");
+    expect(r.version).toBe(VERSION);
     expect(r.published).toBe(false);
     expect(calls).toHaveLength(0);
-    expect(r.command.slice(0, 4)).toEqual(["gh", "release", "create", "standard-v1.0.0"]);
-    expect(r.assets).toEqual([join(out, "standard-1.0.0.tar.gz"), join(out, "SHA256SUMS"), join(out, "pack-manifest.json")]);
+    expect(r.command.slice(0, 4)).toEqual(["gh", "release", "create", TAG]);
+    expect(r.assets).toEqual([join(out, `standard-${VERSION}.tar.gz`), join(out, "SHA256SUMS"), join(out, "pack-manifest.json")]);
     expect(readFileSync(join(out, "SHA256SUMS"), "utf8")).toContain(r.sha256);
     const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(join(REPO_ROOT, "forge614.node.json"), "utf8")));
     expect(r.sha256).toBe(pointer.standard.sha256);
@@ -62,7 +66,7 @@ test("a pointer that does not match the tree fails with STANDARD_PACK_DRIFT befo
     const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(join(REPO_ROOT, "forge614.node.json"), "utf8")));
     pointer.standard.sha256 = "0".repeat(64);
     writeFileSync(join(root, "forge614.node.json"), `${JSON.stringify(pointer, null, 2)}\n`);
-    const r = releaseStandard({ root, tag: "standard-v1.0.0", outDir: join(root, "dist"), exec: fakeExec(calls), dryRun: false });
+    const r = releaseStandard({ root, tag: TAG, outDir: join(root, "dist"), exec: fakeExec(calls), dryRun: false });
     expect(r).toMatchObject({ ok: false, code: "STANDARD_PACK_DRIFT" });
     expect(calls).toHaveLength(0);
   } finally {
@@ -74,7 +78,7 @@ test("a failing gh (release already exists) surfaces STANDARD_RELEASE_FAILED wit
   const out = mkdtempSync(join(tmpdir(), "standard-release-"));
   const calls: Call[] = [];
   try {
-    const r = releaseStandard({ root: REPO_ROOT, tag: "standard-v1.0.0", outDir: out, exec: fakeExec(calls, { exitCode: 1, stdout: "", stderr: "release standard-v1.0.0 already exists" }), dryRun: false });
+    const r = releaseStandard({ root: REPO_ROOT, tag: TAG, outDir: out, exec: fakeExec(calls, { exitCode: 1, stdout: "", stderr: `release ${TAG} already exists` }), dryRun: false });
     expect(r).toMatchObject({ ok: false, code: "STANDARD_RELEASE_FAILED" });
     if (r.ok) return;
     expect(r.error).toContain("already exists");
@@ -88,7 +92,7 @@ test("a missing gh binary is reported as STANDARD_RELEASE_FAILED, not thrown", (
   const out = mkdtempSync(join(tmpdir(), "standard-release-"));
   try {
     const exec = () => { throw new Error("spawn gh ENOENT"); };
-    const r = releaseStandard({ root: REPO_ROOT, tag: "standard-v1.0.0", outDir: out, exec, dryRun: false });
+    const r = releaseStandard({ root: REPO_ROOT, tag: TAG, outDir: out, exec, dryRun: false });
     expect(r).toMatchObject({ ok: false, code: "STANDARD_RELEASE_FAILED" });
     if (r.ok) return;
     expect(r.error).toContain("gh");
