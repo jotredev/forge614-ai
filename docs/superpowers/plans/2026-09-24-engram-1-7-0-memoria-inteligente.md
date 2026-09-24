@@ -2430,6 +2430,8 @@ git commit -m "docs: session activity, interrupted sessions and previous-session
 
 **Experimento:** Codex · gpt-5.6-terra · **medium**, plan con **solo pruebas y contratos, sin código de implementación y sin laboratorio**: el orquestador (Opus 5.5) escribió las pruebas leyendo el código de `4e64042` en solo lectura, pero no construyó la implementación ni corrió las pruebas. Se compara con T2 (mismo agente con código completo: 1 ronda por error del plan). Mide la teoría "el orquestador solo entrega pruebas y contratos y el worker construye".
 
+**Errata 2026-09-24 (tras T4 r1):** la revisión del orquestador del trabajo sin terminar de r1 encontró dos fallos que las pruebas originales no cubrían; la prueba del tope ahora incluye un recuerdo sin tema (un filtro `topic_key<>?` deja fuera los `NULL` y el tablero pasaría de 40) y la de la nota de estado repite la petición con la misma `requestKey` (si `pinned` se fuerza después de calcular la huella de la petición, la repetición responde `REQUEST_CONFLICT`). D-T4-2 ya excluía del tope los resúmenes de sesión (`session/*/summary`).
+
 **Decisiones de esta tarea:**
 - **D-T4-1:** todo solo en **nivel 11**. En niveles menores un recuerdo `ecosystem` se guarda y se mueve como en 1.6.0 (cualquier tipo, sin `affects`), `fromProjectId` se ignora, y `setGroupSource` y `demoteMemory` responden `INTELLIGENCE_REQUIRED`.
 - **D-T4-2 (reglas del tablero):** aplican a todo guardado `ecosystem` (`save`, `saveWithSession`, CLI `save`, MCP `memory_save`) y a `moveMemoryToGroup`. **Exentos:** los resúmenes de sesión (`saveSessionSummary` con grupo; su API de 1.6.0 no cambia) y la nota de estado (D-T4-5). Orden de comprobación: tipo → `affects` → tope.
@@ -2549,13 +2551,13 @@ test("a board memory needs an allowed type and at least two affected projects of
   expect(save(db, rule(group, { content: "v2", expectedVersion: 1, affects: undefined })).version).toBe(2);
 }));
 
-test("the board holds at most 40 active memories; updates, archived ones and the status note do not count", () => board((db, { group, ai }) => {
-  const ids = Array.from({ length: 40 }, (_, i) => save(db, rule(group, { title: `Regla ${i}`, content: `Contenido ${i}`, topicKey: `regla/${i}` })).id);
+test("the board holds at most 40 active memories, with or without a topic; updates, archived ones and the status note do not count", () => board((db, { group, ai }) => {
+  const ids = Array.from({ length: 40 }, (_, i) => save(db, rule(group, { title: `Regla ${i}`, content: `Contenido ${i}`, topicKey: i === 0 ? undefined : `regla/${i}` })).id);
   let error: unknown;
   try { save(db, rule(group, { title: "Regla 40", content: "otra", topicKey: "regla/40" })); } catch (caught) { error = caught; }
   expect(error).toMatchObject({ code: "ECOSYSTEM_BOARD_FULL" });
   expect((error as Error).message).toContain("Regla 0");
-  expect(save(db, rule(group, { title: "Regla 0", content: "cambiada", topicKey: "regla/0", expectedVersion: 1 })).version).toBe(2);
+  expect(save(db, rule(group, { title: "Regla 1", content: "cambiada", topicKey: "regla/1", expectedVersion: 1 })).version).toBe(2);
   setGroupSource(db, group, ai);
   expect(save(db, status(group, { fromProjectId: ai })).pinned).toBe(true);
   archive(db, { groupId: group }, ids[1]!);
@@ -2569,8 +2571,10 @@ test("only the group's source project writes the status note: pinned, up to 600 
   expect(() => save(db, status(group))).toThrow(code("ECOSYSTEM_STATUS_FORBIDDEN"));
   expect(() => save(db, status(group, { fromProjectId: ai, type: "preference" }))).toThrow(code("ECOSYSTEM_TYPE_NOT_ALLOWED"));
   expect(() => save(db, status(group, { fromProjectId: ai, content: "x".repeat(601) }))).toThrow(code("ECOSYSTEM_STATUS_TOO_LONG"));
-  const saved = save(db, status(group, { fromProjectId: ai, content: "é".repeat(600) }));
+  const saved = save(db, status(group, { fromProjectId: ai, content: "é".repeat(600), requestKey: "estado-1" }));
   expect(saved).toMatchObject({ scope: "ecosystem", topicKey: "ecosystem/estado-actual", type: "fact", pinned: true });
+  // Replaying the same request returns the same memory: pinned is forced before the request fingerprint.
+  expect(save(db, status(group, { fromProjectId: ai, content: "é".repeat(600), requestKey: "estado-1" })).id).toBe(saved.id);
   expect(groupSource(db, group)?.projectId).toBe(ai);
 }));
 
