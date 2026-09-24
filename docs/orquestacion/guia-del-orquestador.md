@@ -9,7 +9,7 @@
 
 ## 1. Método
 
-1. El plan vive en `forge614-ai` (`docs/superpowers/plans/`) y cada tarea trae modelo y razonamiento recomendados.
+1. El plan vive en `forge614-ai` (`docs/superpowers/plans/`) y cada tarea trae modelo y razonamiento recomendados. **Antes de entregar una tarea, su código se prueba en un laboratorio** (copia del repositorio en el scratchpad con `git archive`): se aplica el plan, se corre la suite completa y las reglas de arquitectura, y se verifica que cada texto a reemplazar exista una sola vez. La documentación se simula igual. Lo pesado de esa preparación se delega a un subagente de contexto limpio y el orquestador revisa el resultado (§5).
 2. **Una tarea = una sesión nueva** en el repositorio que toca. El propietario pega el prompt, la sesión trabaja y reporta, el propietario pega el reporte aquí.
 3. El orquestador revisa el reporte **y verifica por su cuenta**, sin tocar el otro repositorio (autorización del propietario, 2026-09-24):
    - lee el diff completo del commit contra el plan, línea por línea (`git -C <repo> diff/show`), y lo revisa como experto;
@@ -17,7 +17,8 @@
    - registra el conteo **medido**, no el reportado, y borra la copia.
    A futuro, Sentinel hará esta verificación de forma automática.
 4. Al cerrar cada tarea, el orquestador mide la corrida desde el registro de la herramienta (§5) y agrega la fila en Notion; si aprendió algo, agrega o actualiza una lección.
-5. Los prompts se entregan en la página "Prompts Forge614": tarjeta "Ahora" con el paso numerado y botón Copiar; en el chat solo se dice qué hacer ahora. Un solo paso a la vez.
+5. Los prompts se entregan en la página "Prompts Forge614" (https://claude.ai/artifact/2GXZWGs1rmxPAZQAaDRZjP): tarjeta "Ahora" con el paso numerado y botón Copiar; en el chat solo se dice qué hacer ahora. Un solo paso a la vez. Si falta la copia local de la página, se recupera con Artifact `read` de esa URL y se republica con `url`. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
+6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5).
 
 ## 2. Forma del prompt
 
@@ -68,6 +69,7 @@ Bloqueos: <lista o "ninguno">
 |---|---|---|
 | Cuando la sesión busca algo (grep), el reporte trae cada aparición con `archivo:línea` y su clasificación, no solo la conclusión | provisional | Sentinel 0.1.1: `parity.test.ts:9` visto y mal clasificado; 1 ronda extra |
 | No pedir diffs ni JSON completos en el reporte: el orquestador los verifica en solo lectura | provisional (hipótesis a medir) | el reporte entra dos veces al contexto (sesión y orquestador); medir el largo antes y después |
+| No pedir el total de la suite en el reporte (el orquestador lo mide en su copia); pedir solo las pruebas nuevas rojo → verde | provisional | Engram T2 (Codex medium, límite de 30 s): r1 omitió el total; r2 reportó 866/18 cuando el real era 624/10 (sumó una carpeta dos veces) |
 
 ## 4. Qué incluir en el plan
 
@@ -76,12 +78,15 @@ Bloqueos: <lista o "ninguno">
 | Al subir una versión, listar todo lo que depende del número (buscar la versión actual en pruebas, fixtures y goldens y clasificar cada aparición); arreglo de raíz: leer la versión real, regenerar goldens con la herramienta oficial | provisional | Sentinel 0.1.1: 3 pruebas no previstas, 2 rondas evitables |
 | Antes de escribir un documento en `forge614-ai`, revisar `standard/forbidden-mentions.json`: no nombrar productos prohibidos (acta 0012) | provisional | spec de memoria inteligente: 2 menciones que habrían hecho fallar `verify` |
 | Indicar archivos y líneas exactos a tocar, para que la sesión no explore el repositorio | provisional (hipótesis a medir) | la entrada re-leída es el 99 % del costo (§5) |
+| **Probar el plan completo en un laboratorio antes de entregarlo** (§1): código y pruebas literales ya verdes, anclas de reemplazo únicas | provisional | Engram 1.7.0: rondas por error del plan T1 3 → T2 1 → **T3 0** (el laboratorio atrapó 4 errores); agente T3 en 2,3 min y 1,09 M tokens |
+| Todo filtro o expresión regular del plan se ejecuta antes contra textos normales parecidos ("casi positivos") y esos casos entran como pruebas fijas | provisional | Engram T2: el filtro de secretos rechazaba 5 de 8 textos normales, incluido `password: <redacted>`; 1 ronda |
+| Con código literal y anclas únicas, el agente aplica el plan por script (sin editar a mano): mantener las anclas exactas y únicas | provisional | Engram T3 y T3 docs: 0 Write/Edit, reemplazos con comprobación de unicidad |
 
 ## 4b. Documentación
 
 | Regla | Estado | Evidencia |
 |---|---|---|
-| **Documentación tarea por tarea:** al terminar cada tarea, un prompt aparte (etiqueta `· docs`, misma sesión, medido por separado) actualiza en un commit propio los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica |
+| **Documentación tarea por tarea:** al terminar cada tarea, un prompt aparte (etiqueta `· docs`, **sesión nueva**, medido por separado; los textos exactos van en el plan, redactados contra los capítulos reales y simulados en una copia) actualiza en un commit propio los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica. Sesión nueva en vez de la misma (provisional): T1 docs misma sesión ≈ $1 por ronda; T3 docs sesión nueva Sonnet low 0,48 M tokens ≈ $0,28, a la primera |
 | **Checklist de agentes tarea por tarea (acta 0017):** al cerrar cada tarea (código + documentación), el orquestador revisa `standard/procedures/new-agent-checklist.md` (sección del nodo que cambió y las de Engines y Shell si consumen lo cambiado) y decide si hay un requisito nuevo para los asistentes; si lo hay, redacta el punto con su verificación; si no, anota el motivo. Los cambios se acumulan y se publican juntos en la siguiente versión del reglamento, para revalidar la matriz de soporte una sola vez | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
 
 ## 5. Medición
@@ -96,6 +101,11 @@ Bloqueos: <lista o "ninguno">
 | Regla | Estado | Evidencia |
 |---|---|---|
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
+| **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
+| Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado | provisional (1 muestra) | Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión; queda medir en T5 el laboratorio de código delegado |
+| Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
+
+El programa de medición (Claude Code) está en el apéndice A; uso: `python3 medir.py <registro .jsonl> "<etiqueta del prompt>"`. Mide desde el primer mensaje del usuario que contiene la etiqueta hasta el final del registro.
 
 ## 6. Elección de modelo y razonamiento
 
@@ -104,14 +114,48 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (0 corridas) |
-| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (0 corridas); se contrasta contra high |
-| Algoritmos con muchos casos borde | Sonnet · high | provisional (0 corridas) |
-| Documentación, versión, publicación | Sonnet · low | provisional (0 corridas) |
+| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (1 corrida: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente) |
+| Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (1 corrida: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas) |
+| Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
+| Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
 | Revisión independiente de una rama | otro proveedor · high | provisional (0 corridas) |
 | Ejecución de un plan ya escrito (referencia) | Sonnet · high: Sentinel 0.1.1, 8,86 M tokens, 3 rondas (todas error del plan) | 1 corrida |
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-24 — Laboratorio antes de entregar cada tarea (§1, §4), medición del orquestador y traspaso de sesión (§1, §5), reporte sin total de la suite (§3), documentación en sesión nueva (§4b), datos de T1–T3 en §6 y programa de medición (apéndice A).
 - 2026-09-24 — Regla firme del propietario: lectura del plan autorizada explícitamente en el prompt (solo lectura, mismo ecosistema; regla compartida v2). Sustituye la decisión previa del mismo día de copiar todo el texto en el prompt.
 - 2026-09-24 — Regla firme del propietario: documentación tarea por tarea (§4b).
 - 2026-09-24 — Creada con 6 reglas provisionales de las primeras corridas medidas (Sentinel 0.1.1) y 2 hipótesis a medir.
+
+## Apéndice A. Programa de medición (Claude Code)
+
+```python
+import json,sys,collections
+path,label=sys.argv[1],sys.argv[2]
+started=False; t0=t1=None; models=collections.Counter(); efforts=collections.Counter(); tools=collections.Counter()
+u=collections.Counter(); seen=set(); msgs=0; last_text=""
+for line in open(path):
+    o=json.loads(line); ty=o.get("type")
+    if ty=="user" and not started:
+        c=o.get("message",{}).get("content")
+        txt=c if isinstance(c,str) else " ".join(x.get("text","") for x in c if isinstance(x,dict))
+        if label in txt: started=True; t0=o.get("timestamp")
+    if not started: continue
+    t1=o.get("timestamp") or t1
+    if ty=="assistant":
+        m=o.get("message",{}); mid=m.get("id")
+        if o.get("effort"): efforts[o["effort"]]+=1
+        for b in m.get("content",[]):
+            if b.get("type")=="tool_use": tools[b.get("name")]+=1
+            if b.get("type")=="text": last_text=b.get("text","")
+        if mid in seen: continue
+        seen.add(mid); msgs+=1; models[m.get("model")]+=1
+        us=m.get("usage",{})
+        for k in ("input_tokens","cache_read_input_tokens","cache_creation_input_tokens","output_tokens"): u[k]+=us.get(k,0) or 0
+        cc=us.get("cache_creation") or {}
+        u["cache_1h"]+=cc.get("ephemeral_1h_input_tokens",0) or 0; u["cache_5m"]+=cc.get("ephemeral_5m_input_tokens",0) or 0
+print("inicio",t0,"fin",t1); print("modelos",dict(models),"effort",dict(efforts)); print("mensajes",msgs)
+print("tokens",dict(u),"total",u["input_tokens"]+u["cache_read_input_tokens"]+u["cache_creation_input_tokens"]+u["output_tokens"])
+print("herramientas",dict(tools)); print("largo último texto",len(last_text))
+```
