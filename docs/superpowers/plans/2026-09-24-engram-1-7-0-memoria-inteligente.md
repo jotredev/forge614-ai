@@ -1829,7 +1829,66 @@ git add src/modules/search src/modules/memory/types.ts src/modules/memory/index.
 git commit -m "feat(search): hybrid word and trigram search with look-alike candidates on save (level 11)"
 ```
 
-- [ ] **Step 8: Documentación (prompt aparte, sesión nueva, commit propio)** — el orquestador escribe su texto exacto después de aprobar el código, leyendo los capítulos reales.
+- [ ] **Step 8: Documentación (prompt aparte, sesión nueva, commit propio)**
+
+Borrador redactado por un subagente de contexto limpio (Sonnet, solo lectura sobre `e880c45`) y revisado por el orquestador: se corrigió una contradicción (`save` no devuelve los parecidos; los devuelven `saveWithSession` y `memory_save`), los decimales en español y la precisión sobre consultas con solo palabras de relleno. Cada dato se verificó contra el código. **Simulado sobre una copia de `e880c45`: 7 archivos, 15 inserciones y 2 borrados, `git diff --check` limpio.**
+
+Archivos: `docs/es/04-sdk-typescript.md`, `docs/en/04-typescript-sdk.md`, `docs/es/05-arquitectura-interna-y-formulas.md`, `docs/en/05-internal-architecture-and-formulas.md`, `docs/es/06-resolucion-de-errores.md`, `docs/en/06-troubleshooting.md` y `CHANGELOG.md`. **Sin cambios:** `docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md` (solo documentan opciones y formas de JSON, nunca el mecanismo de búsqueda) y `docs/notion-map.json` (las entradas del 06 ya tienen `"notionSyncPending": true`; 04 y 05 no tienen entrada).
+
+1. `docs/es/04-sdk-typescript.md`: al final del archivo, después de una línea en blanco, estos dos párrafos (quedan dentro de la sección «Memoria inteligente» que ya cierra el archivo):
+
+```markdown
+Desde el esquema 11, `search`, `searchPreviews` (y sus variantes `*InGroup`) usan búsqueda híbrida: la consulta se reparte en un índice por palabras completas y otro por trigramas, se combinan por rango recíproco (RRF) y el resultado se pondera por el mismo multiplicador de refuerzo (fijado, recencia, estabilidad) que ya usaba `fts5`. Un resultado necesita al menos 2 de los términos de la consulta (todos si son menos de 2); si ninguno aplica, la búsqueda no devuelve nada en vez de ruido. `SearchExplanation.mode` gana el valor `"hybrid"`, con el mismo significado de `orderScore` (menor es mejor) que en `fts5`. Consulta el capítulo 5 para la fórmula completa.
+
+Al guardar un recuerdo **nuevo** y **sin tema** se calculan hasta 3 parecidos activos del mismo ámbito y dueño (nunca resúmenes de sesión ni el propio recuerdo) con una similitud de palabras (Jaccard) de al menos 0,25; nunca en una versión nueva de un tema, en una confirmación de texto idéntico ni en una repetición de `requestKey`. `save` sigue devolviendo solo el recuerdo; `saveWithSession` (y `memory_save` por MCP, en los tres ámbitos) añaden `similar?: SimilarCandidate[]` solo cuando hay parecidos. Tipo nuevo exportado: `SimilarCandidate { id, title, version, score }`.
+```
+
+2. `docs/en/04-typescript-sdk.md`: al final del archivo, después de una línea en blanco:
+
+```markdown
+From schema 11, `search`, `searchPreviews` (and their `*InGroup` variants) use hybrid search: the query is split across a whole-word index and a trigram index, the two are combined by reciprocal rank fusion, and the result is weighted by the same reinforcement multiplier (pinned, recency, stability) that `fts5` already used. A result needs at least 2 of the query terms (all of them when there are fewer than 2); when none apply, the search returns nothing instead of noise. `SearchExplanation.mode` gains the value `"hybrid"`, with the same meaning for `orderScore` (lower is better) as in `fts5`. See chapter 5 for the full formula.
+
+When a **new** memory **without a topic** is saved, up to 3 active look-alikes are computed of the same scope and owner (never session summaries or the memory itself) with a word similarity (Jaccard) of at least 0.25; never on a new version of a topic, on an identical-text confirmation, or on a `requestKey` replay. `save` still returns only the memory; `saveWithSession` (and MCP's `memory_save`, in all three scopes) add `similar?: SimilarCandidate[]` only when there are look-alikes. New exported type: `SimilarCandidate { id, title, version, score }`.
+```
+
+3. `docs/es/05-arquitectura-interna-y-formulas.md`: párrafo nuevo justo antes de la línea que empieza con `La sincronización PostgreSQL transfiere un snapshot versionado del estado local.`, separado de ella por una línea en blanco:
+
+```markdown
+La búsqueda híbrida del esquema 11 arma la consulta quitando palabras vacías (español e inglés), pliega acentos y mayúsculas y une los términos restantes con OR (máximo 16); si todas las palabras son vacías se usan todas. En el índice de palabras los términos de 4 o más letras buscan por prefijo; en el de trigramas los de 3 o más letras buscan en cualquier posición, tanto con acento como sin él. Cada índice aporta hasta 50 candidatos; se combinan por rango recíproco (RRF: `1/(60+rango)` en cada lista donde aparece) y el resultado se multiplica por el mismo multiplicador de refuerzo que usa `fts5` (fijado, recencia, estabilidad): `orderScore = -(rrf × multiplicador)`, menor es mejor. Un resultado se descarta si no contiene al menos 2 de los términos de la consulta (todos si hay menos de 2), por subcadena si el término tiene 3 letras o más y como palabra completa si es más corto; una consulta sin ninguna palabra (solo signos) no devuelve nada. Al guardar un recuerdo nuevo sin tema se calcula además similitud de Jaccard sobre las palabras distintas (sin vacías ni acentos) contra los demás recuerdos activos del mismo ámbito y dueño; a partir de 0,25 se reporta como parecido (hasta 3, consulta el capítulo 4).
+```
+
+4. `docs/en/05-internal-architecture-and-formulas.md`: párrafo nuevo justo antes de la línea que empieza con `PostgreSQL synchronization transfers a versioned snapshot of local state.`, separado de ella por una línea en blanco:
+
+```markdown
+The schema-11 hybrid search builds the query by dropping filler words (Spanish and English), folding accents and case, and joining the remaining terms with OR (16 at most); when every word is filler, all of them are used. In the word index, terms of 4 or more letters match by prefix; in the trigram index, terms of 3 or more letters match anywhere, both as written and with accents folded. Each index contributes up to 50 candidates; they are fused by reciprocal rank fusion (`1/(60+rank)` in each list where a result appears) and the result is multiplied by the same reinforcement multiplier `fts5` already uses (pinned, recency, stability): `orderScore = -(rrf × multiplier)`, lower is better. A result is dropped unless it contains at least 2 of the query terms (all of them when there are fewer than 2), matched by substring for terms of 3 or more letters and as a whole word otherwise; a query with no words at all (only punctuation) returns nothing. Saving a new memory without a topic also computes Jaccard similarity over distinct words (filler and accents removed) against the other active memories of the same scope and owner; a score of 0.25 or higher is reported as a look-alike (up to 3; see chapter 4).
+```
+
+5. `docs/es/06-resolucion-de-errores.md`: reemplazar la línea completa que empieza con `La búsqueda es coincidencia literal FTS5.` (sección «Búsqueda y temas») por:
+
+```markdown
+Por debajo del esquema 11, la búsqueda es coincidencia literal FTS5 (sin cambios). Desde el esquema 11 (memoria inteligente) es híbrida: reparte la consulta entre palabras completas y trigramas, combina por rango recíproco (RRF) y pondera por el multiplicador de refuerzo; un resultado necesita al menos 2 de los términos de la consulta y una consulta sin términos útiles no devuelve nada (consulta el capítulo 5). Proporciona un `projectId` para búsquedas de proyecto o usa `--scope shared`. Actualizar un tema requiere su `--expected-version` actual; consulta antes `get` o `history`.
+```
+
+6. `docs/en/06-troubleshooting.md`: reemplazar la línea completa que empieza con `Search is literal FTS5 matching.` (sección «Search and topics») por:
+
+```markdown
+Below schema 11, search is literal FTS5 matching (unchanged). From schema 11 (memory intelligence) it is hybrid: it splits the query across whole words and trigrams, fuses the results by reciprocal rank fusion, and weights them by the reinforcement multiplier; a result needs at least 2 of the query terms, and a query with no usable terms returns nothing (see chapter 5). Provide a `projectId` for project searches, or use `--scope shared`. Updating a topic needs its current `--expected-version`; use `get` or `history` first.
+```
+
+7. `CHANGELOG.md`: línea nueva justo antes de `- La replicación de grupos (formato 4) pasa a la versión 1.8.0.`:
+
+```markdown
+- **Búsqueda híbrida y parecidos al guardar:** con el esquema 11, `search` y `searchPreviews` (CLI, SDK y `memory_search`) reparten la consulta entre un índice de palabras completas y uno de trigramas, los combinan por rango recíproco (RRF) y ponderan el resultado con el multiplicador de refuerzo existente (`SearchExplanation.mode` gana `"hybrid"`); un resultado necesita al menos 2 de los términos de la consulta y una consulta sin términos útiles no devuelve nada. Guardar un recuerdo nuevo sin tema reporta hasta 3 parecidos activos del mismo ámbito y dueño (similitud de palabras ≥ 0,25, nunca resúmenes de sesión); `saveWithSession` y `memory_save` (en los tres ámbitos) añaden `similar` solo cuando hay parecidos. Tipo nuevo del SDK: `SimilarCandidate`. Medido: el banco de 20 preguntas en lenguaje natural (`tests/fixtures/search-benchmark.ts`) pasa de 8/20 a 20/20 encontradas entre los 3 primeros resultados; mediana de 1,6 ms por búsqueda en una base de 107 recuerdos.
+```
+
+Verificación: `git diff --check` sin salida y `git diff --stat` con exactamente esos 7 archivos (15 inserciones, 2 borrados). La documentación no cambia pruebas; el orquestador corre la suite en su copia.
+
+Commit:
+
+```bash
+git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/05-arquitectura-interna-y-formulas.md docs/en/05-internal-architecture-and-formulas.md docs/es/06-resolucion-de-errores.md docs/en/06-troubleshooting.md CHANGELOG.md
+git commit -m "docs: hybrid search and look-alike candidates in SDK, architecture, troubleshooting and changelog"
+```
 
 ### Task 5: Sesiones interrumpidas *(detalle tras aprobar T3)*
 
