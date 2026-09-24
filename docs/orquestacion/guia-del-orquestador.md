@@ -81,6 +81,8 @@ Bloqueos: <lista o "ninguno">
 | **Probar el plan completo en un laboratorio antes de entregarlo** (§1): código y pruebas literales ya verdes, anclas de reemplazo únicas | provisional | Engram 1.7.0: rondas por error del plan T1 3 → T2 1 → **T3 0** (el laboratorio atrapó 4 errores); agente T3 en 2,3 min y 1,09 M tokens |
 | Todo filtro o expresión regular del plan se ejecuta antes contra textos normales parecidos ("casi positivos") y esos casos entran como pruebas fijas | provisional | Engram T2: el filtro de secretos rechazaba 5 de 8 textos normales, incluido `password: <redacted>`; 1 ronda |
 | Con código literal y anclas únicas, el agente aplica el plan por script (sin editar a mano): mantener las anclas exactas y únicas | provisional | Engram T3 y T3 docs: 0 Write/Edit, reemplazos con comprobación de unicidad |
+| Cuando el plan trae pruebas largas sin código de implementación, el prompt pide extraerlas del plan con un script; nunca escribirlas a mano | provisional | Engram T4 r1 (Codex medium): reescribió en 15 líneas la prueba de 114 del plan y omitió dos; r2 con extracción por script: idénticas |
+| Aunque no haya laboratorio, el orquestador revisa la implementación del agente contra casos borde que las pruebas no cubren | provisional | Engram T4: la revisión encontró 2 fallos (tope que ignoraba recuerdos sin tema; huella de la petición antes de fijar la nota) que las pruebas del plan dejaban pasar |
 
 ## 4b. Documentación
 
@@ -103,6 +105,7 @@ Bloqueos: <lista o "ninguno">
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
 | **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
 | Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado | provisional (1 muestra) | Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión; queda medir en T5 el laboratorio de código delegado |
+| Plan con solo pruebas y contratos, sin laboratorio (el worker implementa) | provisional (1 muestra) | Engram T4 (Codex medium): 2 rondas (1 por error del agente, 2 fallos del plan atrapados en la revisión), 3,77 M tokens, 2 % del límite semanal; T2 con código completo: 4,58 M, 1 ronda. Costo del orquestador sin laboratorio claramente menor que en T3 y T5 |
 | Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
 
 El programa de medición (Claude Code) está en el apéndice A; uso: `python3 medir.py <registro .jsonl> "<etiqueta del prompt>"`. Mide desde el primer mensaje del usuario que contiene la etiqueta hasta el final del registro.
@@ -117,12 +120,14 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (1 corrida: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (1 corrida: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas) |
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
+| Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | provisional (1 corrida: Engram T4 docs, 1,08 M tokens ≈ $0,74, 0 rondas, todas las frases correctas; sin costo de subagente) |
 | Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
 | Revisión independiente de una rama | otro proveedor · high | provisional (0 corridas) |
 | Ejecución de un plan ya escrito (referencia) | Sonnet · high: Sentinel 0.1.1, 8,86 M tokens, 3 rondas (todas error del plan) | 1 corrida |
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-24 — Lecciones de Engram T4: extraer pruebas del plan con un script, revisar casos borde sin laboratorio, datos de "solo pruebas y contratos" y de documentación redactada por el agente.
 - 2026-09-24 — Los prompts se entregan en el chat del orquestador, en un solo bloque para copiar (§1.5); se retira la página de tarjetas.
 - 2026-09-24 — Laboratorio antes de entregar cada tarea (§1, §4), medición del orquestador y traspaso de sesión (§1, §5), reporte sin total de la suite (§3), documentación en sesión nueva (§4b), datos de T1–T3 en §6 y programa de medición (apéndice A).
 - 2026-09-24 — Regla firme del propietario: lectura del plan autorizada explícitamente en el prompt (solo lectura, mismo ecosistema; regla compartida v2). Sustituye la decisión previa del mismo día de copiar todo el texto en el prompt.
