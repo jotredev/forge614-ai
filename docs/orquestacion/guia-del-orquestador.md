@@ -130,7 +130,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (1 corrida: Engram T10b, activación del esquema 11 en la base real, 1,14 M tokens ≈ $0,84 en 8,4 min, a la primera, 1 parada correcta ante procesos viejos, 0 filas cambiadas) |
 | Código + pruebas con plan preciso | Sonnet · medium con parche o plan probado en laboratorio | **firme** (3 corridas Sonnet medium a la primera: Engram T7 con laboratorio, 0,63 M ≈ $0,39; T8 con parche por `git apply`, 0,42 M ≈ $0,27; T9b con parche, 0,31 M ≈ $0,23 en 4,1 min; cuarta: Reglamento 1.1.0 R1 con parche, 0,61 M ≈ $0,31 en 2 rondas, la segunda por error del plan, `dist/` ignorado). Codex · medium: 1 corrida (Engram T2, 4,58 M tokens, 1 ronda por error del plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
-| Documentación, versión, publicación | Sonnet · low | provisional (2 corridas: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T10a publicación, 0,98 M ≈ $0,43 en 2 rondas, se detuvo bien ante el CI rojo y la ronda 2 fue por error del plan; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
+| Documentación, versión, publicación | Sonnet · low | **firme** (3 corridas; Reglamento 1.1.0 R2, publicación a la primera, 0,48 M ≈ $0,24 en 12 min; antes: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T10a publicación, 0,98 M ≈ $0,43 en 2 rondas, se detuvo bien ante el CI rojo y la ronda 2 fue por error del plan; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
 | Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | **firme** (3 corridas, todas a la primera: Engram T4 docs, 1,08 M tokens ≈ $0,74; T7 docs, 1,43 M ≈ $0,68, atrapó un dato falso del plan; T8 docs + versión, 22 archivos, 1,36 M ≈ $0,76 en 3,1 min) |
 | Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
 | Revisión independiente de una rama | otro proveedor · high | provisional (1 corrida: Engram T9, Codex gpt-5.6-terra high, 108 archivos en ≈ 14 min, 4,25 M tokens, límite semanal 5 % → 5 %, 1 hallazgo real que las pruebas no cubrían, 0 falsos) |
@@ -138,6 +138,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Documentación, versión y publicación en Sonnet low pasa a firme (§6, Reglamento R2).
 - 2026-09-25 — Las páginas para el propietario van a una sesión de docs en el repositorio dueño (§4b).
 - 2026-09-25 — Lección de Reglamento R1: el laboratorio de `git archive` no ve lo que Git ignora (§4); cuarta corrida de parche en Sonnet medium (§6).
 - 2026-09-25 — Segunda muestra del subagente de borrador y laboratorio: el orquestador rehace y entrega un parche (§5).
