@@ -182,6 +182,13 @@ Hallazgos de R2 para Shell 1.12.0: dentro de Shell la memoria llega dos veces (b
 
 Se detalla al cerrar R2. Lleva juntos, para revalidar una sola vez: las seis celdas en `supported` con `verifiedAt` y la evidencia; la tabla «Agentes ya evaluados» alineada con la matriz (hoy dice Engram «N/A»); y los cambios acumulados del checklist: la definición de «byte a byte», el manual incrustado en el archivo principal como forma normal (el archivo aparte de Claude Code queda como excepción), la verificación del formato 2 por la transcripción y no por la evidencia del gancho, y la nota de laboratorio para Codex (variable explícita en el servidor MCP). Las celdas se validan contra el texto nuevo, para que publicarlo no las devuelva a `revalidate`.
 
+## Orden decidido por el propietario (2026-09-25)
+
+1. **R3 primero:** reglamento con `engines/claude-code`, `engines/codex`, `shell/claude-code` y `shell/codex` en `supported` (vencen el 2026-10-22), la tabla del checklist alineada y los cambios acumulados.
+2. **Engram con PostgreSQL:** 1.7.1 (el manual pide decir por qué se deja aparte un parecido, que era la opción 1 para P8′ de Codex; sesiones en paralelo sin marcarse como interrumpidas; sección «Previous session» del bloque) y 1.8.0 (réplica PostgreSQL con los recuerdos del tablero, para usar la misma memoria en otra computadora). Tras 1.7.1 se repite solo P8′ de Codex y un R4 corto pasa `engram/claude-code` y `engram/codex` a `supported` antes del 2026-10-25.
+3. **Shell 1.12.0** (formato 2 del arranque y las 26 mejoras de `docs/orquestacion/mejoras-shell.md`).
+4. **Engram remoto** (teléfono), al final.
+
 ## Impacto en el procedimiento de agentes
 
 **Sí.** R3 publica los cambios acumulados del checklist (definición de «byte a byte», manual incrustado como forma normal, verificación del formato 2 por la transcripción, nota de laboratorio para Codex) junto con las seis celdas revalidadas contra ese texto nuevo.
