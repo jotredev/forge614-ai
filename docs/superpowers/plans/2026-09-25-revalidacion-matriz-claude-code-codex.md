@@ -134,6 +134,36 @@ Misma preparación y mismas reglas que R1, con estos cambios:
 
 Al terminar: las mismas comprobaciones de aislamiento que en R1; listar en el informe las transcripciones de Codex de esta repetición (`~/.codex/sessions/2026/09/25/`, identificadas por su carpeta de laboratorio) sin borrarlas: el orquestador las borra junto con las 15 de R1 con el visto bueno del propietario; agregar a `docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` una sección «R1b» con la misma forma. Commit: `docs(orquestacion): revalidación R1b, resumen vivo, secreto y parecido con pruebas corregidas`.
 
+**Cierre de R1b (2026-09-25):** sesión `e1b8a69d` (Sonnet 5 medium), 38 mensajes, 4,03 M tokens ≈ $1,67 en 15 min, más $1,39 de corridas de Claude Code (Opus high) y 0,81 M tokens de Codex; informe `8a365a2`. Se detuvo bien al principio porque el orquestador hizo un commit en la rama (`662d741`) después de entregar el prompt; siguió con autorización. Verificado por el orquestador: árbol limpio; en la base real, los únicos recuerdos con «REVAL-LAB» son el resultado y el resumen de la propia sesión R1b, sin la clave de prueba. Resultados:
+- P5′ aprobada en los dos (resúmenes con 2 versiones y 6 campos).
+- P6′ aprobada en los dos: Claude Code recibió `SECRET_REJECTED` y volvió a guardar sin el valor; Codex quitó el valor antes de guardar y lo dijo.
+- P8′ de Codex: Engram devolvió `similar` (0,49) y Codex lo dejó aparte sin borrar nada, pero sin decirle a la persona por qué. El manual v4 no pide explicarlo; el checklist sí («lo deja aparte diciendo por qué»).
+- P8′ de Claude Code no se ejercitó: el lanzador mandó los dos mensajes juntos por `--input-format stream-json` y guardó uno solo.
+
+**P8′ de Claude Code, repetida por el orquestador (2026-09-25):** laboratorio con guarda (`DATABASE_PATH_UNSAFE`), `--model opus --effort high`, el segundo mensaje enviado solo después del `result` del primero (script de abajo). Primer guardado `61bad7dd`; el segundo llevó `supersedes` y Engram reportó `similar` (0,79); dijo «la nueva sustituye a la vieja, y la vieja queda en el historial marcada como reemplazada». En la copia, `61bad7dd` quedó con `superseded_by = 6df117ef`, nada borrado. **Aprobada.** Costo ≈ $0,89. Base real sin recuerdos de la prueba; laboratorio borrado.
+
+```python
+# turnos.py — uso: python3 turnos.py <FORGE614_HOME del laboratorio> <carpeta del proyecto> <salida.jsonl>
+import json, subprocess, sys, os
+lab, cwd, out = sys.argv[1], sys.argv[2], sys.argv[3]
+msgs = ["Guarda como aprendizaje del proyecto, sin topicKey: REVAL-LAB el laboratorio de memoria usa una copia de la base de Engram hecha con sqlite3 backup.",
+        "Guarda también como aprendizaje del proyecto, sin topicKey: REVAL-LAB el laboratorio de memoria trabaja sobre una copia de la base de Engram hecha con sqlite3 backup, nunca sobre la real."]
+env = dict(os.environ, FORGE614_HOME=lab)
+p = subprocess.Popen(["claude","-p","--model","opus","--effort","high","--no-session-persistence","--verbose",
+    "--input-format","stream-json","--output-format","stream-json","--allowedTools","mcp__forge614-engram",
+    "--disallowedTools","Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Glob,Grep,Read"],
+    cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+f = open(out, "w")
+for m in msgs:
+    p.stdin.write(json.dumps({"type":"user","message":{"role":"user","content":m}})+"\n"); p.stdin.flush()
+    for line in p.stdout:
+        f.write(line)
+        if json.loads(line).get("type") == "result": break
+p.stdin.close(); f.write(p.stdout.read()); p.wait(); f.close()
+```
+
+**Decisión pendiente del propietario (P8′ de Codex):** (1) Engram 1.7.1 agrega al manual «si lo dejas aparte, dile a la persona por qué», junto con el arreglo de sesiones en paralelo y de la sección «Previous session» del bloque; Engines reinstala el manual (`verify` avisa del cambio) y se repite solo P8′ de Codex antes del 2026-10-25; o (2) se acepta como está y R3 alinea la frase del checklist con el manual.
+
 ## Tarea R2: Shell y compactación (propietario)
 
 Se entrega al cerrar R1, con los pasos exactos: abrir Shell desde `~` y desde una carpeta sin Git con cada asistente y preguntar por una preferencia compartida; en una sesión real de Claude Code y de Codex, `/compact` y comprobar que el gancho vuelve a inyectar el bloque (Claude Code lo lanza con `compact`; Codex con el matcher `^(startup|resume|clear|compact)$`).
