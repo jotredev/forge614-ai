@@ -6,13 +6,10 @@
     {
       "node": "engines",
       "agent": "claude-code",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-22",
-      "reason": "hook con startup-context unbound",
-      "deadline": "2026-10-22",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
-      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED)."
+      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
     },
     {
       "node": "workers",
@@ -39,29 +36,23 @@
       "deadline": "2026-10-25",
       "verifiedAt": "2026-09-22",
       "verifiedBy": "owner",
-      "notes": "No requiere cambios en Engram (protocolo v1)."
+      "notes": "No requiere cambios en Engram (protocolo v1). Revalidación 2026-09-25: todo aprobado; se cierra tras Engram 1.7.1."
     },
     {
       "node": "shell",
       "agent": "claude-code",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-22",
-      "reason": "Shell desde ~ con memoria compartida",
-      "deadline": "2026-10-22",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
-      "notes": "Onboarding de claude setup-token no diseñado aún."
+      "notes": "Onboarding de claude setup-token no diseñado aún. Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
     },
     {
       "node": "engines",
       "agent": "codex",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-22",
-      "reason": "hook con startup-context unbound",
-      "deadline": "2026-10-22",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
-      "notes": "Sí soporta nivel de razonamiento (model_reasoning_effort)."
+      "notes": "Sí soporta nivel de razonamiento (model_reasoning_effort). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
     },
     {
       "node": "workers",
@@ -88,18 +79,15 @@
       "deadline": "2026-10-25",
       "verifiedAt": "2026-09-22",
       "verifiedBy": "owner",
-      "notes": ""
+      "notes": "Revalidación 2026-09-25: todo aprobado salvo explicar por qué deja aparte un parecido (P8′); se repite tras Engram 1.7.1. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
     },
     {
       "node": "shell",
       "agent": "codex",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-22",
-      "reason": "Shell desde ~ con memoria compartida",
-      "deadline": "2026-10-22",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
-      "notes": ""
+      "notes": "Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
     },
     {
       "node": "engines",

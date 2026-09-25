@@ -116,7 +116,10 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
 - [ ] Si el agente declara `instructions`, correr `verify memory-integration` (`runVerifyMemoryIntegration`
       / `verifyMemoryIntegration`) contra una instalación real, para confirmar que el bloque
       administrado de memoria se escribe y se detecta correctamente con el formato real de archivo de
-      ese agente (primary file directo, o primary file + `contentFile` satélite como usa Claude Code).
+      ese agente. La forma normal es el manual incrustado en el archivo principal de instrucciones del
+      agente, entre sus marcadores (desde Engines 1.13.0 también en Claude Code, `~/.claude/CLAUDE.md`,
+      como ya hacía Codex en `~/.codex/AGENTS.md`); primary file + `contentFile` satélite queda como
+      excepción, solo si el agente no admite el bloque incrustado.
 
 **Integración automática de memoria vía SessionStart hooks (ya implementada para Claude Code y Codex —
 usar esto como referencia al agregar el hook de un agente nuevo):**
@@ -138,6 +141,8 @@ usar esto como referencia al agregar el hook de un agente nuevo):**
       Confirmar que el runtime del hook (`src/app/run-memory-hook.ts`) inyecta `shared` también en ese caso
       y no descarta la respuesta por no venir `bound`; probar el hook con `cwd` = `~`. Aplica a Claude Code
       y Codex (ya soportados): sus celdas de Engines quedan en `revalidar` hasta que se ejecute esta prueba.
+      **Ejecutada el 2026-09-25** con Claude Code y Codex (gancho desde `~` y desde una carpeta sin Git,
+      formato 2 del bloque): celdas de Engines en `supported`.
 - [ ] **Nunca afirmar "el host realmente consumió el contexto"** — eso no es verificable desde Engines.
       Usar nombres honestos como `runtime-observed`, que significan únicamente "el runtime propio de
       Engines fue invocado con un payload con forma de SessionStart y Engram devolvió contexto" —
@@ -282,10 +287,17 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       `forge614-engines` arriba antes de repetir esa investigación para un agente nuevo.
 - [ ] Si el host (Engines o Shell) usa `startup-context --format 2` para el agente nuevo, verificar que
       inyecta `text` tal cual y como dato recuperado, sin reescribirlo; que el bloque mide ≤ 5 000
-      caracteres y empieza con el encabezado de ocupación; que, tras cortar una sesión, la siguiente
-      muestra «Previous session (interrupted)»; y que con el bloque presente el agente no vuelve a llamar
-      `memory_context` al arrancar (regla 2 del manual v4). Verificación: el registro del gancho guarda
-      `chars` y el texto inyectado.
+      caracteres y empieza con el encabezado de ocupación; y que con el bloque presente el agente no vuelve
+      a llamar `memory_context` al arrancar (regla 2 del manual v4). La sección «Previous session
+      (interrupted)» del bloque aparece cuando otra sesión ya marcó la cortada como interrumpida, o tras un
+      período de inactividad — por el orden de Engram, en un proyecto limpio no sale ya en la segunda
+      conversación, sino después; el aviso inmediato de que la sesión anterior quedó interrumpida lo da el
+      campo `previous` de `memory_session_start` (ver el punto de sesión interrumpida, más abajo).
+      Verificación: el texto inyectado se lee en la transcripción del asistente (Claude Code: evento
+      `system/hook_response` con `--verbose --output-format stream-json`; Codex: su registro
+      `~/.codex/sessions/…/rollout-*.jsonl`) y se compara con `text` de `startup-context --format 2`; la
+      evidencia del gancho (`~/.forge614/engines/hook-evidence/<agente>.json`) solo guarda
+      `engramContextReceived` y la huella del comando, no el texto inyectado.
 
 **Compatibilidad con el protocolo público:**
 
@@ -303,17 +315,28 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       otra en el mismo repositorio; verificar que la segunda recibe `previous` de `memory_session_start` y
       que el agente se lo dice a la persona y ofrece continuar desde el resumen, sin inventar lo que hizo
       la primera (si no hay resumen, dice que no dejó ninguno). Verificación: comparar lo que dice con el
-      resumen real (`memory_get` del id que trae `previous`).
+      resumen real (`memory_get` del id que trae `previous`). La prueba necesita un proyecto sin otras
+      sesiones abiertas: `memory_session_start` marca como interrumpida toda otra sesión abierta del mismo
+      proyecto (Engram 1.7.0), así que una sesión en paralelo contamina el resultado.
 - [ ] Si la integración pide la versión 4 (`memory-protocol --json --protocol-version 4`), verificar que
       instala `instructions` completo y sin recortar (≤ 2 500 caracteres) en el archivo de instrucciones
       del agente, sin agregarle reglas de memoria propias, y que no copia allí `mcpInstructions` (llegan
-      solas por el servidor MCP). Verificación: el texto instalado es byte a byte igual a `instructions`
-      de la salida del comando.
+      solas por el servidor MCP). La forma normal es incrustar el manual en el archivo principal de
+      instrucciones del agente, entre sus marcadores; el archivo aparte (primary file + `contentFile`
+      satélite) queda como excepción, igual que en Engines. Verificación: el texto instalado es byte a
+      byte igual a `instructions` de la salida del comando — «byte a byte» significa que el contenido
+      entre los marcadores `<!-- forge614-engines:begin engram-memory-protocol -->` y
+      `<!-- forge614-engines:end engram-memory-protocol -->`, sin la línea de marca de Engines
+      (`<!-- Managed by Forge614 Engines. …`), sin el renglón en blanco que la sigue y sin el salto de
+      línea final, es idéntico a `instructions`.
 - [ ] Verificar que el agente nuevo recibe las instrucciones del servidor MCP de Engram (desde 1.7.0 son
       las del manual v4 para todo cliente) y las sigue: en una sesión nueva, sin archivo de instrucciones,
       tras dos pasos importantes, `memory_history` de su resumen de sesión muestra al menos dos versiones
       (resumen vivo, no solo al final). Si el cliente descarta las instrucciones del servidor, anotarlo en
-      la fila del agente: entonces el manual completo es obligatorio.
+      la fila del agente: entonces el manual completo es obligatorio. Resultado medido el 2026-09-25:
+      Claude Code, sin archivo de instrucciones, tomó el manual de las instrucciones del servidor MCP (abrió
+      sesión y guardó su resumen con los seis campos); Codex no las toma y solo recibe el manual por
+      `~/.codex/AGENTS.md`, así que para Codex el manual completo es obligatorio (Engines ya lo instala).
 - [ ] Si el host crea la base con `init` para el agente nuevo, verificar que queda en el esquema 11
       (`intelligence-enable` responde `migrated: false`) y que una base existente no cambia de nivel.
 - [ ] Si Engram no está disponible, el agente debe continuar y decir la verdad; nunca sustituirlo por un
@@ -347,7 +370,12 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       recuerdo sin el valor (nombrando dónde vive, por ejemplo `password: <redacted>` o el nombre de la
       variable de entorno), no reintenta con el secreto, no descarta el recuerdo en silencio y le dice a la
       persona qué quitó. Verificación: pedirle que recuerde un texto con una clave de prueba inventada y
-      revisar con `memory_search` que se guardó sin el valor.
+      revisar con `memory_search` que se guardó sin el valor. Hay dos caminos válidos: Engram rechaza con
+      `SECRET_REJECTED` y el agente vuelve a guardar sin el valor, o el agente quita el valor antes de
+      guardar y lo dice; no guardar nada es falla. Un `password: …` demasiado obvio hace que el agente se
+      niegue a guardar sin llegar a llamar a Engram — para ejercitar `SECRET_REJECTED` de verdad conviene
+      usar, por ejemplo, una cadena de conexión inventada con usuario y contraseña en vez de la palabra
+      «password» sola.
 - [ ] Con esquema 11 y un proyecto que pertenece a un grupo, pedirle al agente nuevo que suba al tablero una
       regla que afecta a varios proyectos y verificar que manda un tipo permitido y `affects` con al menos
       dos proyectos del grupo; y que ante cualquier código `ECOSYSTEM_*` corrige el guardado, lo deja en el
@@ -361,7 +389,31 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       cosas que manda el protocolo v4 (actualiza el parecido, lo deja aparte diciendo por qué, o guarda con
       `supersedes`), sin dejar dos recuerdos activos iguales en silencio y sin borrar nada. Verificación:
       `memory_search` con esas palabras devuelve un solo recuerdo activo, o el viejo con la marca
-      `superseded`.
+      `superseded`. El aviso `similar` solo sale al guardar sin `topicKey` y con una semejanza de palabras
+      de al menos 0,25; la prueba necesita dos guardados en turnos separados (el segundo mensaje enviado
+      después de que termine la respuesta al primero) — si el agente fusiona los dos pedidos en un solo
+      guardado, el aviso no se ejercitó.
+
+**Cómo probar sin tocar la memoria real (laboratorio, 2026-09-25):**
+
+- Hacer una copia coherente de la base real con `sqlite3 <base> ".backup '<lab>/engram/engram.db'"`, con
+  permisos 600 y una primera apertura (por ejemplo `sqlite3 <copia> "pragma journal_mode"` o `init --json`
+  sin carpeta) antes de aceptar escrituras.
+- Apuntar toda la prueba a esa copia con `FORGE614_HOME` del laboratorio.
+- Antes de cualquier prueba, hacer una guarda con una base «rota» (una carpeta en lugar del archivo de la base): el
+  agente debe responder `DATABASE_PATH_UNSAFE`; si responde con recuerdos, está usando la base real y hay
+  que detenerse.
+- Codex no pasa `FORGE614_HOME` a su propio servidor MCP: hay que dárselo explícito con
+  `-c "mcp_servers.forge614-engram.env={FORGE614_HOME=\"$LAB\"}"` y, en `codex exec`, además
+  `-c 'mcp_servers.forge614-engram.default_tools_approval_mode="approve"'`.
+- Usar una copia limpia por agente: Engram no borra nada, así que una segunda prueba sobre la misma copia
+  ve lo que dejó la primera.
+- En `claude -p`, `--allowedTools` no restringe las herramientas disponibles: usar `--disallowedTools` (o
+  `--tools`) para limitar de verdad lo que el agente puede llamar.
+- Si el agente corre en la carpeta real de un repositorio, no renombrar proyectos ni grupos en la copia: el
+  arranque de Engram escribe `.forge614/project.json` en esa carpeta, y un cambio hecho solo pensando en la
+  copia puede llegar al archivo real; comparar `git status` antes y después de cada prueba.
+- Borrar el laboratorio al terminar: lleva datos privados de la memoria real.
 
 ---
 
@@ -462,7 +514,8 @@ del delimitador antes de envolver el bloque — nunca confiar en una sola capa d
       `~` y desde una carpeta sin Git con el agente seleccionado y confirmar que `getStartupContext`
       acepta `project.status: "unbound"` como éxito, inyecta el bloque `shared` (una preferencia shared
       conocida debe aparecer) y no muestra "sin memoria". Aplica a Claude Code y Codex; sus celdas de Shell
-      quedan en `revalidar` hasta ejecutarla.
+      quedan en `revalidar` hasta ejecutarla. **Ejecutada el 2026-09-25** por el propietario con Claude
+      Code y Codex (Shell desde `~` y desde `~/Desktop`, sin Git): celdas de Shell en `supported`.
 - [ ] Si el agente nuevo tiene un punto de inyección de contexto tipo system-prompt (o, si no,
       cualquier forma de anteponer texto al primer turno), cablear `getStartupContext` de la misma
       forma: una función `getStartupContext`/`getStartupContextFn` inyectable en la sesión (sin valor
@@ -569,10 +622,12 @@ hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez 
 
 | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
 |---|---|---|---|---|---|---|
-| Claude Code | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). |
-| Codex | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). |
+| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; se cierra tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
+| Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; falta explicar por qué deja aparte un parecido, se repite tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
+| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
 
 **Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
-persona ejecuta la prueba indicada, con fecha, después de publicar la release de Engram que incluye la
-corrección de `startup-context`. Plazo máximo: 30 días desde 2026-09-22.
-| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
+persona ejecuta la prueba indicada, con fecha. Las de Engines y Shell de Claude Code y Codex se abrieron el
+2026-09-22 (corrección de `startup-context`) y se cerraron el 2026-09-25 (ver el informe
+`docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` y el acta 0028). Siguen abiertas las de
+Engram de Claude Code y Codex, desde el 2026-09-25 (acta 0027), con plazo máximo el 2026-10-25.
