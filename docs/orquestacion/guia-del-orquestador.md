@@ -18,7 +18,7 @@
    A futuro, Sentinel hará esta verificación de forma automática.
 4. **Al cerrar cada paso, antes de entregar el siguiente prompt, el orquestador anota todo, sin que se lo pidan** (regla firme del propietario, 2026-09-25: «nunca se te debe pasar»): fila del agente **y** fila del propio orquestador en «Corridas de agentes» (medidas en su registro, §5), lecciones nuevas o actualizadas en «Lecciones de orquestación», esta guía al día (reglas y §6) y el estado en Engram. El mensaje al propietario dice qué quedó anotado.
 5. **Los prompts se entregan en el chat del orquestador, en un solo bloque de código listo para copiar y pegar** (decisión del propietario, 2026-09-24: la página de tarjetas se retiró porque cada publicación costaba $1,5–2 y agregaba pasos). Antes del bloque, una línea dice dónde pegarlo (repositorio, herramienta, modelo y razonamiento). Un solo paso a la vez. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
-6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5).
+6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5). El tamaño se **mide en el registro** (`costo.py`, apéndice B), nunca se estima: el 2026-09-25 el orquestador dijo «unos 100K» cuando medía 290K.
 
 ## 2. Forma del prompt
 
@@ -104,6 +104,7 @@ Bloqueos: <lista o "ninguno">
 | La comprobación «0 recuerdos de prueba en la base real» excluye los que guarda la propia sesión sobre su resultado (mencionan la marca) | provisional | Revalidación R1b: 2 coincidencias en la base real eran el resultado y el resumen de la sesión R1b, sin datos de prueba |
 | Todo script que el plan usa para verificar se escribe dentro del plan, no solo en el scratchpad | provisional | `bloque.py` del plan E4b vivía solo en el scratchpad de otra sesión y se perdió; hubo que reescribirlo para la revalidación |
 | Al subir la versión del reglamento, la versión de `forge614.node.json` se cambia a mano: `standard:pack -- --update-pointer` solo escribe la huella, y `verify` pasa aunque el puntero diga la versión vieja | provisional | Reglamento 1.1.1: el borrador del subagente dejó el puntero en 1.1.0 con la huella nueva, `verify` 0 con `"standard":"1.1.1"`, y el subagente reportó que «quedó en 1.1.1»; atrapado al leer el diff |
+| En una prueba, el reloj se congela (`setSystemTime`) solo desde el paso que lo necesita: congelado desde el inicio, los guardados empatan en `updated_at`, el desempate por id es al azar y la prueba falla a veces; se corre la suite varias veces antes de entregar | provisional (2 muestras) | Engram T8 (D-T8-6): `startup.test.ts` fallaba ~1 de 3; Engram 1.7.1 T1: el borrador del subagente congeló el reloj desde el inicio y la misma prueba falló 2 de 3 corridas; con el reloj congelado desde la sesión, 0 de 10 y la suite 6 de 6 |
 | Las anclas de reemplazo del plan se citan completas, nunca recortadas con «…» | provisional | Engram T6: un ancla de `commands.ts` terminaba en «…»; el agente la resolvió uniendo dos líneas (sin error, pero lo tuvo que deducir) |
 | Cuando el plan le pone algo a una pieza reutilizada (una descripción, un límite, un valor por defecto), listar **todos** los campos que usan esa pieza y comprobar que les sirve a cada uno | provisional | Engram T7: la descripción «id de recuerdo» puesta en la pieza `id` pasó también a `sessionProjectId`, que es un id de proyecto; las pruebas no lo vieron y la revisión sí (se corrige en T8) |
 
@@ -131,12 +132,15 @@ Bloqueos: <lista o "ninguno">
 | Cuando el propietario prueba a mano, se le piden capturas; el orquestador se las traduce en palabras llanas y confirma cada resultado en los registros (`hook-evidence`, transcripciones de Claude Code, `rollout-*.jsonl` de Codex) antes de darlo por aprobado | provisional | Revalidación R2: 6 pruebas aprobadas, cada una con su registro; el «sí jalaron» de Codex se confirmó en 2 registros de Shell con el bloque y los fijados `shared`; de paso salieron 4 fallos de Shell |
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
 | **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
-| Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado; **el orquestador rehace los cambios en una copia limpia y entrega un parche** con su SHA-256, nunca el borrador tal cual | **firme** (4 muestras) | Engines 1.13.0: parches E1 y E2 «en verde» del subagente; la revisión línea por línea encontró que `verify` sugería reinstalar aunque la instalación estaría bloqueada; el orquestador lo corrigió con su prueba en una copia limpia y rehízo el parche (421 y 432 pruebas medidas). Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión. Reglamento 1.1.0: borrador + laboratorio en 6,7 min ≈ $1,25, reportado «en verde» pero con 4 errores atrapados al leer su diff (matriz reescrita con otra sangría, `sed` sin `g`, orden de comandos que fallaba, texto del acta ausente) y 1 decisión de alcance corregida. Reglamento 1.1.1: borrador + laboratorio en 10,5 min, 9,44 M tokens ≈ $2,6 (razonamiento high heredado), «en verde» pero con 5 errores atrapados en la revisión (versión del puntero, secciones mal citadas en el acta, una frase que afirmaba más de lo medido, una palabra equivocada en la receta y «este acta») |
+| Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado; **el orquestador rehace los cambios en una copia limpia y entrega un parche** con su SHA-256, nunca el borrador tal cual | **firme** (5 muestras) | Engram 1.7.1 T1: borrador con TDD en 21 min, 18,6 M tokens ≈ $4,23, «en verde» con una prueba que fallaba 2 de 3 corridas y dos comentarios desactualizados, atrapados al revisar y correr la suite varias veces. Engines 1.13.0: parches E1 y E2 «en verde» del subagente; la revisión línea por línea encontró que `verify` sugería reinstalar aunque la instalación estaría bloqueada; el orquestador lo corrigió con su prueba en una copia limpia y rehízo el parche (421 y 432 pruebas medidas). Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión. Reglamento 1.1.0: borrador + laboratorio en 6,7 min ≈ $1,25, reportado «en verde» pero con 4 errores atrapados al leer su diff (matriz reescrita con otra sangría, `sed` sin `g`, orden de comandos que fallaba, texto del acta ausente) y 1 decisión de alcance corregida. Reglamento 1.1.1: borrador + laboratorio en 10,5 min, 9,44 M tokens ≈ $2,6 (razonamiento high heredado), «en verde» pero con 5 errores atrapados en la revisión (versión del puntero, secciones mal citadas en el acta, una frase que afirmaba más de lo medido, una palabra equivocada en la receta y «este acta») |
 | Un subagente para un trabajo abierto ("ajusta las pruebas que fallen") cuesta mucho más que uno de redacción: acotarlo con la lista exacta de pruebas y medirlo **en su registro**, no con el total que devuelve la herramienta | provisional (2 muestras) | Engram T8: el subagente que ajustó 21 pruebas hizo 165 mensajes con razonamiento high heredado: 34 M tokens ≈ $8 (la herramienta informó 0,31 M); el trabajo salió bien y atrapó un fallo real. Engines 1.13.0: el laboratorio que escribió E1 y E2 con TDD (394 → 431 pruebas) y recibió una decisión nueva a mitad de tarea hizo 214 mensajes, 47,9 M tokens ≈ $11 en 38 min |
 | Si el laboratorio escribe código nuevo con TDD (no solo simula un plan ya escrito): un subagente por tarea, con todas las decisiones cerradas antes de lanzarlo, y comparar su costo con dejar la TDD a la sesión del repositorio (Sonnet medium, $0,3–0,7 por tarea) | provisional | Engines 1.13.0: ver la fila anterior |
 | Todo parche que va a un archivo se genera con `rtk proxy git diff` (`rtk git diff` guarda un resumen) y se prueba con `git apply --check` en una copia nueva | provisional | Engines 1.13.0: el primer `e1.patch` salió como resumen y no aplicaba; el subagente lo notó solo |
 | Plan con solo pruebas y contratos, sin laboratorio (el worker implementa) | provisional (1 muestra) | Engram T4 (Codex medium): 2 rondas (1 por error del agente, 2 fallos del plan atrapados en la revisión), 3,77 M tokens, 2 % del límite semanal; T2 con código completo: 4,58 M, 1 ronda. Costo del orquestador sin laboratorio claramente menor que en T3 y T5 |
 | Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
+| **Punto de traspaso por tipo de sesión:** orquestador Opus en ~300K (el costo por mensaje útil es casi igual entre 300K y 500K: $0,143 a 300K, $0,134 a 400K, $0,138 a 500K; subir el umbral casi no ahorra y alarga el contexto); sesiones de trabajo largas, la misma regla; Codex en ~200K (su ventana real es 258 400 tokens y por encima de 272 000 su precio se duplica, según models.dev) | provisional (1 estudio) | Estudio del 2026-09-25 sobre 1 116 registros de Claude Code y 206 de Codex (solo lectura, subagente Sonnet 49 mensajes ≈ $1,27; informe y scripts en el scratchpad de esa sesión): 12 sesiones de orquestador; 53 de 206 sesiones de Codex pasaron del 80 % de su ventana |
+| El traspaso cuesta ≈ $2,8 y deja al orquestador nuevo en ≈ 169K tokens antes de su primer prompt: el prompt de traspaso manda leer solo lo necesario (secciones, no archivos enteros; nada que ya esté en el resumen de Engram) | provisional (1 estudio, 4 traspasos) | mismo estudio: arranque promedio H ≈ $2,77, C0 ≈ 169K |
+| Las recargas de caché por ausencia pesan poco en el orquestador (≈ 6 % de su costo; 74 % de los mensajes ya usan la caché de 1 h); lo que más gasta son sesiones muy largas nunca traspasadas | provisional (1 estudio) | mismo estudio: recargas por ausencia $428 de $5 455 en total; las 5 sesiones más largas sin traspaso (682–1 487 mensajes, 440–533K sostenidos) suman $637 (11,7 % de todo el gasto) |
 
 El programa de medición (Claude Code) está en el apéndice A; uso: `python3 medir.py <registro .jsonl> "<etiqueta del prompt>"`. Mide desde el primer mensaje del usuario que contiene la etiqueta hasta el final del registro.
 
@@ -158,6 +162,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Plan de Engram 1.7.1: reloj congelado solo desde donde hace falta (§4), quinta muestra del subagente de borrador (§5), estudio del punto de traspaso por tipo de sesión y medir el propio contexto en el registro (§1.6, §5, apéndice B).
 - 2026-09-25 — Reglamento 1.1.1 publicado: séptima corrida de parche en Sonnet medium y quinta de publicación en Sonnet low (§6).
 - 2026-09-25 — Reglamento 1.1.1 (R3): la versión del puntero se cambia a mano (§4); cuarta muestra del subagente de borrador (§5).
 - 2026-09-25 — Revalidación R2: pruebas a mano del propietario con capturas verificadas en los registros (§5).
@@ -220,4 +225,29 @@ for line in open(path):
 print("inicio",t0,"fin",t1); print("modelos",dict(models),"effort",dict(efforts)); print("mensajes",msgs)
 print("tokens",dict(u),"total",u["input_tokens"]+u["cache_read_input_tokens"]+u["cache_creation_input_tokens"]+u["output_tokens"])
 print("herramientas",dict(tools)); print("largo último texto",len(last_text))
+```
+
+## Apéndice B. Costo y contexto de una sesión (Claude Code)
+
+Uso: `python3 costo.py <registro .jsonl>`. Precios del 2026-09-25 (models.dev y Notion «Precios de modelos»); la escritura de caché distingue 5 min y 1 h. «contexto max» es lo que relee el mensaje más grande: es el número del traspaso (§1.6).
+
+```python
+import json,sys,collections
+# precios USD/M: entrada, lectura caché, escritura 5m, escritura 1h, salida
+P={"opus":(4,0.2,5,8,20),"sonnet":(2,0.2,2.5,4,10)}
+path=sys.argv[1]; seen=set(); u=collections.Counter(); msgs=0; t0=t1=None; cost=0; models=collections.Counter(); maxctx=0
+for line in open(path):
+    o=json.loads(line)
+    if o.get("type")!="assistant": continue
+    m=o["message"]; mid=m.get("id")
+    if mid in seen: continue
+    seen.add(mid); msgs+=1; t=o.get("timestamp"); t0=t0 or t; t1=t
+    mod=m.get("model",""); models[mod]+=1; p=P["opus" if "opus" in mod else "sonnet"]
+    us=m.get("usage",{}); cc=us.get("cache_creation") or {}
+    i=us.get("input_tokens",0) or 0; r=us.get("cache_read_input_tokens",0) or 0; w=us.get("cache_creation_input_tokens",0) or 0; out=us.get("output_tokens",0) or 0
+    w1=cc.get("ephemeral_1h_input_tokens",0) or 0; w5=w-w1
+    cost+=(i*p[0]+r*p[1]+w5*p[2]+w1*p[3]+out*p[4])/1e6
+    u["in"]+=i;u["read"]+=r;u["write"]+=w;u["out"]+=out; maxctx=max(maxctx,i+r+w)
+print(dict(models),"mensajes",msgs,"inicio",t0,"fin",t1)
+print("tokens",dict(u),"total",sum(u.values()),"contexto max",maxctx,"costo $%.2f"%cost)
 ```
