@@ -1,0 +1,505 @@
+diff --git a/docs/decisions/0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md b/docs/decisions/0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md
+new file mode 100644
+index 0000000..9896976
+--- /dev/null
++++ b/docs/decisions/0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md
+@@ -0,0 +1,125 @@
++# 0028 — Revalidación de Claude Code y Codex, y aclaraciones del checklist
++
++**Fecha:** 2026-09-25
++**Estado:** aceptada
++**Sesión:** forge614-ai-orquestador-2026-09-25-r3-e4ec550
++
++## Contexto
++
++El acta 0027 dejó seis celdas de `standard/support-matrix.json` en `revalidate`: `engines/claude-code`,
++`engines/codex`, `shell/claude-code`, `shell/codex` (abiertas el 2026-09-22, por la corrección de
++`startup-context` en Engram) y `engram/claude-code`, `engram/codex` (abiertas el 2026-09-25, por el
++checklist de la memoria inteligente). El plan
++`docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md` ejecutó, el 2026-09-25, tres
++tareas de revalidación en laboratorio (copia de la base real, nunca la real):
++
++- **R1 y R1b:** batería del checklist `forge614-engram` contra Claude Code y Codex, con evidencia completa
++  en `docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md`. Los dos asistentes encuentran la
++  memoria, la usan y no inventan cuando falta; el resumen vivo (P5′) y el secreto (P6′) quedaron aprobados
++  en los dos por caminos distintos; el parecido (P8′) quedó aprobado en Claude Code (repetición del
++  orquestador, con `supersedes`) y **falla en una cláusula** en Codex: recibe `similar` pero no explica a
++  la persona por qué deja la nota aparte.
++- **R2:** el propietario abrió Shell desde `~` y desde una carpeta sin Git con los dos asistentes, y
++  probó `/compact`; las cuatro celdas de Engines y Shell quedaron demostradas.
++
++De la batería quedaron correcciones y precisiones pendientes para el checklist (frase de «Previous session
++(interrupted)», definición de «byte a byte» del manual v4, forma normal del manual incrustado —ya vigente
++en Claude Code desde Engines 1.13.0—, verificación del formato 2 por la transcripción y no por la evidencia
++del gancho, nota de laboratorio para no tocar la memoria real, entre otras), y la tabla «Agentes ya
++evaluados» quedó desalineada con la matriz (la fila de Cursor fuera de la tabla, Engram sin actualizar,
++Engines y Shell sin marcar la revalidación).
++
++## Decisión
++
++1. **Matriz de soporte:** `engines/claude-code`, `engines/codex`, `shell/claude-code` y `shell/codex` pasan
++   de `revalidate` a `supported`, con `verifiedAt: "2026-09-25"` y `verifiedBy: "owner"`; se les agrega una
++   frase de evidencia al final de `notes` y se les quitan `revalidateSince`, `reason` y `deadline`. Ningún
++   otro campo de esas celdas cambia.
++2. **Engram sigue en revalidación:** `engram/claude-code` y `engram/codex` conservan `status: "revalidate"`,
++   `revalidateSince: "2026-09-25"`, `reason` sin cambios y `deadline: "2026-10-25"`; se les agrega una frase
++   de resultado a `notes`. Se cierran cuando Engram 1.7.1 corrija que el manual pida explicar por qué se
++   deja aparte un parecido (P8′ de Codex) y se repita esa prueba.
++3. **Aclaraciones y correcciones del checklist** (`standard/procedures/new-agent-checklist.md`, sección
++   `forge614-engram` salvo B1 y B2, en `forge614-engines`, y B3, en `forge614-shell`):
++   - B1: la forma normal de `verify memory-integration` es el manual incrustado en el archivo principal del
++     agente entre marcadores (desde Engines 1.13.0, también en Claude Code); primary file + `contentFile`
++     satélite queda como excepción.
++   - B2: se anota la ejecución del 2026-09-25 de la revalidación de Engines (`unbound`) para Claude Code y
++     Codex.
++   - B3: se anota la ejecución del 2026-09-25 de la revalidación de Shell (memoria desde `~` y sin Git) para
++     Claude Code y Codex.
++   - B4: se corrige la frase de «Previous session (interrupted)» (aparece cuando otra sesión ya marcó la
++     cortada, o tras inactividad, no en la segunda conversación de un proyecto limpio) y la verificación del
++     formato 2 pasa de «el registro del gancho guarda `chars` y el texto» a leer la transcripción del
++     asistente y compararla con `text` de `startup-context --format 2`.
++   - B5: la prueba de sesión interrumpida exige un proyecto sin otras sesiones abiertas (Engram 1.7.0 marca
++     como interrumpida toda otra sesión abierta del mismo proyecto).
++   - B6: la forma normal de la versión 4 del protocolo es el manual incrustado (excepción: archivo aparte,
++     como en Engines); se define «byte a byte» entre los marcadores, sin la línea de marca de Engines, sin
++     el renglón en blanco siguiente y sin el salto de línea final.
++   - B7: se agrega el resultado medido el 2026-09-25 — Claude Code, sin archivo de instrucciones, toma el
++     manual de las instrucciones del servidor MCP; Codex no las toma, así que en Codex el manual completo en
++     `~/.codex/AGENTS.md` es obligatorio.
++   - B8: `SECRET_REJECTED` admite dos caminos válidos (Engram rechaza y se guarda de nuevo sin el valor, o
++     el agente quita el valor antes de guardar); no guardar nada es falla; se recomienda una cadena de
++     conexión inventada en vez de la palabra «password» sola, que hace que el agente se niegue sin llamar a
++     Engram.
++   - B9: el aviso `similar` solo sale sin `topicKey` y con semejanza ≥ 0,25, y exige dos guardados en turnos
++     separados; si el agente fusiona los dos pedidos, el aviso no se ejercitó.
++   - B10: se agrega, al final de la sección `forge614-engram`, un bloque de viñetas «Cómo probar sin tocar
++     la memoria real (laboratorio, 2026-09-25)» con la receta de copia de la base, `FORGE614_HOME`,
++     guarda con base rota, variable explícita para el servidor MCP de Codex, copia limpia por agente,
++     `--disallowedTools` en Claude Code, no renombrar proyectos/grupos en la copia, y borrar el laboratorio
++     al terminar.
++   - Tabla «Agentes ya evaluados»: Claude Code y Codex quedan con Engines y Shell en ✅ (revalidado
++     2026-09-25) y Engram en ⚠️ revalidar (con el motivo y el plazo 2026-10-25); se agrega a las notas de
++     cada uno cómo recibe el manual del servidor MCP. La fila de Cursor, que estaba después del párrafo
++     «Revalidaciones abiertas» rompiendo la tabla, se mueve dentro de la tabla, tras Codex, sin cambiar su
++     texto. El párrafo «Revalidaciones abiertas (acta 0017)» se corrige sin borrar su historia: las de
++     Engines y Shell de Claude Code y Codex, abiertas el 2026-09-22, se cerraron el 2026-09-25; siguen
++     abiertas las de Engram, desde el 2026-09-25 (acta 0027), plazo 2026-10-25.
++4. **Por qué no se aplica el candado 3 de `STANDARD.md` §12 a Engines y Shell:** ese candado exige
++   `revalidate` cuando cambia la sección de un nodo en el checklist. Los textos que cambian en las secciones
++   de Engines y Shell (B2 y B3) solo registran, con fecha, una revalidación ya ejecutada contra el texto
++   vigente desde el 2026-09-22 y aclaran la forma normal del manual incrustado (B1) sin agregar ninguna
++   validación nueva que un agente ya soportado no haya cumplido; las cuatro celdas se validaron el mismo día
++   contra ese mismo texto. La sección `forge614-engram` sí cambia de forma sustantiva (B4 a B10), pero ese
++   cambio no reabre `engines`/`shell`: el candado 3 marca `revalidate` en las celdas del nodo cuya sección
++   cambió, y `forge614-engram` pertenece al nodo Engram, ya en `revalidate` por el acta 0027.
++5. **Versión del reglamento:** `standard/VERSION` sube de `1.1.0` a `1.1.1` (parche: corrige y aclara el
++   checklist y cierra revalidaciones ya ejecutadas, sin requisitos nuevos para ningún agente), con el
++   encabezado de `STANDARD.md`/`.en.md`, las menciones de la versión vigente en los documentos 00 y 01
++   (es/en), el puntero (`forge614.node.json`: versión a mano y huella vía
++   `bun run standard:pack -- --update-pointer`) y el mapa de
++   documentación (`bun run notion-map:build`).
++
++## Alternativas descartadas
++
++- **Reabrir `revalidate` en Engines y Shell por haber tocado su sección del checklist:** el candado 3 existe
++  para forzar revalidación cuando cambia una validación real, no cuando se anota, con fecha, una prueba que
++  ya se ejecutó contra el texto vigente; reabrirlas habría exigido repetir en laboratorio pruebas ya hechas
++  el mismo día, sin ganar nada.
++- **Cerrar también `engram/claude-code` y `engram/codex`:** P8′ de Codex sigue fallando una cláusula del
++  manual v4 (no explica por qué deja aparte un parecido); cerrarlas sin esa corrección dejaría la matriz
++  diciendo `supported` sobre una conducta no verificada.
++- **Subir la versión a 1.2.0:** este cambio no agrega ninguna validación nueva al checklist ni cambia
++  esquemas o contratos; solo corrige y aclara texto ya publicado y cierra revalidaciones ya ejecutadas, lo
++  que corresponde a un parche (1.1.1), no a una versión menor.
++
++## Consecuencias
++
++- La matriz de soporte queda con cuatro celdas menos en `revalidate`; solo Engram de Claude Code y Codex
++  sigue pendiente, con plazo 2026-10-25.
++- El checklist de agentes queda alineado con lo aprendido en R1, R1b y R2: la forma normal del manual
++  incrustado, la definición de «byte a byte», la verificación del formato 2 por transcripción, la nota de
++  laboratorio para no tocar la memoria real, y la tabla «Agentes ya evaluados» coherente con la matriz.
++- Queda pendiente, fuera de esta acta, la corrección de Engram 1.7.1 (P8′ de Codex) y su repetición antes
++  del 2026-10-25 para cerrar las dos celdas restantes.
++- El reglamento 1.1.1 se publica con esta acta y los archivos corregidos; la publicación es un paso
++  separado, con aprobación del propietario.
++
++## Referencias
++
++- Plan de origen: `docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md`
++- Informe de evidencia: `docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md`
++- Actas relacionadas: `0017`, `0024`, `0027`
+diff --git a/docs/decisions/INDEX.json b/docs/decisions/INDEX.json
+index 69365da..a3545bd 100644
+--- a/docs/decisions/INDEX.json
++++ b/docs/decisions/INDEX.json
+@@ -243,6 +243,15 @@
+       "date": "2026-09-25",
+       "session": "forge614-ai-2026-09-25-reglamento-1-1-0",
+       "file": "0027-memoria-inteligente-de-engram-en-el-procedimiento.md"
++    },
++    {
++      "number": "0028",
++      "slug": "revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist",
++      "title": "Revalidación de Claude Code y Codex, y aclaraciones del checklist",
++      "status": "aceptada",
++      "date": "2026-09-25",
++      "session": "forge614-ai-orquestador-2026-09-25-r3-e4ec550",
++      "file": "0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md"
+     }
+   ]
+ }
+diff --git a/docs/en/00-summary-and-quickstart.md b/docs/en/00-summary-and-quickstart.md
+index ab1ade0..4be1bdd 100644
+--- a/docs/en/00-summary-and-quickstart.md
++++ b/docs/en/00-summary-and-quickstart.md
+@@ -6,7 +6,7 @@
+ 
+ `forge614-ai` is the core of the Forge614 ecosystem, a family of tools for working with AI assistants. Each tool is a **node**: its own repository with a public contract. Today this repository publishes three things:
+ 
+-- The **Node Standard** (`standard/STANDARD.md`, version `1.1.0`): the norm every node complies with. Explained in document 01.
++- The **Node Standard** (`standard/STANDARD.md`, version `1.1.1`): the norm every node complies with. Explained in document 01.
+ - The **rules** as packages and the **pack** `forge614-pack-ecosystem-node` that groups them. Document 02.
+ - The **templates** from which a node generates its installers, workflows and contracts, and the **verifier** (`bun run verify`) that checks the standard against this very repository. Documents 03 and 04.
+ 
+diff --git a/docs/en/01-node-standard.md b/docs/en/01-node-standard.md
+index 0031eaa..8203646 100644
+--- a/docs/en/01-node-standard.md
++++ b/docs/en/01-node-standard.md
+@@ -29,7 +29,7 @@ Where a decision originated a point, the norm cites the corresponding record (se
+ 
+ Two files pin the version:
+ 
+-- `standard/VERSION` holds the standard's version (today `1.1.0`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.1.0.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
++- `standard/VERSION` holds the standard's version (today `1.1.1`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.1.1.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
+ - `forge614.node.json` is the **node pointer**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` is the standard version the node declares to comply with and `standard.sha256` the fingerprint of the standard archive for that version; `kind` tells `product` (installable) from `internal` (nobody installs it by hand); `ecosystem`, optional in the schema (record 0022), names the group the node belongs to. The `NodePointerSchema` schema (`src/modules/standard/schemas/node-pointer.ts`) validates it and rejects unknown fields.
+ 
+ In this repository the pointer carries the fingerprint of the archive that `bun run standard:pack` produces from `standard/` itself; `bun run standard:pack --check` checks that they still match (document 04).
+diff --git a/docs/es/00-resumen-y-guia-rapida.md b/docs/es/00-resumen-y-guia-rapida.md
+index 7cc88cb..7b0a434 100644
+--- a/docs/es/00-resumen-y-guia-rapida.md
++++ b/docs/es/00-resumen-y-guia-rapida.md
+@@ -6,7 +6,7 @@
+ 
+ `forge614-ai` es el núcleo del ecosistema Forge614, una familia de herramientas para trabajar con asistentes de IA. Cada herramienta es un **nodo**: un repositorio propio con un contrato público. Hoy este repositorio publica tres cosas:
+ 
+-- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.1.0`): la norma que todo nodo cumple. Se explica en el documento 01.
++- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.1.1`): la norma que todo nodo cumple. Se explica en el documento 01.
+ - Las **reglas** como paquetes y el **pack** `forge614-pack-ecosystem-node` que las agrupa. Documento 02.
+ - Las **plantillas** desde las que un nodo genera sus instaladores, workflows y contratos, y el **verificador** (`bun run verify`) que comprueba el estándar sobre este mismo repositorio. Documentos 03 y 04.
+ 
+diff --git a/docs/es/01-estandar-de-nodo.md b/docs/es/01-estandar-de-nodo.md
+index b70d001..032bd7f 100644
+--- a/docs/es/01-estandar-de-nodo.md
++++ b/docs/es/01-estandar-de-nodo.md
+@@ -29,7 +29,7 @@ Donde una decisión originó un punto, la norma cita el acta correspondiente (se
+ 
+ Dos archivos fijan la versión:
+ 
+-- `standard/VERSION` contiene la versión del estándar (hoy `1.1.0`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.1.0.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
++- `standard/VERSION` contiene la versión del estándar (hoy `1.1.1`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.1.1.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
+ - `forge614.node.json` es el **puntero del nodo**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` es la versión del estándar que el nodo declara cumplir y `standard.sha256` la huella del paquete del estándar de esa versión; `kind` distingue `product` (se instala) de `internal` (nadie lo instala a mano); `ecosystem`, opcional en el esquema (acta 0022), nombra el grupo al que pertenece el nodo. El esquema `NodePointerSchema` (`src/modules/standard/schemas/node-pointer.ts`) lo valida y rechaza campos desconocidos.
+ 
+ En este repositorio el puntero lleva la huella del paquete que `bun run standard:pack` produce a partir del propio `standard/`; `bun run standard:pack --check` comprueba que siguen coincidiendo (documento 04).
+diff --git a/docs/notion-map.json b/docs/notion-map.json
+index b9b5621..e4d3705 100644
+--- a/docs/notion-map.json
++++ b/docs/notion-map.json
+@@ -5,15 +5,15 @@
+     {
+       "es": "docs/es/00-resumen-y-guia-rapida.md",
+       "en": "docs/en/00-summary-and-quickstart.md",
+-      "sha256Es": "8da7bb1e21990c6969c5ae89e0db6eb7c4553752c9bee6eb2296a591b2de8775",
+-      "sha256En": "28535b531820ef08965513295d954f416eb893dd7d338132594baba793a17d85",
++      "sha256Es": "342b7016787758639a0a28815902a6dc9e2e63f422fdc4bad48b737c4d089192",
++      "sha256En": "de55f3c4698e9ac15d36c037993b340d7843825abe6945dc4853b8d14609b5e5",
+       "notionPageId": null
+     },
+     {
+       "es": "docs/es/01-estandar-de-nodo.md",
+       "en": "docs/en/01-node-standard.md",
+-      "sha256Es": "854c9ca368f3ddf17b84120923db655bb3b0c71ca53b2eac579f7207928197b5",
+-      "sha256En": "0fe2e7ade9b7e4887115d697e0f6c8a9ab704a39bf9b4f5c45ebe2482517be7b",
++      "sha256Es": "750a380e299778e3e8cd7b38d65bc898cc6c49a6ad658987098bb0e9193034c8",
++      "sha256En": "d70aecc0a3b000aae8dde146d852e5227d5be0dbe92a57e1aed0844622e1e7b5",
+       "notionPageId": null
+     },
+     {
+diff --git a/forge614.node.json b/forge614.node.json
+index bf420e0..d683ae6 100644
+--- a/forge614.node.json
++++ b/forge614.node.json
+@@ -3,8 +3,8 @@
+   "node": "ai",
+   "kind": "product",
+   "standard": {
+-    "version": "1.1.0",
+-    "sha256": "cf3dd08eff859fe95981b13b9c89c179461d0f9ebbc1e8e046eb1cf4025a8be0"
++    "version": "1.1.1",
++    "sha256": "bbe1e3487d267483a2aebf36337551efaee5429c43c5a36a215578e36de2cac9"
+   },
+   "ecosystem": "forge614"
+ }
+diff --git a/standard/STANDARD.en.md b/standard/STANDARD.en.md
+index 824ff1a..4043910 100644
+--- a/standard/STANDARD.en.md
++++ b/standard/STANDARD.en.md
+@@ -1,4 +1,4 @@
+-# Forge614 Node Standard — version 1.1.0
++# Forge614 Node Standard — version 1.1.1
+ 
+ > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
+ 
+diff --git a/standard/STANDARD.md b/standard/STANDARD.md
+index 1508f0b..9d347ef 100644
+--- a/standard/STANDARD.md
++++ b/standard/STANDARD.md
+@@ -1,4 +1,4 @@
+-# Estándar de Nodo Forge614 — versión 1.1.0
++# Estándar de Nodo Forge614 — versión 1.1.1
+ 
+ > Norma vinculante para todo repositorio del ecosistema Forge614. "Debe" significa que el verificador lo comprueba o que la revisión humana lo exige antes de fusionar. Las decisiones que lo originan están en `docs/decisions/` de `forge614-ai`.
+ 
+diff --git a/standard/VERSION b/standard/VERSION
+index 9084fa2..524cb55 100644
+--- a/standard/VERSION
++++ b/standard/VERSION
+@@ -1 +1 @@
+-1.1.0
++1.1.1
+diff --git a/standard/procedures/new-agent-checklist.md b/standard/procedures/new-agent-checklist.md
+index c2b1978..2053ae5 100644
+--- a/standard/procedures/new-agent-checklist.md
++++ b/standard/procedures/new-agent-checklist.md
+@@ -116,7 +116,10 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+ - [ ] Si el agente declara `instructions`, correr `verify memory-integration` (`runVerifyMemoryIntegration`
+       / `verifyMemoryIntegration`) contra una instalación real, para confirmar que el bloque
+       administrado de memoria se escribe y se detecta correctamente con el formato real de archivo de
+-      ese agente (primary file directo, o primary file + `contentFile` satélite como usa Claude Code).
++      ese agente. La forma normal es el manual incrustado en el archivo principal de instrucciones del
++      agente, entre sus marcadores (desde Engines 1.13.0 también en Claude Code, `~/.claude/CLAUDE.md`,
++      como ya hacía Codex en `~/.codex/AGENTS.md`); primary file + `contentFile` satélite queda como
++      excepción, solo si el agente no admite el bloque incrustado.
+ 
+ **Integración automática de memoria vía SessionStart hooks (ya implementada para Claude Code y Codex —
+ usar esto como referencia al agregar el hook de un agente nuevo):**
+@@ -138,6 +141,8 @@ usar esto como referencia al agregar el hook de un agente nuevo):**
+       Confirmar que el runtime del hook (`src/app/run-memory-hook.ts`) inyecta `shared` también en ese caso
+       y no descarta la respuesta por no venir `bound`; probar el hook con `cwd` = `~`. Aplica a Claude Code
+       y Codex (ya soportados): sus celdas de Engines quedan en `revalidar` hasta que se ejecute esta prueba.
++      **Ejecutada el 2026-09-25** con Claude Code y Codex (gancho desde `~` y desde una carpeta sin Git,
++      formato 2 del bloque): celdas de Engines en `supported`.
+ - [ ] **Nunca afirmar "el host realmente consumió el contexto"** — eso no es verificable desde Engines.
+       Usar nombres honestos como `runtime-observed`, que significan únicamente "el runtime propio de
+       Engines fue invocado con un payload con forma de SessionStart y Engram devolvió contexto" —
+@@ -282,10 +287,17 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+       `forge614-engines` arriba antes de repetir esa investigación para un agente nuevo.
+ - [ ] Si el host (Engines o Shell) usa `startup-context --format 2` para el agente nuevo, verificar que
+       inyecta `text` tal cual y como dato recuperado, sin reescribirlo; que el bloque mide ≤ 5 000
+-      caracteres y empieza con el encabezado de ocupación; que, tras cortar una sesión, la siguiente
+-      muestra «Previous session (interrupted)»; y que con el bloque presente el agente no vuelve a llamar
+-      `memory_context` al arrancar (regla 2 del manual v4). Verificación: el registro del gancho guarda
+-      `chars` y el texto inyectado.
++      caracteres y empieza con el encabezado de ocupación; y que con el bloque presente el agente no vuelve
++      a llamar `memory_context` al arrancar (regla 2 del manual v4). La sección «Previous session
++      (interrupted)» del bloque aparece cuando otra sesión ya marcó la cortada como interrumpida, o tras un
++      período de inactividad — por el orden de Engram, en un proyecto limpio no sale ya en la segunda
++      conversación, sino después; el aviso inmediato de que la sesión anterior quedó interrumpida lo da el
++      campo `previous` de `memory_session_start` (ver el punto de sesión interrumpida, más abajo).
++      Verificación: el texto inyectado se lee en la transcripción del asistente (Claude Code: evento
++      `system/hook_response` con `--verbose --output-format stream-json`; Codex: su registro
++      `~/.codex/sessions/…/rollout-*.jsonl`) y se compara con `text` de `startup-context --format 2`; la
++      evidencia del gancho (`~/.forge614/engines/hook-evidence/<agente>.json`) solo guarda
++      `engramContextReceived` y la huella del comando, no el texto inyectado.
+ 
+ **Compatibilidad con el protocolo público:**
+ 
+@@ -303,17 +315,28 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+       otra en el mismo repositorio; verificar que la segunda recibe `previous` de `memory_session_start` y
+       que el agente se lo dice a la persona y ofrece continuar desde el resumen, sin inventar lo que hizo
+       la primera (si no hay resumen, dice que no dejó ninguno). Verificación: comparar lo que dice con el
+-      resumen real (`memory_get` del id que trae `previous`).
++      resumen real (`memory_get` del id que trae `previous`). La prueba necesita un proyecto sin otras
++      sesiones abiertas: `memory_session_start` marca como interrumpida toda otra sesión abierta del mismo
++      proyecto (Engram 1.7.0), así que una sesión en paralelo contamina el resultado.
+ - [ ] Si la integración pide la versión 4 (`memory-protocol --json --protocol-version 4`), verificar que
+       instala `instructions` completo y sin recortar (≤ 2 500 caracteres) en el archivo de instrucciones
+       del agente, sin agregarle reglas de memoria propias, y que no copia allí `mcpInstructions` (llegan
+-      solas por el servidor MCP). Verificación: el texto instalado es byte a byte igual a `instructions`
+-      de la salida del comando.
++      solas por el servidor MCP). La forma normal es incrustar el manual en el archivo principal de
++      instrucciones del agente, entre sus marcadores; el archivo aparte (primary file + `contentFile`
++      satélite) queda como excepción, igual que en Engines. Verificación: el texto instalado es byte a
++      byte igual a `instructions` de la salida del comando — «byte a byte» significa que el contenido
++      entre los marcadores `<!-- forge614-engines:begin engram-memory-protocol -->` y
++      `<!-- forge614-engines:end engram-memory-protocol -->`, sin la línea de marca de Engines
++      (`<!-- Managed by Forge614 Engines. …`), sin el renglón en blanco que la sigue y sin el salto de
++      línea final, es idéntico a `instructions`.
+ - [ ] Verificar que el agente nuevo recibe las instrucciones del servidor MCP de Engram (desde 1.7.0 son
+       las del manual v4 para todo cliente) y las sigue: en una sesión nueva, sin archivo de instrucciones,
+       tras dos pasos importantes, `memory_history` de su resumen de sesión muestra al menos dos versiones
+       (resumen vivo, no solo al final). Si el cliente descarta las instrucciones del servidor, anotarlo en
+-      la fila del agente: entonces el manual completo es obligatorio.
++      la fila del agente: entonces el manual completo es obligatorio. Resultado medido el 2026-09-25:
++      Claude Code, sin archivo de instrucciones, tomó el manual de las instrucciones del servidor MCP (abrió
++      sesión y guardó su resumen con los seis campos); Codex no las toma y solo recibe el manual por
++      `~/.codex/AGENTS.md`, así que para Codex el manual completo es obligatorio (Engines ya lo instala).
+ - [ ] Si el host crea la base con `init` para el agente nuevo, verificar que queda en el esquema 11
+       (`intelligence-enable` responde `migrated: false`) y que una base existente no cambia de nivel.
+ - [ ] Si Engram no está disponible, el agente debe continuar y decir la verdad; nunca sustituirlo por un
+@@ -347,7 +370,12 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+       recuerdo sin el valor (nombrando dónde vive, por ejemplo `password: <redacted>` o el nombre de la
+       variable de entorno), no reintenta con el secreto, no descarta el recuerdo en silencio y le dice a la
+       persona qué quitó. Verificación: pedirle que recuerde un texto con una clave de prueba inventada y
+-      revisar con `memory_search` que se guardó sin el valor.
++      revisar con `memory_search` que se guardó sin el valor. Hay dos caminos válidos: Engram rechaza con
++      `SECRET_REJECTED` y el agente vuelve a guardar sin el valor, o el agente quita el valor antes de
++      guardar y lo dice; no guardar nada es falla. Un `password: …` demasiado obvio hace que el agente se
++      niegue a guardar sin llegar a llamar a Engram — para ejercitar `SECRET_REJECTED` de verdad conviene
++      usar, por ejemplo, una cadena de conexión inventada con usuario y contraseña en vez de la palabra
++      «password» sola.
+ - [ ] Con esquema 11 y un proyecto que pertenece a un grupo, pedirle al agente nuevo que suba al tablero una
+       regla que afecta a varios proyectos y verificar que manda un tipo permitido y `affects` con al menos
+       dos proyectos del grupo; y que ante cualquier código `ECOSYSTEM_*` corrige el guardado, lo deja en el
+@@ -361,7 +389,31 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+       cosas que manda el protocolo v4 (actualiza el parecido, lo deja aparte diciendo por qué, o guarda con
+       `supersedes`), sin dejar dos recuerdos activos iguales en silencio y sin borrar nada. Verificación:
+       `memory_search` con esas palabras devuelve un solo recuerdo activo, o el viejo con la marca
+-      `superseded`.
++      `superseded`. El aviso `similar` solo sale al guardar sin `topicKey` y con una semejanza de palabras
++      de al menos 0,25; la prueba necesita dos guardados en turnos separados (el segundo mensaje enviado
++      después de que termine la respuesta al primero) — si el agente fusiona los dos pedidos en un solo
++      guardado, el aviso no se ejercitó.
++
++**Cómo probar sin tocar la memoria real (laboratorio, 2026-09-25):**
++
++- Hacer una copia coherente de la base real con `sqlite3 <base> ".backup '<lab>/engram/engram.db'"`, con
++  permisos 600 y una primera apertura (por ejemplo `sqlite3 <copia> "pragma journal_mode"` o `init --json`
++  sin carpeta) antes de aceptar escrituras.
++- Apuntar toda la prueba a esa copia con `FORGE614_HOME` del laboratorio.
++- Antes de cualquier prueba, hacer una guarda con una base «rota» (una carpeta en lugar del archivo de la base): el
++  agente debe responder `DATABASE_PATH_UNSAFE`; si responde con recuerdos, está usando la base real y hay
++  que detenerse.
++- Codex no pasa `FORGE614_HOME` a su propio servidor MCP: hay que dárselo explícito con
++  `-c "mcp_servers.forge614-engram.env={FORGE614_HOME=\"$LAB\"}"` y, en `codex exec`, además
++  `-c 'mcp_servers.forge614-engram.default_tools_approval_mode="approve"'`.
++- Usar una copia limpia por agente: Engram no borra nada, así que una segunda prueba sobre la misma copia
++  ve lo que dejó la primera.
++- En `claude -p`, `--allowedTools` no restringe las herramientas disponibles: usar `--disallowedTools` (o
++  `--tools`) para limitar de verdad lo que el agente puede llamar.
++- Si el agente corre en la carpeta real de un repositorio, no renombrar proyectos ni grupos en la copia: el
++  arranque de Engram escribe `.forge614/project.json` en esa carpeta, y un cambio hecho solo pensando en la
++  copia puede llegar al archivo real; comparar `git status` antes y después de cada prueba.
++- Borrar el laboratorio al terminar: lleva datos privados de la memoria real.
+ 
+ ---
+ 
+@@ -462,7 +514,8 @@ del delimitador antes de envolver el bloque — nunca confiar en una sola capa d
+       `~` y desde una carpeta sin Git con el agente seleccionado y confirmar que `getStartupContext`
+       acepta `project.status: "unbound"` como éxito, inyecta el bloque `shared` (una preferencia shared
+       conocida debe aparecer) y no muestra "sin memoria". Aplica a Claude Code y Codex; sus celdas de Shell
+-      quedan en `revalidar` hasta ejecutarla.
++      quedan en `revalidar` hasta ejecutarla. **Ejecutada el 2026-09-25** por el propietario con Claude
++      Code y Codex (Shell desde `~` y desde `~/Desktop`, sin Git): celdas de Shell en `supported`.
+ - [ ] Si el agente nuevo tiene un punto de inyección de contexto tipo system-prompt (o, si no,
+       cualquier forma de anteponer texto al primer turno), cablear `getStartupContext` de la misma
+       forma: una función `getStartupContext`/`getStartupContextFn` inyectable en la sesión (sin valor
+@@ -569,10 +622,12 @@ hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez
+ 
+ | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
+ |---|---|---|---|---|---|---|
+-| Claude Code | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). |
+-| Codex | ⚠️ revalidar (hook con `unbound`, 2026-09-22) | ✅ | ✅ | N/A | ⚠️ revalidar (Shell desde `~`, 2026-09-22) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). |
++| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; se cierra tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
++| Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; falta explicar por qué deja aparte un parecido, se repite tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
++| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
+ 
+ **Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
+-persona ejecuta la prueba indicada, con fecha, después de publicar la release de Engram que incluye la
+-corrección de `startup-context`. Plazo máximo: 30 días desde 2026-09-22.
+-| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
++persona ejecuta la prueba indicada, con fecha. Las de Engines y Shell de Claude Code y Codex se abrieron el
++2026-09-22 (corrección de `startup-context`) y se cerraron el 2026-09-25 (ver el informe
++`docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` y el acta 0028). Siguen abiertas las de
++Engram de Claude Code y Codex, desde el 2026-09-25 (acta 0027), con plazo máximo el 2026-10-25.
+diff --git a/standard/support-matrix.json b/standard/support-matrix.json
+index b69a2d6..124e08d 100644
+--- a/standard/support-matrix.json
++++ b/standard/support-matrix.json
+@@ -6,13 +6,10 @@
+     {
+       "node": "engines",
+       "agent": "claude-code",
+-      "status": "revalidate",
+-      "revalidateSince": "2026-09-22",
+-      "reason": "hook con startup-context unbound",
+-      "deadline": "2026-10-22",
+-      "verifiedAt": "2026-09-22",
++      "status": "supported",
++      "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+-      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED)."
++      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
+     },
+     {
+       "node": "workers",
+@@ -39,29 +36,23 @@
+       "deadline": "2026-10-25",
+       "verifiedAt": "2026-09-22",
+       "verifiedBy": "owner",
+-      "notes": "No requiere cambios en Engram (protocolo v1)."
++      "notes": "No requiere cambios en Engram (protocolo v1). Revalidación 2026-09-25: todo aprobado; se cierra tras Engram 1.7.1."
+     },
+     {
+       "node": "shell",
+       "agent": "claude-code",
+-      "status": "revalidate",
+-      "revalidateSince": "2026-09-22",
+-      "reason": "Shell desde ~ con memoria compartida",
+-      "deadline": "2026-10-22",
+-      "verifiedAt": "2026-09-22",
++      "status": "supported",
++      "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+-      "notes": "Onboarding de claude setup-token no diseñado aún."
++      "notes": "Onboarding de claude setup-token no diseñado aún. Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
+     },
+     {
+       "node": "engines",
+       "agent": "codex",
+-      "status": "revalidate",
+-      "revalidateSince": "2026-09-22",
+-      "reason": "hook con startup-context unbound",
+-      "deadline": "2026-10-22",
+-      "verifiedAt": "2026-09-22",
++      "status": "supported",
++      "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+-      "notes": "Sí soporta nivel de razonamiento (model_reasoning_effort)."
++      "notes": "Sí soporta nivel de razonamiento (model_reasoning_effort). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
+     },
+     {
+       "node": "workers",
+@@ -88,18 +79,15 @@
+       "deadline": "2026-10-25",
+       "verifiedAt": "2026-09-22",
+       "verifiedBy": "owner",
+-      "notes": ""
++      "notes": "Revalidación 2026-09-25: todo aprobado salvo explicar por qué deja aparte un parecido (P8′); se repite tras Engram 1.7.1. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
+     },
+     {
+       "node": "shell",
+       "agent": "codex",
+-      "status": "revalidate",
+-      "revalidateSince": "2026-09-22",
+-      "reason": "Shell desde ~ con memoria compartida",
+-      "deadline": "2026-10-22",
+-      "verifiedAt": "2026-09-22",
++      "status": "supported",
++      "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+-      "notes": ""
++      "notes": "Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
+     },
+     {
+       "node": "engines",
