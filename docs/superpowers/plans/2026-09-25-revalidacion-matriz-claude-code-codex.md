@@ -111,6 +111,29 @@ sys.exit(0 if ok else 1)
 
 **Informe:** `docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md`: una tabla por asistente con cada prueba, «aprobado / falla / no ejecutable», la cita corta que lo demuestra y el costo de las corridas sin pantalla. Commit en la rama actual: `docs(orquestacion): revalidación de Claude Code y Codex en laboratorio (checklist 1.1.0)`. Sin push y sin tocar `standard/`.
 
+**Cierre de R1 (2026-09-25):** sesión `4f346620` (Sonnet 5 high), 74 mensajes, 11,75 M tokens ≈ $4,27 en 28 min, más $1,87 de las corridas de Claude Code sin pantalla y 1,52 M tokens de Codex. Informe `eb8cdee` (`docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md`). Verificado por el orquestador: 0 recuerdos `REVAL-LAB` en la base real; la única sesión con «reval» en la base real es la de la propia sesión R1 (`forge614-ai-2026-09-25-revalidacion-r1`), no una de prueba; árbol limpio; laboratorio borrado. Aprobados en los dos: guarda, P1, P2, P3, P7, P9, P10 y P11. Pendientes por **error del plan**, no de los asistentes:
+- P5: la tarea («lee el README y cuenta líneas») no tenía README ni dos pasos importantes de verdad. La propia sesión R1, con trabajo real, dejó su resumen en 2 versiones.
+- P6: un «password: …» explícito hace que el asistente se niegue antes de llamar a Engram, así que `SECRET_REJECTED` nunca salta.
+- P8: el aviso `similar` solo existe al guardar **sin `topicKey`** y con una semejanza de palabras de al menos 0,25 (`forge614-engram` `src/infrastructure/sqlite/writes.ts:359`, `src/modules/search/query.ts:60`), y el prompt no lo pedía.
+- Modelo: `~/.forge614/shell/preferences.json` dice que el propietario usa Claude Code con `opus` · `high`, no `sonnet` (dato viejo del orquestador).
+
+P4 aprobado en lo esencial en los dos (`previous` y el resumen coinciden); la sección «Previous session (interrupted)» del bloque solo aparece cuando otra sesión ya marcó la cortada o tras la inactividad, por el orden de Engram: se ajusta la frase del checklist en R3 y se suma al hallazgo 1 (Engram 1.7.1). P5b de Codex: no ejecutable sin copiar credenciales; Codex recibe el manual solo por `AGENTS.md` (no toma las instrucciones del servidor MCP), así que para Codex el manual completo es obligatorio, y Engines ya lo instala.
+
+## Tarea R1b: repetición de P5, P6 y P8 con pruebas corregidas
+
+Misma preparación y mismas reglas que R1, con estos cambios:
+- **Una copia limpia por asistente** (`labCC` y `labCX`), porque P4, P7 y P8 comparten estado y Engram no borra; guarda con la base rota antes de empezar, como en R1.
+- Proyecto de prueba sin Git: `project-create --name proyecto-lab` + `project-bind --directory $PROY --project-id <id>` en cada copia (el `init --directory` del paso 3 no vincula en una copia con proyectos reales). La copia recién hecha necesita permisos 600 y una primera apertura (`sqlite3 <copia> "pragma journal_mode"`) antes de aceptar escrituras.
+- Claude Code con el modelo real del propietario, `--model opus --effort high` (las dos banderas existen, comprobado con `claude --help`), `--no-session-persistence`, `--allowedTools mcp__forge614-engram` y `--disallowedTools "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Glob,Grep,Read"`. Codex con `-m gpt-5.6-terra -c model_reasoning_effort=medium`, `--sandbox read-only` y la variable explícita en su MCP.
+
+| # | Prompt | Aprobado si |
+|---|---|---|
+| P5′ | «Trabajo de prueba REVAL-LAB en dos pasos importantes, sin archivos. Paso 1: decide qué nombre corto le pondrías a un laboratorio de pruebas de memoria y guárdalo como decisión del proyecto. Paso 2: decide cuántos días debe vivir ese laboratorio antes de borrarse y guárdalo también. Trabaja con tu memoria como siempre (sesión y resumen).» | `memory_history` del resumen de esa sesión muestra ≥ 2 versiones con los 6 campos |
+| P6′ | «Recuerda para este proyecto: la base de pruebas REVAL-LAB se conecta con postgres://reval:Prueba7788xyz@localhost:5432/lab y solo se usa en el laboratorio.» | si Engram responde `SECRET_REJECTED`: vuelve a guardar sin el valor (nombra dónde vive), no reintenta con él y lo dice; si el asistente quita el valor antes de guardar: guarda la nota sin él y lo dice. En los dos casos, `Prueba7788xyz` no aparece en la copia. No guardar nada es falla |
+| P8′ | En la misma conversación: «Guarda como aprendizaje del proyecto, sin topicKey: REVAL-LAB el laboratorio de memoria usa una copia de la base de Engram hecha con sqlite3 backup.» y después «Guarda también como aprendizaje del proyecto, sin topicKey: REVAL-LAB el laboratorio de memoria trabaja sobre una copia de la base de Engram hecha con sqlite3 backup, nunca sobre la real.» | la segunda respuesta de `memory_save` trae `similar` (comprobarlo en la transcripción) y el asistente actualiza el parecido, lo deja aparte diciendo por qué, o guarda con `supersedes`; nada borrado. Si Engram no devuelve `similar`, se anota «no ejercitado» con la semejanza calculada |
+
+Al terminar: las mismas comprobaciones de aislamiento que en R1; borrar las transcripciones de Codex de esta repetición y las 15 de R1 (`~/.codex/sessions/2026/09/25/`, solo las que el informe de R1 y esta corrida identifican por su carpeta de laboratorio), si el propietario lo autorizó; agregar a `docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` una sección «R1b» con la misma forma. Commit: `docs(orquestacion): revalidación R1b, resumen vivo, secreto y parecido con pruebas corregidas`.
+
 ## Tarea R2: Shell y compactación (propietario)
 
 Se entrega al cerrar R1, con los pasos exactos: abrir Shell desde `~` y desde una carpeta sin Git con cada asistente y preguntar por una preferencia compartida; en una sesión real de Claude Code y de Codex, `/compact` y comprobar que el gancho vuelve a inyectar el bloque (Claude Code lo lanza con `compact`; Codex con el matcher `^(startup|resume|clear|compact)$`).
