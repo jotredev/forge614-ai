@@ -80,6 +80,7 @@ Bloqueos: <lista o "ninguno">
 | Indicar archivos y líneas exactos a tocar, para que la sesión no explore el repositorio | provisional (hipótesis a medir) | la entrada re-leída es el 99 % del costo (§5) |
 | **Probar el plan completo en un laboratorio antes de entregarlo** (§1): código y pruebas literales ya verdes, anclas de reemplazo únicas | provisional | Engram 1.7.0: rondas por error del plan T1 3 → T2 1 → **T3 0** (el laboratorio atrapó 4 errores); agente T3 en 2,3 min y 1,09 M tokens |
 | Cuando el plan agrega un campo de texto, listar cada filtro o validación que recorre los campos de texto (secretos, límites, normalización) y exigir una prueba por campo nuevo en cada uno | provisional | Engram T2 agregó `affects` y el filtro de secretos no lo revisaba; nadie lo vio hasta la revisión independiente T9 (1 tarea de corrección extra, T9b) |
+| Antes de activar un nivel de esquema nuevo sobre la base real, comprobar qué hace la versión anterior con ese nivel; si lo rechaza, el plan ordena instalar, cerrar todas las sesiones que usan la base y activar desde una sesión abierta después | provisional | Engram T10: 1.6.0 responde `DATABASE_VERSION` con el nivel 11; los servidores MCP abiertos (procesos 1.6.0) habrían perdido la memoria al activar |
 | Todo filtro o expresión regular del plan se ejecuta antes contra textos normales parecidos ("casi positivos") y esos casos entran como pruebas fijas | provisional | Engram T2: el filtro de secretos rechazaba 5 de 8 textos normales, incluido `password: <redacted>`; 1 ronda |
 | Con código literal y anclas únicas, el agente aplica el plan por script (sin editar a mano): mantener las anclas exactas y únicas | provisional | Engram T3 y T3 docs: 0 Write/Edit, reemplazos con comprobación de unicidad |
 | Cuando el plan trae pruebas largas sin código de implementación, el prompt pide extraerlas del plan con un script; nunca escribirlas a mano | provisional | Engram T4 r1 (Codex medium): reescribió en 15 líneas la prueba de 114 del plan y omitió dos; r2 con extracción por script: idénticas |
@@ -122,7 +123,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (0 corridas) |
-| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (3 corridas; Engram T8 Sonnet medium con parche completo aplicado por `git apply`: 0,42 M tokens ≈ $0,27, 4,2 min, 0 rondas, commit idéntico al parche; Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente; Engram T7 Sonnet medium con laboratorio, 0,63 M tokens ≈ $0,39 en 1,8 min, 0 rondas, commit idéntico al plan) |
+| Código + pruebas con plan preciso | Sonnet · medium con parche o plan probado en laboratorio | **firme** (3 corridas Sonnet medium a la primera: Engram T7 con laboratorio, 0,63 M ≈ $0,39; T8 con parche por `git apply`, 0,42 M ≈ $0,27; T9b con parche, 0,31 M ≈ $0,23 en 4,1 min). Codex · medium: 1 corrida (Engram T2, 4,58 M tokens, 1 ronda por error del plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
 | Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | **firme** (3 corridas, todas a la primera: Engram T4 docs, 1,08 M tokens ≈ $0,74; T7 docs, 1,43 M ≈ $0,68, atrapó un dato falso del plan; T8 docs + versión, 22 archivos, 1,36 M ≈ $0,76 en 3,1 min) |
@@ -132,6 +133,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Código con parche o laboratorio en Sonnet medium pasa a firme (§6, Engram T9b); lección de niveles de esquema y procesos abiertos (§4).
 - 2026-09-25 — Regla firme del propietario: el orquestador anota todo al cerrar cada paso, incluida su propia fila (§1.4); lección de Engram T9 sobre campos nuevos y filtros (§4); primera revisión independiente medida (§6).
 - 2026-09-25 — Documentación redactada por el agente pasa a firme (§6, 3 corridas); parche completo con `git apply` como forma de entregar código (§6).
 - 2026-09-25 — Lección de Engram T8: costo real de un subagente de trabajo abierto (§5).
