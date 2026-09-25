@@ -47,9 +47,10 @@
 | T7 | Protocolo v4 + instrucciones MCP + descripciones | medio | Claude Code · Sonnet 5 · medium | Sonnet medium; manual redactado y probado por el orquestador en laboratorio |
 | T8 | Bases nuevas inteligentes (init), `sessionProjectId`, coherencia de docs es/en y CHANGELOG, réplica → 1.8.0, versión | medio | Claude Code · Sonnet 5 · medium (código y docs, dos sesiones) | parche completo aplicado con `git apply` |
 | T9 | Revisión independiente de toda la rama | — | Codex · gpt-5.6-terra · high | otro proveedor |
+| T9b | Corrección de H1 (secretos en `affects`) | medio | Claude Code · Sonnet 5 · medium | parche completo con `git apply` |
 | T10 | PR, CI, publicación, instalación y activación en la Mac | bajo | Claude Code · Sonnet 5 · low | low |
 
-Orden: T1 → T2 → T3 → T5 → T4 → T6 → T7 → T8 → T9 → T10 (uno a la vez; cada prompt se escribe tras aprobar el reporte anterior).
+Orden: T1 → T2 → T3 → T5 → T4 → T6 → T7 → T8 → T9 → T9b → T10 (uno a la vez; cada prompt se escribe tras aprobar el reporte anterior).
 
 ## Contratos compartidos (los fija este esqueleto; las tareas no los cambian sin aviso)
 
@@ -3859,6 +3860,25 @@ Dudas: <lo que no pudiste confirmar, o "ninguna">
 Severidad: **crítico** = pérdida o alteración de datos reales, o un secreto que se guarda o se filtra; **alto** = rompe un contrato (formato 1, réplica 1–3, SDK, solo agregar) o bloquea el uso normal; **medio** = conducta distinta a la spec o al plan en un caso borde; **bajo** = documentación o cosmético.
 
 **Después del reporte (orquestador):** cada hallazgo se verifica en una copia `git archive f181a1d` del scratchpad (sin tocar `forge614-engram`) y se clasifica real / dudoso / falso; se mide la corrida en `~/.codex/sessions` (tokens y % del límite semanal) y se agrega la fila en Notion «Corridas de agentes». Con hallazgos reales: tarea de correcciones (plan con parche probado en laboratorio, como T8) y nueva pasada de verificación; sin hallazgos reales: T10.
+
+**Resultado (2026-09-25):** 1 hallazgo, 0 dudas; áreas 1 y 3–8 sin hallazgos. Agente: 4,25 M tokens (4,08 M en caché), 44 llamadas, ≈ 14 min, límite semanal 5 % → 5 %; demostraciones y pruebas solo en su copia de `$TMPDIR`, árbol limpio al final.
+- **H1 · crítico · área 2 · `src/infrastructure/sqlite/writes.ts:229` — REAL** (verificado por el orquestador en una copia): el filtro revisa título, contenido, tema y `short`, pero no `affects`. Con el esquema 11, `save({ …, affects: ["ghp_…", "otro"] })` en ámbito `project` se acepta y el token queda en `memory_meta.affects`. En ámbito `ecosystem` no pasa (los nombres deben ser proyectos del grupo). Es el único llamado a `findSecret` y los resúmenes de sesión pasan por él. Contra: spec §5 y Task 9 área 2.
+
+### Task 9b: Corrección de H1 *(prompt tras T9)*
+
+**Experimento:** Claude Code · Sonnet 5 · medium, sesión nueva, etiqueta `[Engram · T9b]`; parche completo probado aplicado con `git apply` (como T8 código), dos commits.
+
+**Parche:** `2026-09-24-engram-1-7-0-t9-fix.patch` (junto a este plan), SHA-256 `0004ecf6af7201fe30bf255a03be9962657139b430c11a39d1fb78e20d1f007c`, 90 líneas, 6 archivos:
+- `src/infrastructure/sqlite/writes.ts`: `findSecret` recibe también los nombres de `affects` (solo los de texto; la validación de forma sigue en `normalizeAffects`).
+- `src/infrastructure/sqlite/meta-save.test.ts`: prueba nueva «secrets in short or affects are rejected too, and nothing is stored» (rojo antes del arreglo, verde después).
+- `docs/es/04-sdk-typescript.md`, `docs/en/04-typescript-sdk.md`, `docs/es/06-resolucion-de-errores.md`, `docs/en/06-troubleshooting.md`: la lista de campos revisados agrega el proyecto afectado (`affects`). El CHANGELOG dice «un texto» (no cambia); el 06 ya tiene `notionSyncPending` y el 04 no tiene entrada.
+
+**Medición del orquestador (laboratorio sobre `f181a1d`):** prueba nueva roja sin el arreglo y verde con él; suite **673 pass / 10 skip / 0 fail** (+1), typecheck 0, `git diff --check` limpio; parche aplicado con `git apply --check` sobre una copia nueva.
+
+- [ ] **Step 1:** `git -C ~/Desktop/forge614-ai show engram/memoria-inteligente-spec:docs/superpowers/plans/2026-09-24-engram-1-7-0-t9-fix.patch > "$SCRATCH/t9-fix.patch"`, comprobar la huella, `git apply --check` y `git apply`.
+- [ ] **Step 2:** `bun test` → 673 pass / 10 skip / 0 fail; `bun run typecheck` sin errores; `git diff --check` sin salida.
+- [ ] **Step 3 (commit 1):** `git add src/infrastructure/sqlite/writes.ts src/infrastructure/sqlite/meta-save.test.ts && git commit -m "fix(memory): the secret filter also checks affected projects"`
+- [ ] **Step 4 (commit 2):** `git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/06-resolucion-de-errores.md docs/en/06-troubleshooting.md && git commit -m "docs: the secret filter also covers affected projects"`; al final `git status --short` sin salida.
 
 ### Task 10: Publicación *(prompt tras aprobar T9)*
 
