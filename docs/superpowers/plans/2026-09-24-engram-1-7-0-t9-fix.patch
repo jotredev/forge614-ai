@@ -1,0 +1,90 @@
+diff --git a/docs/en/04-typescript-sdk.md b/docs/en/04-typescript-sdk.md
+index f9d7c5b..de19df6 100644
+--- a/docs/en/04-typescript-sdk.md
++++ b/docs/en/04-typescript-sdk.md
+@@ -77,7 +77,7 @@ store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined
+ 
+ `SaveInput` gains three optional fields accepted only with schema 11 (an earlier level answers `INTELLIGENCE_REQUIRED`): `short` (a 1–300 character short version), `affects` (1–20 project names of 1–64 characters; trimmed, deduplicated and sorted) and `supersedes` (the id of an active memory with the same scope and owner, which is marked as replaced by this one; it is never archived; if it does not exist or belongs to another scope, `SUPERSEDES_NOT_FOUND`). This data lives outside the memory version: it creates no new version and does not change the memory's hash, and saving the same text with new metadata only updates it. Every new version of a `decision` or `procedure` gets a review date 90 days ahead; once it passes, reads add the `verify` mark. When the content changes without a new `short`, the previous short version is cleared. `searchPreviews` and `getVersion` (and their `*InGroup` variants) add `meta` and `marks` only with schema 11 and only when the memory has metadata; otherwise the result keeps its shape. New exported types: `MemoryMeta` and `MemoryMark`.
+ 
+-Every save (`save`, session summaries, CLI and MCP), at any database level, rejects with `SECRET_REJECTED` a title, content, topic or short version that looks like it contains a secret: a private key, an AWS key, a GitHub or Slack token, an `sk-` key, a JWT, a connection string with user and password, or an assignment with a literal value such as `password=<value>`. The error names the kind of secret, never the value. Naming where a key lives is allowed (`process.env.API_KEY`, `password: <redacted>`).
++Every save (`save`, session summaries, CLI and MCP), at any database level, rejects with `SECRET_REJECTED` a title, content, topic, short version or affected project (`affects`) that looks like it contains a secret: a private key, an AWS key, a GitHub or Slack token, an `sk-` key, a JWT, a connection string with user and password, or an assignment with a literal value such as `password=<value>`. The error names the kind of secret, never the value. Naming where a key lives is allowed (`process.env.API_KEY`, `password: <redacted>`).
+ 
+ From schema 11, `search`, `searchPreviews` (and their `*InGroup` variants) use hybrid search: the query is split across a whole-word index and a trigram index, the two are combined by reciprocal rank fusion, and the result is weighted by the same reinforcement multiplier (pinned, recency, stability) that `fts5` already used. A result needs at least 2 of the query terms (all of them when there are fewer than 2); when none apply, the search returns nothing instead of noise. `SearchExplanation.mode` gains the value `"hybrid"`, with the same meaning for `orderScore` (lower is better) as in `fts5`. See chapter 5 for the full formula.
+ 
+diff --git a/docs/en/06-troubleshooting.md b/docs/en/06-troubleshooting.md
+index 145b15b..377edb7 100644
+--- a/docs/en/06-troubleshooting.md
++++ b/docs/en/06-troubleshooting.md
+@@ -45,7 +45,7 @@ Since 1.6.0. The `group-*` commands, `memory-move`, and the codes in this sectio
+ 
+ Since 1.7.0. In the CLI these codes return `{schemaVersion,code,error}` on stderr.
+ 
+-- `SECRET_REJECTED`: the title, content, topic or short version looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
++- `SECRET_REJECTED`: the title, content, topic, short version or an affected project (`affects`) looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
+ - `INTELLIGENCE_REQUIRED`: `short`, `supersedes` or `affects` were sent and the database does not have memory intelligence yet. Enable it with `forge614-engram intelligence-enable` (it backs up before migrating) or save without those fields.
+ - `SUPERSEDES_NOT_FOUND`: `supersedes` points to a memory that does not exist, is archived, or belongs to another scope or project. Find the right id with `memory_search`.
+ - `AMBIGUOUS_SESSION`: with schema 11 this no longer comes from stale open sessions (sessions marked as interrupted or idle for more than 6 hours are ignored); if it still appears, two sessions of the same folder are genuinely alive: pass `sessionId`.
+diff --git a/docs/es/04-sdk-typescript.md b/docs/es/04-sdk-typescript.md
+index e9c7c4b..2b13fd6 100644
+--- a/docs/es/04-sdk-typescript.md
++++ b/docs/es/04-sdk-typescript.md
+@@ -77,7 +77,7 @@ store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined
+ 
+ `SaveInput` gana tres campos opcionales que solo se aceptan con el esquema 11 (en un nivel anterior responden `INTELLIGENCE_REQUIRED`): `short` (versión corta de 1 a 300 caracteres), `affects` (de 1 a 20 nombres de proyecto de 1 a 64 caracteres; se recortan, se quitan repetidos y se ordenan) y `supersedes` (id de un recuerdo activo del mismo ámbito y dueño, que queda marcado como reemplazado por este; nunca se archiva; si no existe o es de otro ámbito, `SUPERSEDES_NOT_FOUND`). Estos datos viven fuera de la versión del recuerdo: no crean versión nueva ni cambian su huella, y guardar el mismo texto con metadatos nuevos solo los actualiza. Cada versión nueva de una `decision` o un `procedure` recibe una fecha de revisión a 90 días; cuando pasa, la lectura añade la marca `verify`. Si el contenido cambia sin un `short` nuevo, la versión corta anterior se borra. `searchPreviews` y `getVersion` (y sus variantes `*InGroup`) añaden `meta` y `marks` solo con el esquema 11 y solo cuando el recuerdo tiene metadatos; en otro caso el resultado no cambia de forma. Tipos exportados nuevos: `MemoryMeta` y `MemoryMark`.
+ 
+-Todo guardado (`save`, resúmenes de sesión, CLI y MCP), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un título, contenido, tema o versión corta que parezca contener un secreto: llave privada, clave de AWS, token de GitHub o Slack, clave `sk-`, JWT, cadena de conexión con usuario y contraseña, o una asignación con valor literal como `password=<valor>`. El error nombra el tipo de secreto, nunca el valor. Nombrar dónde vive una clave sí se permite (`process.env.API_KEY`, `password: <redacted>`).
++Todo guardado (`save`, resúmenes de sesión, CLI y MCP), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un título, contenido, tema, versión corta o proyecto afectado (`affects`) que parezca contener un secreto: llave privada, clave de AWS, token de GitHub o Slack, clave `sk-`, JWT, cadena de conexión con usuario y contraseña, o una asignación con valor literal como `password=<valor>`. El error nombra el tipo de secreto, nunca el valor. Nombrar dónde vive una clave sí se permite (`process.env.API_KEY`, `password: <redacted>`).
+ 
+ Desde el esquema 11, `search`, `searchPreviews` (y sus variantes `*InGroup`) usan búsqueda híbrida: la consulta se reparte en un índice por palabras completas y otro por trigramas, se combinan por rango recíproco (RRF) y el resultado se pondera por el mismo multiplicador de refuerzo (fijado, recencia, estabilidad) que ya usaba `fts5`. Un resultado necesita al menos 2 de los términos de la consulta (todos si son menos de 2); si ninguno aplica, la búsqueda no devuelve nada en vez de ruido. `SearchExplanation.mode` gana el valor `"hybrid"`, con el mismo significado de `orderScore` (menor es mejor) que en `fts5`. Consulta el capítulo 5 para la fórmula completa.
+ 
+diff --git a/docs/es/06-resolucion-de-errores.md b/docs/es/06-resolucion-de-errores.md
+index 0109a95..7d843ce 100644
+--- a/docs/es/06-resolucion-de-errores.md
++++ b/docs/es/06-resolucion-de-errores.md
+@@ -45,7 +45,7 @@ Desde 1.6.0. Los comandos `group-*`, `memory-move` y los códigos de esta secci
+ 
+ Desde 1.7.0. En la CLI estos códigos devuelven `{schemaVersion,code,error}` por stderr.
+ 
+-- `SECRET_REJECTED`: el título, el contenido, el tema o la versión corta parecen contener un secreto (el mensaje dice de qué tipo, nunca el valor). Quita el valor y guarda solo dónde vive, por ejemplo `password: <redacted>` o el nombre de la variable de entorno. Aplica en cualquier nivel de la base.
++- `SECRET_REJECTED`: el título, el contenido, el tema, la versión corta o un proyecto afectado (`affects`) parecen contener un secreto (el mensaje dice de qué tipo, nunca el valor). Quita el valor y guarda solo dónde vive, por ejemplo `password: <redacted>` o el nombre de la variable de entorno. Aplica en cualquier nivel de la base.
+ - `INTELLIGENCE_REQUIRED`: se enviaron `short`, `supersedes` o `affects` y la base aún no tiene la memoria inteligente. Actívala con `forge614-engram intelligence-enable` (respalda antes de migrar) o guarda sin esos campos.
+ - `SUPERSEDES_NOT_FOUND`: `supersedes` apunta a un recuerdo que no existe, está archivado o es de otro ámbito o proyecto. Busca el id correcto con `memory_search`.
+ - `AMBIGUOUS_SESSION`: con el esquema 11 ya no lo provocan sesiones abiertas obsoletas (las marcadas como interrumpidas o inactivas por más de 6 horas se ignoran); si aun así aparece, hay dos sesiones de la misma carpeta genuinamente activas: indica `sessionId`.
+diff --git a/src/infrastructure/sqlite/meta-save.test.ts b/src/infrastructure/sqlite/meta-save.test.ts
+index dfc4a7f..a7b5325 100644
+--- a/src/infrastructure/sqlite/meta-save.test.ts
++++ b/src/infrastructure/sqlite/meta-save.test.ts
+@@ -20,6 +20,19 @@ test("secrets are rejected at every schema level, naming the kind and never the
+   });
+ });
+ 
++test("secrets in short or affects are rejected too, and nothing is stored", () => withDatabase(db => {
++  enableIntelligence(db);
++  const project = createProject(db, "Secrets");
++  for (const extra of [{ short: secretText }, { affects: ["forge614-engram", secretText] }]) {
++    let error: unknown;
++    try { save(db, { projectId: project.projectId, type: "decision", title: "Regla", content: "c", ...extra }); } catch (caught) { error = caught; }
++    expect(error).toMatchObject({ code: "SECRET_REJECTED" });
++    expect(String((error as Error).message)).not.toContain("hunter2");
++  }
++  expect(db.query("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 0 });
++  expect(db.query("SELECT count(*) AS n FROM memory_meta").get()).toEqual({ n: 0 });
++}));
++
+ test("metadata fields below level 11 are rejected, never dropped", () => withDatabase(db => {
+   enableSearchReinforcement(db);
+   const project = createProject(db, "Old");
+diff --git a/src/infrastructure/sqlite/writes.ts b/src/infrastructure/sqlite/writes.ts
+index 5b8e6ab..0063bd5 100644
+--- a/src/infrastructure/sqlite/writes.ts
++++ b/src/infrastructure/sqlite/writes.ts
+@@ -226,7 +226,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
+     if (expected !== null && (!Number.isSafeInteger(expected) || expected < 1 || !topic)) {
+       throw new MemoryError("INVALID_INPUT", "expectedVersion requiere un tema y un entero positivo.");
+     }
+-    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : ""].join("\n"));
++    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : "",
++      ...(Array.isArray(input.affects) ? input.affects.filter(name => typeof name === "string") : [])].join("\n"));
+     if (secret !== null) throw new MemoryError("SECRET_REJECTED", `El recuerdo parece contener un secreto (${secret}); guárdalo sin el valor.`);
+     const wantsMeta = input.short !== undefined || input.supersedes !== undefined || input.affects !== undefined;
+     if (wantsMeta && !intelligenceEnabled(db)) throw new MemoryError("INTELLIGENCE_REQUIRED", "short, supersedes y affects requieren la memoria inteligente (forge614-engram intelligence-enable).");
