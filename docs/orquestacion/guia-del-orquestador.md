@@ -91,6 +91,7 @@ Bloqueos: <lista o "ninguno">
 | Regla | Estado | Evidencia |
 |---|---|---|
 | **Documentación tarea por tarea:** al terminar cada tarea, un prompt aparte (etiqueta `· docs`, **sesión nueva**, medido por separado; los textos exactos van en el plan, redactados contra los capítulos reales y simulados en una copia) actualiza en un commit propio los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica. Sesión nueva en vez de la misma (provisional): T1 docs misma sesión ≈ $1 por ronda; T3 docs sesión nueva Sonnet low 0,48 M tokens ≈ $0,28, a la primera |
+| En los prompts de documentación, exigir que cada frase se compruebe en el código del commit y que un dato del plan que no coincida no se escriba y se reporte | provisional | Engram T7 docs: el plan decía que las versiones 1 a 3 del protocolo anuncian el formato 1; el agente vio en el código que la 1 no anuncia nada, escribió lo correcto y lo reportó (0 rondas extra) |
 | **Checklist de agentes tarea por tarea (acta 0017):** al cerrar cada tarea (código + documentación), el orquestador revisa `standard/procedures/new-agent-checklist.md` (sección del nodo que cambió y las de Engines y Shell si consumen lo cambiado) y decide si hay un requisito nuevo para los asistentes; si lo hay, redacta el punto con su verificación; si no, anota el motivo. Los cambios se acumulan y se publican juntos en la siguiente versión del reglamento, para revalidar la matriz de soporte una sola vez | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
 
 ## 5. Medición
@@ -122,14 +123,14 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (2 corridas: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente; Engram T7 Sonnet medium con laboratorio, 0,63 M tokens ≈ $0,39 en 1,8 min, 0 rondas, commit idéntico al plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
-| Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | provisional (1 corrida: Engram T4 docs, 1,08 M tokens ≈ $0,74, 0 rondas, todas las frases correctas; sin costo de subagente) |
+| Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | provisional (2 corridas: Engram T4 docs, 1,08 M tokens ≈ $0,74, 0 rondas, todas las frases correctas; Engram T7 docs, 1,43 M tokens ≈ $0,68 en 6,1 min, 0 rondas, y atrapó un dato falso del plan; sin costo de subagente) |
 | Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
 | Revisión independiente de una rama | otro proveedor · high | provisional (0 corridas) |
 | Ejecución de un plan ya escrito (referencia) | Sonnet · high: Sentinel 0.1.1, 8,86 M tokens, 3 rondas (todas error del plan) | 1 corrida |
 
 ## 7. Registro de cambios de esta guía
 
-- 2026-09-25 — Lecciones de Engram T7: revisar todos los campos que reutilizan una pieza del esquema (§4) y segunda corrida de "código + pruebas con plan preciso" (§6).
+- 2026-09-25 — Lecciones de Engram T7 y T7 docs: revisar todos los campos que reutilizan una pieza del esquema (§4), comprobar cada frase de la documentación en el código (§4b) y segundas corridas en §6.
 - 2026-09-24 — Lecciones de Engram T6: anclas completas (sin «…») y segunda corrida de Sonnet high con laboratorio (§6).
 - 2026-09-24 — Lecciones de Engram T4: extraer pruebas del plan con un script, revisar casos borde sin laboratorio, datos de "solo pruebas y contratos" y de documentación redactada por el agente.
 - 2026-09-24 — Los prompts se entregan en el chat del orquestador, en un solo bloque para copiar (§1.5); se retira la página de tarjetas.

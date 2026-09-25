@@ -3722,6 +3722,8 @@ Reglas de redacción: cada frase debe poder comprobarse en el código de `43845b
 
 Verificación: `git diff --check` sin salida y `git diff --stat` solo con esos 7 archivos.
 
+**Resultado (2026-09-25):** `c3be0a4`, 7 archivos, revisado frase por frase contra `43845bf`. **Errata del plan** atrapada por el agente: el dato «las versiones 1 a 3 anuncian el formato 1» del punto 3 es falso, porque la versión 1 no trae `startupContext`; el capítulo 10 dice, correctamente, que las versiones 2 y 3 anuncian el comando sin `--format` y la 1 ninguno.
+
 Commit:
 
 ```bash
@@ -3731,7 +3733,7 @@ git commit -m "docs: memory protocol v4 (manual, MCP instructions, field descrip
 
 ### Task 8: Coherencia final, activación en init/setup y versión *(detalle tras aprobar T7)*
 
-**Objetivo:** pasada final de coherencia de docs es/en y CHANGELOG (cada tarea ya documentó lo suyo; pendientes cosméticos de T6 docs `301123b`: doble línea en blanco antes de «Errores seguros» / «Safe errors» en el capítulo 10 es/en, y los ids del ejemplo del formato 2 son cortos cuando los reales son UUID completos), descripción propia para `sessionProjectId` en `memory_save` (hallazgo de la revisión de T7: hoy hereda «Memory id returned by search, save or context.»; debe decir que es el `projectId` de la sesión, obligatorio junto con `sessionId` cuando `scope` es `shared`; agregar la clave a `FIELD_DESCRIPTIONS` y su comprobación en `memory-tools.test.ts`, y documentarla en el capítulo 09), revisar si los capítulos 04 (SDK: `memoryProtocol()` «versión 1») y 08 (límites) necesitan mencionar la versión 4, `CONTRACT_CODES` completos, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
+**Objetivo:** pasada final de coherencia de docs es/en y CHANGELOG (cada tarea ya documentó lo suyo; pendientes cosméticos de T6 docs `301123b`: doble línea en blanco antes de «Errores seguros» / «Safe errors» en el capítulo 10 es/en, y los ids del ejemplo del formato 2 son cortos cuando los reales son UUID completos), cosméticos de T7 docs `c3be0a4` (el CHANGELOG dice que el manual «tiene dos salidas» y el capítulo 09 «tres»: unificar en tres, con las descripciones de campos como tercera; en la lista del capítulo 09 `startupContext` aparece junto a las salidas sin serlo; la viñeta del bloque de arranque del CHANGELOG dice «las versiones 1 a 3 siguen anunciando el formato 1», pero la versión 1 no anuncia ningún comando: «las versiones 2 y 3»), descripción propia para `sessionProjectId` en `memory_save` (hallazgo de la revisión de T7: hoy hereda «Memory id returned by search, save or context.»; debe decir que es el `projectId` de la sesión, obligatorio junto con `sessionId` cuando `scope` es `shared`; agregar la clave a `FIELD_DESCRIPTIONS` y su comprobación en `memory-tools.test.ts`, y documentarla en el capítulo 09), revisar si los capítulos 04 (SDK: `memoryProtocol()` «versión 1») y 08 (límites) necesitan mencionar la versión 4, `CONTRACT_CODES` completos, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
 
 ### Task 9: Revisión independiente *(prompt tras aprobar T8)*
 
