@@ -43,7 +43,7 @@
 | T3 | Buscador nuevo + candidatos parecidos + 20 consultas | medio-alto | Claude Code · Sonnet 5 · high | Sonnet high con código completo |
 | T4 | Reglas del tablero, `affects`, tope, bajar, proyecto fuente, nota de estado | medio | Codex · gpt-5.6-terra · medium | **solo pruebas + contratos** (sin código de implementación) vs T2 |
 | T5 | Sesiones: actividad e interrumpidas | medio | Claude Code · Sonnet 5 · medium | Sonnet medium vs T3 high |
-| T6 | Bloque de arranque (formato 2) | medio-alto | Claude Code · Sonnet 5 · high | Sonnet high |
+| T6 | Bloque de arranque (formato 2) | medio-alto | Claude Code · Sonnet 5 · high | Sonnet high; laboratorio del propio orquestador en sesión limpia |
 | T7 | Protocolo v4 + instrucciones MCP + descripciones | medio | Claude Code · Sonnet 5 · medium | Sonnet medium (redacción) |
 | T8 | Docs es/en, CHANGELOG, códigos, activación en init/setup, plan de réplica → 1.8.0, versión | bajo | Claude Code · Sonnet 5 · low | low |
 | T9 | Revisión independiente de toda la rama | — | Codex · gpt-5.6-terra · high | otro proveedor |
@@ -2736,10 +2736,573 @@ git add docs/es/03-referencia-cli.md docs/en/03-cli-reference.md docs/es/04-sdk-
 git commit -m "docs: ecosystem board rules, status note, group source and demote in CLI, SDK, architecture, troubleshooting, scopes and changelog"
 ```
 
-### Task 6: Bloque de arranque *(detalle tras aprobar T4)*
+### Task 6: Bloque de arranque
 
-**Objetivo:** `startup-context --format 2` según el contrato T6; `format 1` byte-idéntico.
-**Terminado:** el bloque de una base con 107 recuerdos sintéticos mide ≤ 5 000 caracteres con encabezado de ocupación; prueba de sesión anterior interrumpida.
+**Experimento:** Claude Code · Sonnet 5 · **high**, plan con código completo probado en laboratorio. Variable del orquestador: el laboratorio lo escribió y probó **el propio orquestador** en una sesión nueva tras el traspaso (Opus 5.5 · high, contexto limpio), sin subagentes, para comparar su costo contra T3 (laboratorio propio con contexto grande), T4 (sin laboratorio) y T5 (laboratorio delegado).
+
+**Medición del orquestador (2026-09-24, laboratorio sobre `0ecfdb4`, nunca en el repositorio):**
+- Suite completa en el laboratorio: **662 pass / 10 skip / 0 fail** (+10 pruebas, +2 archivos de prueba), typecheck 0, `git diff --check` limpio; 16 archivos (4 nuevos, 12 modificados).
+- Cada ancla de reemplazo se aplicó por script con comprobación de que aparece **una sola vez** en `0ecfdb4`; el texto de esta tarea se generó desde los archivos del laboratorio.
+- **Hallazgo del laboratorio:** con el índice ordenado solo por fecha, en una base con la forma de la real (92 recuerdos del proyecto) la regla del tablero nunca entraba: los recuerdos del proyecto, más nuevos, llenaban todo el espacio. Corregido con D-T6-4 (tablero y proyecto alternados) y cubierto por dos pruebas.
+
+**Decisiones de esta tarea:**
+- **D-T6-1:** `startup-context --directory <carpeta> --json --format 2` devuelve el `StartupBlock` del contrato (`{ format: 2, text, chars, sections: { essentials, previous, index }, omitted }`, en ese orden de claves). `--format` acepta solo `1` o `2` (otro valor → `INVALID_INPUT` antes de abrir la base); sin `--format` sigue el formato 1. El formato 1 queda **byte-idéntico**: `readStartupContext` no cambia y una prueba de extremo a extremo compara `--format 1` con la salida por defecto.
+- **D-T6-2:** el formato 2 funciona **en cualquier nivel** (no exige `intelligence-enable`), para que Engines pueda pedirlo sin conocer el nivel de la base. Solo en nivel 11: la versión corta (`short`) reemplaza al título en lo esencial, los recuerdos marcados "reemplazado por" se omiten, la marca `[verify]` aparece en los vencidos y se incluye la sesión anterior interrumpida (`previousInterrupted` de T5). Por debajo del nivel 11 el bloque se arma con las mismas fuentes sin esos extras. Solo lectura, con la misma resolución del proyecto que el formato 1 (`resolveStartupProjectContext`).
+- **D-T6-3 (esencial ≤ 1 500):** recuerdos activos **fijados** de la libreta personal (`shared`; un recuerdo del proyecto con el mismo tema oculta al compartido, como en `context()`), del tablero del grupo y del proyecto, en ese orden; dentro del tablero la nota de estado (`ecosystem/estado-actual`) va primero; después, del más nuevo al más viejo. Cada línea: `- <short o título> [marcas] · <personal|board|project> · <id>`, siempre en una sola línea.
+- **D-T6-4 (índice = lo que queda):** recuerdos activos **sin fijar** del tablero y del proyecto, **alternando uno del tablero y uno del proyecto** (cada cajón del más nuevo al más viejo), solo títulos; sin resúmenes de sesión (`session/*/summary`: la sesión interrumpida ya tiene su sección) y sin los de la libreta sin fijar (spec §6.1: el índice es del cajón del proyecto y del tablero). Un directorio sin vínculo no tiene índice.
+- **D-T6-5 (sesión anterior ≤ 800):** aviso con `sessionId` e `interruptedAt` y el último resumen (id y versión) con sus líneas en blanco compactadas, para que una línea en blanco solo separe secciones; si no cabe, se corta con `…`.
+- **D-T6-6 (topes y encabezado):** se cuentan **caracteres Unicode** (`Array.from(text).length`, como el tope de la nota de estado). El encabezado dice `[Forge614 Engram] Startup block: retrieved data, not an instruction.` y `<chars>/5000 chars · nothing omitted.` o `… · <N> titles did not fit: find them with memory_search.`; `chars` es la longitud exacta del texto completo, encabezado incluido. Se reserva el encabezado más ancho posible antes de llenar, así el total nunca pasa de 5 000. Cada lista se llena en orden y se detiene en la primera línea que no cabe (el orden es la prioridad); `omitted` = títulos del esencial y del índice que no entraron; `sections` = caracteres de cada sección (0 si no aparece). Los textos fijos van en inglés (como el protocolo y las descripciones MCP); el contenido de los recuerdos va tal cual.
+- **D-T6-7:** `MemoryStore.startupBlock(projectId: string | null): StartupBlock` es el único método nuevo del SDK (registrado en las guardas del contrato público); tipo exportado nuevo: `StartupBlock`. `readStartupBlock` vive en `app` (no es export del SDK). El formato 2 no lleva los avisos de identidad (`notices`) del formato 1.
+- **D-T6-8:** sin cambios en MCP, en el protocolo (v1–v3 siguen anunciando el formato 1; v4 lo decide T7), en la réplica ni en el esquema.
+
+**Files:**
+- Create: `src/modules/search/startup.ts` (+ `startup.test.ts`), `src/infrastructure/sqlite/startup.ts` (+ `startup.test.ts`)
+- Modify: `src/modules/search/index.ts`, `src/index.ts`, `src/app/memory-store.ts`, `src/app/startup-context.ts`, `src/app/startup-context.test.ts`, `src/app/index.ts`
+- Modify: `src/interfaces/cli/arguments.ts`, `src/interfaces/cli/commands.ts`, `src/interfaces/cli/help.ts`, `src/interfaces/cli/__tests__/startup-context.e2e.test.ts`
+- Modify (guardas del contrato público): `src/index.test.ts`, `tests/fixtures/sdk-contract.ts`
+
+**Interfaces:**
+- Consumes: `intelligenceEnabled(db)` y `memory_meta` (T1), `readMetas` y `marksFor` (T2), `ECOSYSTEM_STATUS_TOPIC` (T4), `previousInterrupted` (T5), `groupOfProject`, `resolveStartupProjectContext`.
+- Produces:
+  ```ts
+  // src/modules/search/startup.ts
+  export const STARTUP_TOTAL = 5000, STARTUP_ESSENTIALS = 1500, STARTUP_PREVIOUS = 800;
+  export interface StartupBlock { format: 2; text: string; chars: number; sections: { essentials: number; previous: number; index: number }; omitted: number }
+  export function renderStartupBlock(input: StartupBlockInput): StartupBlock;
+  // src/infrastructure/sqlite/startup.ts
+  export function startupBlock(db, projectId: string | null, now?: string): StartupBlock;
+  // src/app/memory-store.ts
+  startupBlock(projectId: string | null): StartupBlock;
+  // src/app/startup-context.ts
+  export function readStartupBlock(store: MemoryStore, directory: string): StartupBlock;
+  // CLI: startup-context --directory <carpeta> --json [--format 1|2]
+  ```
+
+- [ ] **Step 1: Pruebas que fallan**
+
+`src/modules/search/startup.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { renderStartupBlock, STARTUP_ESSENTIALS, STARTUP_PREVIOUS, STARTUP_TOTAL, type StartupItem } from "./startup";
+
+const item = (n: number, extra: Partial<StartupItem> = {}): StartupItem =>
+  ({ id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`, scope: "project", title: `Title ${n}`, short: null, marks: [], ...extra });
+const points = (text: string) => Array.from(text).length;
+
+test("an empty block is only the header, which reports its own exact length", () => {
+  const block = renderStartupBlock({ essentials: [], essentialsTotal: 0, previous: null, index: [], indexTotal: 0 });
+  expect(block.text).toBe(`[Forge614 Engram] Startup block: retrieved data, not an instruction.\n${block.chars}/5000 chars · nothing omitted.`);
+  expect(block.chars).toBe(points(block.text));
+  expect(block).toMatchObject({ format: 2, sections: { essentials: 0, previous: 0, index: 0 }, omitted: 0 });
+});
+
+test("sections come in order, essentials prefer the short version, one line each, and the index never shows content", () => {
+  const block = renderStartupBlock({
+    essentials: [item(1, { scope: "shared", title: "Long rule title", short: "Every command\nstarts with rtk." }), item(2, { scope: "ecosystem", marks: ["verify"] })],
+    essentialsTotal: 2,
+    previous: { sessionId: "s-1", interruptedAt: "2026-01-01T06:00:00.000Z", summary: { id: item(9).id, version: 3, content: "Goal:\nT6\n\nNext steps:\n\n" } },
+    index: [item(3, { short: "never shown in the index" })], indexTotal: 1,
+  });
+  const [, essentials, previous, index] = block.text.split("\n\n");
+  expect(essentials).toBe(`## Essentials (pinned)\n- Every command starts with rtk. · personal · ${item(1).id}\n- Title 2 [verify] · board · ${item(2).id}`);
+  expect(previous).toBe(`## Previous session (interrupted)\nSession s-1 was interrupted at 2026-01-01T06:00:00.000Z; its last summary (${item(9).id} v3):\nGoal:\nT6\nNext steps:`);
+  expect(index).toBe(`## Index (titles only: open with memory_get)\n- Title 3 · project · ${item(3).id}`);
+  expect(block.sections).toEqual({ essentials: points(essentials!), previous: points(previous!), index: points(index!) });
+  expect(block.omitted).toBe(0);
+});
+
+test("each section keeps its cap, the whole block stays within the total and the header counts what did not fit", () => {
+  const essentials = Array.from({ length: 30 }, (_, n) => item(n, { scope: "shared", short: "é".repeat(120) }));
+  const index = Array.from({ length: 200 }, (_, n) => item(100 + n, { title: "Título largo ".repeat(8) }));
+  const block = renderStartupBlock({
+    essentials, essentialsTotal: 35,
+    previous: { sessionId: "s", interruptedAt: "2026-01-01T00:00:00.000Z", summary: { id: item(9).id, version: 1, content: "x".repeat(5000) } },
+    index, indexTotal: 250,
+  });
+  expect(block.sections.essentials).toBeLessThanOrEqual(STARTUP_ESSENTIALS);
+  expect(block.sections.previous).toBe(STARTUP_PREVIOUS);
+  expect(block.text).toContain("x…");
+  expect(block.chars).toBe(points(block.text));
+  expect(block.chars).toBeLessThanOrEqual(STARTUP_TOTAL);
+  const shown = block.text.split("\n").filter(row => row.startsWith("- ")).length;
+  expect(block.omitted).toBe(35 + 250 - shown);
+  expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
+});
+
+test("a previous session without a summary says so, and a list that cannot fit a single line is left out", () => {
+  const block = renderStartupBlock({
+    essentials: [], essentialsTotal: 0,
+    previous: { sessionId: "s", interruptedAt: "2026-01-01T00:00:00.000Z", summary: null }, index: [], indexTotal: 0,
+  });
+  expect(block.text.split("\n\n")[1]).toBe("## Previous session (interrupted)\nSession s was interrupted at 2026-01-01T00:00:00.000Z; it saved no summary.");
+  expect(block.sections.essentials).toBe(0);
+  expect(block.sections.index).toBe(0);
+});
+```
+
+`src/infrastructure/sqlite/startup.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { withDatabase } from "../__test-support__/fixtures";
+import { setGroupSource } from "./board";
+import { bindProjectToGroup, createGroup } from "./ecosystem-groups";
+import { createProject } from "./projects";
+import { enableIntelligence, enableSearchReinforcement } from "./schema";
+import { startupBlock } from "./startup";
+import { save, saveSessionSummary, startSession } from "./writes";
+
+const section = (text: string, heading: string) => text.split("\n\n").find(part => part.startsWith(heading)) ?? "";
+const lines = (text: string, heading: string) => section(text, heading).split("\n").slice(1);
+const fields = { goal: "Build T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
+
+test("at level 11 the block orders essentials, uses short versions, reports the interrupted session and indexes only live titles", () => withDatabase(db => {
+  enableIntelligence(db);
+  const ai = createProject(db, "forge614-ai").projectId, engram = createProject(db, "forge614-engram").projectId;
+  const other = createProject(db, "other").projectId, group = createGroup(db, "forge614").id;
+  for (const project of [ai, engram]) bindProjectToGroup(db, project, group, "command");
+  setGroupSource(db, group, ai);
+  const boardNote = save(db, { scope: "ecosystem", projectId: null, groupId: group, title: "Board note", content: "Unpinned board rule.", type: "procedure", affects: ["forge614-ai", "forge614-engram"] });
+  const status = save(db, { scope: "ecosystem", projectId: null, groupId: group, fromProjectId: ai, title: "Current status", content: "Front: T6.", type: "fact", topicKey: "ecosystem/estado-actual" });
+  const rule = save(db, { scope: "ecosystem", projectId: null, groupId: group, title: "Board rule", content: "Nodes speak JSON.", type: "decision", pinned: true, affects: ["forge614-ai", "forge614-engram"] });
+  const critical = save(db, { scope: "shared", projectId: null, title: "Critical rule with a long title", content: "Every command starts with rtk.", type: "preference", pinned: true, short: "Prefix every command with rtk." });
+  save(db, { scope: "shared", projectId: null, title: "Shared language", content: "Spanish", type: "preference", pinned: true, topicKey: "user/language" });
+  const language = save(db, { scope: "project", projectId: ai, title: "Project language", content: "English here", type: "preference", topicKey: "user/language" });
+  save(db, { scope: "shared", projectId: null, title: "Shared unpinned", content: "Not in the index", type: "fact" });
+  const pinned = save(db, { scope: "project", projectId: ai, title: "Project pinned", content: "Keep", type: "decision", pinned: true });
+  const old = save(db, { scope: "project", projectId: ai, title: "Old note", content: "Replaced", type: "fact" });
+  const fresh = save(db, { scope: "project", projectId: ai, title: "New note", content: "Replaces the old one", type: "fact", supersedes: old.id });
+  save(db, { scope: "project", projectId: other, title: "Other project note", content: "Elsewhere", type: "fact" });
+  startSession(db, ai, "first", "/ai");
+  const summary = saveSessionSummary(db, ai, "first", fields, { requestKey: "summary-1" });
+  startSession(db, ai, "second", "/ai");
+
+  const block = startupBlock(db, ai);
+
+  expect(lines(block.text, "## Essentials")).toEqual([
+    `- Prefix every command with rtk. · personal · ${critical.id}`,
+    `- Current status · board · ${status.id}`,
+    `- Board rule · board · ${rule.id}`,
+    `- Project pinned · project · ${pinned.id}`,
+  ]);
+  expect(section(block.text, "## Previous session")).toStartWith(
+    `## Previous session (interrupted)\nSession first was interrupted at `);
+  expect(section(block.text, "## Previous session")).toContain(`its last summary (${summary.memory.id} v${summary.memory.version}):\n`);
+  // The board note is the oldest memory, yet it leads the index: board and project titles alternate.
+  expect(lines(block.text, "## Index")).toEqual([
+    `- Board note · board · ${boardNote.id}`,
+    `- New note · project · ${fresh.id}`,
+    `- Project language · project · ${language.id}`,
+  ]);
+  expect(block.text.split("\n\n")).toHaveLength(4);
+  expect(block).toMatchObject({ format: 2, omitted: 0 });
+  expect(block.chars).toBe(Array.from(block.text).length);
+}));
+
+test("below level 11 the block uses titles, has no previous session and still reads the project and shared drawers", () => withDatabase(db => {
+  enableSearchReinforcement(db);
+  const project = createProject(db, "Pre11").projectId;
+  const rule = save(db, { scope: "shared", projectId: null, title: "Shared rule", content: "Always", type: "preference", pinned: true });
+  const note = save(db, { scope: "project", projectId: project, title: "Project note", content: "Body", type: "fact" });
+  startSession(db, project, "a", "/p");
+  startSession(db, project, "b", "/p");
+
+  const block = startupBlock(db, project);
+
+  expect(lines(block.text, "## Essentials")).toEqual([`- Shared rule · personal · ${rule.id}`]);
+  expect(section(block.text, "## Previous session")).toBe("");
+  expect(lines(block.text, "## Index")).toEqual([`- Project note · project · ${note.id}`]);
+  expect(block.sections.previous).toBe(0);
+}));
+
+test("an unbound directory gets the shared essentials only, and the header counts every title left out", () => withDatabase(db => {
+  enableIntelligence(db);
+  for (let n = 0; n < 60; n++) save(db, { scope: "shared", projectId: null, title: `Shared rule ${n} ${"x".repeat(60)}`, content: "Body", type: "preference", pinned: true });
+
+  const block = startupBlock(db, null);
+
+  expect(section(block.text, "## Index")).toBe("");
+  expect(block.sections.essentials).toBeLessThanOrEqual(1500);
+  expect(block.omitted).toBe(60 - lines(block.text, "## Essentials").length);
+  expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
+}));
+```
+
+`src/app/startup-context.test.ts`: reemplazar la línea `import { readStartupContext } from "./startup-context";` por:
+
+```ts
+import { readStartupBlock, readStartupContext } from "./startup-context";
+```
+
+y agregar al final del archivo, después de una línea en blanco:
+
+```ts
+test("format 2 fits a base shaped like the owner's (107 memories) in 5000 characters, with the occupancy header and the interrupted session", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    store.enableProjectBindings();
+    const project = store.createProject("forge614-ai");
+    const directory = temporary();
+    bindProjectContext(store, directory, project.projectId);
+    store.enableIntelligence();
+    const sibling = store.createProject("forge614-engram");
+    const group = store.ensureGroup(crypto.randomUUID(), "forge614").group;
+    for (const member of [project, sibling]) store.bindProjectToGroup(member.projectId, group.id, "command");
+    for (let n = 0; n < 14; n++) {
+      store.save({ scope: "shared", projectId: null, title: `Shared preference ${n}: ${"regla ".repeat(12)}`, content: "p".repeat(400),
+        type: "preference", ...(n < 4 ? { pinned: true, short: `Short rule ${n}` } : {}) });
+    }
+    store.save({ scope: "ecosystem", projectId: null, groupId: group.id, title: "Board rule", content: "Nodes speak JSON.", type: "decision",
+      affects: ["forge614-ai", "forge614-engram"] });
+    for (let n = 0; n < 92; n++) {
+      store.save({ scope: "project", projectId: project.projectId, title: `Project memory ${n}: ${"decisión ".repeat(8)}`, content: "c".repeat(900), type: "decision" });
+    }
+    store.startSession(project.projectId, "first", directory);
+    store.saveSessionSummary(project.projectId, "first",
+      { goal: "Prepare T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "Write the plan", files: [] }, { requestKey: "summary" });
+    store.startSession(project.projectId, "second", directory);
+
+    const block = readStartupBlock(store, directory);
+
+    expect(block.format).toBe(2);
+    expect(block.chars).toBe(Array.from(block.text).length);
+    expect(block.chars).toBeLessThanOrEqual(5000);
+    expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
+    expect(block.omitted).toBeGreaterThan(0);
+    expect(block.text).toContain("- Short rule 0 · personal · ");
+    expect(block.text).toContain("## Previous session (interrupted)\nSession first was interrupted at ");
+    expect(block.text).toContain("Goal:\nPrepare T6\n");
+    expect(block.text).toContain("- Board rule · board · ");
+    expect(block.text).not.toContain("ccccc");
+    expect(readStartupContext(store, directory).format).toBe(1);
+  } finally { store.close(); }
+});
+
+test("format 2 never writes: a readonly connection renders the block for a bound and an unbound directory", () => {
+  const dbPath = join(temporary(), "engram.db");
+  const boundDirectory = temporary();
+  {
+    const writable = new MemoryStore(dbPath);
+    try {
+      writable.enableProjectBindings();
+      const project = writable.createProject("Readonly block");
+      bindProjectContext(writable, boundDirectory, project.projectId);
+      writable.save({ scope: "project", projectId: project.projectId, title: "Project note", content: "Body", type: "fact" });
+    } finally { writable.close(); }
+  }
+  const readonlyStore = new MemoryStore(dbPath, { readonly: true });
+  try {
+    expect(readStartupBlock(readonlyStore, boundDirectory).text).toContain("- Project note · project · ");
+    expect(readStartupBlock(readonlyStore, temporary()).sections).toEqual({ essentials: 0, previous: 0, index: 0 });
+  } finally { readonlyStore.close(); }
+});
+```
+
+`src/interfaces/cli/__tests__/startup-context.e2e.test.ts`: agregar al final del archivo, después de una línea en blanco:
+
+```ts
+test("startup-context --format 2 prints the ready-to-inject block, --format 1 matches the default byte for byte and other formats fail", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  expect((await runCli(root, userDirectory, "intelligence-enable")).code).toBe(0);
+  const projectId = JSON.parse((await runCli(root, userDirectory, "project-create", "--name", "demo")).stdout).projectId;
+  const directory = temporary();
+  expect((await runCli(root, userDirectory, "project-bind", "--directory", directory, "--project-id", projectId)).code).toBe(0);
+  expect((await runCli(root, userDirectory, "save", "--project-id", projectId, "--title", "Project note", "--content", "Only this repo", "--type", "fact")).code).toBe(0);
+
+  const block = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "2");
+  expect(block.code).toBe(0);
+  const body = JSON.parse(block.stdout);
+  expect(Object.keys(body)).toEqual(["format", "text", "chars", "sections", "omitted"]);
+  expect(body).toMatchObject({ format: 2, omitted: 0 });
+  expect(body.text).toContain("- Project note · project · ");
+  const byDefault = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json");
+  const explicit = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "1");
+  expect(explicit.stdout).toBe(byDefault.stdout);
+  expect(JSON.parse(byDefault.stdout).format).toBe(1);
+  const unknown = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "3");
+  expect(unknown.code).toBe(1);
+  expect(JSON.parse(unknown.stderr).code).toBe("INVALID_INPUT");
+  expect(unknown.stdout).toBe("");
+}, 60000);
+```
+
+- [ ] **Step 2: Rojo**
+
+Run: `bun test src/modules/search/startup.test.ts src/infrastructure/sqlite/startup.test.ts src/app/startup-context.test.ts src/interfaces/cli/__tests__/startup-context.e2e.test.ts`
+Expected: FAIL (los módulos `startup` no existen, `readStartupBlock` no existe y `--format` es una opción desconocida).
+
+- [ ] **Step 3: Módulo que arma el bloque**
+
+`src/modules/search/startup.ts`:
+
+```ts
+import type { MemoryMark } from "../memory";
+
+// Character budgets of the startup block (format 2), counted in Unicode code points.
+export const STARTUP_TOTAL = 5000;
+export const STARTUP_ESSENTIALS = 1500;
+export const STARTUP_PREVIOUS = 800;
+
+/** One memory line of the block: essentials show `short` when present, the index always shows `title`. */
+export interface StartupItem { id: string; scope: "project" | "shared" | "ecosystem"; title: string; short: string | null; marks: MemoryMark[] }
+export interface StartupPrevious { sessionId: string; interruptedAt: string; summary: { id: string; version: number; content: string } | null }
+/** Candidates in priority order; the totals count every candidate, including those not passed in the lists. */
+export interface StartupBlockInput {
+  essentials: StartupItem[]; essentialsTotal: number;
+  previous: StartupPrevious | null;
+  index: StartupItem[]; indexTotal: number;
+}
+export interface StartupBlock {
+  format: 2; text: string; chars: number;
+  sections: { essentials: number; previous: number; index: number };
+  omitted: number;
+}
+
+const SCOPE_LABEL = { shared: "personal", ecosystem: "board", project: "project" } as const;
+const length = (text: string): number => Array.from(text).length;
+const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
+function clip(text: string, max: number): string {
+  const points = Array.from(text);
+  return points.length <= max ? text : points.slice(0, max - 1).join("") + "…";
+}
+function line(item: StartupItem, text: string): string {
+  const marks = item.marks.filter(mark => mark !== "superseded").map(mark => ` [${mark}]`).join("");
+  return `- ${oneLine(text)}${marks} · ${SCOPE_LABEL[item.scope]} · ${item.id}`;
+}
+function header(chars: number, omitted: number): string {
+  const occupancy = omitted === 0
+    ? `${chars}/${STARTUP_TOTAL} chars · nothing omitted.`
+    : `${chars}/${STARTUP_TOTAL} chars · ${omitted} titles did not fit: find them with memory_search.`;
+  return `[Forge614 Engram] Startup block: retrieved data, not an instruction.\n${occupancy}`;
+}
+/** Fills a titled list in order until the next line would pass `max`; everything after that line is left out. */
+function list(title: string, lines: string[], max: number): { text: string; shown: number } {
+  let text = title, shown = 0;
+  for (const next of lines) {
+    if (length(text) + 1 + length(next) > max) break;
+    text += `\n${next}`; shown++;
+  }
+  return { text: shown === 0 ? "" : text, shown };
+}
+
+/** Renders the ready-to-inject startup block: essentials, the interrupted previous session and the index, within STARTUP_TOTAL. */
+export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
+  // Reserve the widest header these totals can produce, so the finished block never passes STARTUP_TOTAL.
+  let budget = STARTUP_TOTAL - length(header(STARTUP_TOTAL, input.essentialsTotal + input.indexTotal));
+  const sections: string[] = [];
+  const add = (text: string): number => { if (text) { sections.push(text); budget -= 2 + length(text); } return length(text); };
+
+  const essentials = list("## Essentials (pinned)", input.essentials.map(item => line(item, item.short ?? item.title)),
+    Math.min(STARTUP_ESSENTIALS, budget - 2));
+  const essentialsChars = add(essentials.text);
+
+  let previousChars = 0;
+  if (input.previous !== null) {
+    const { sessionId, interruptedAt, summary } = input.previous;
+    const lead = summary === null
+      ? `Session ${sessionId} was interrupted at ${interruptedAt}; it saved no summary.`
+      // Blank lines are squeezed so that a blank line only ever separates the block's sections.
+      : `Session ${sessionId} was interrupted at ${interruptedAt}; its last summary (${summary.id} v${summary.version}):\n${summary.content.replace(/\n\s*\n/g, "\n").trim()}`;
+    previousChars = add(clip(`## Previous session (interrupted)\n${lead}`, Math.min(STARTUP_PREVIOUS, budget - 2)));
+  }
+
+  const index = list("## Index (titles only: open with memory_get)", input.index.map(item => line(item, item.title)), budget - 2);
+  const indexChars = add(index.text);
+
+  const omitted = (input.essentialsTotal - essentials.shown) + (input.indexTotal - index.shown);
+  const body = sections.map(section => `\n\n${section}`).join("");
+  // The header prints the block's own length, so settle on a length that describes itself.
+  let chars = length(header(0, omitted)) + length(body);
+  for (let next = chars; ; chars = next) {
+    next = length(header(chars, omitted)) + length(body);
+    if (next === chars) break;
+  }
+  return { format: 2, text: header(chars, omitted) + body, chars, sections: { essentials: essentialsChars, previous: previousChars, index: indexChars }, omitted };
+}
+```
+
+`src/modules/search/index.ts`: agregar al final del archivo (sin línea en blanco):
+
+```ts
+export { renderStartupBlock,STARTUP_TOTAL,STARTUP_ESSENTIALS,STARTUP_PREVIOUS } from "./startup";
+export type { StartupBlock,StartupBlockInput,StartupItem,StartupPrevious } from "./startup";
+```
+
+- [ ] **Step 4: Lectura de la base**
+
+`src/infrastructure/sqlite/startup.ts`:
+
+```ts
+import type { Database } from "bun:sqlite";
+import { ECOSYSTEM_STATUS_TOPIC } from "../../modules/ecosystem";
+import { marksFor } from "../../modules/memory";
+import { projectIdentity } from "../../modules/projects";
+import { renderStartupBlock, type StartupBlock, type StartupItem } from "../../modules/search";
+import { previousInterrupted } from "./activity";
+import { groupOfProject } from "./ecosystem-groups";
+import { intelligenceEnabled } from "./intelligence";
+import { readMetas } from "./meta";
+
+// More candidates than any block can show; the counts below still cover every candidate.
+const CANDIDATES = 200;
+type Row = { id: string; scope: StartupItem["scope"]; title: string };
+
+/**
+ * The startup block (format 2) for a project, or for an unbound directory when `projectId` is null. Read-only.
+ * Essentials: active pinned memories (shared, then the group's board with its status note first, then the project).
+ * Index: active unpinned memories of the board and the project, alternating one of each (newest first within each),
+ * so neither drawer can crowd the other out; session summaries are left out.
+ * At level 11 superseded memories are left out, `short` replaces the title in essentials and an interrupted
+ * previous session is included; below level 11 the block is built from the same sources without those extras.
+ */
+export function startupBlock(db: Database, projectId: string | null, now: string = new Date().toISOString()): StartupBlock {
+  const project = projectId === null ? null : projectIdentity(projectId);
+  return db.transaction(() => {
+    const groupId = project === null ? null : groupOfProject(db, project)?.group.id ?? null;
+    const intelligence = intelligenceEnabled(db);
+    const owners: string[] = [], args: string[] = [];
+    // Board first: the index alternates in this order.
+    if (groupId !== null) { owners.push("(m.scope='ecosystem' AND m.groupId=?)"); args.push(groupId); }
+    if (project !== null) { owners.push("(m.scope='project' AND m.projectId=?)"); args.push(project); }
+    const live = `m.state='active'${intelligence ? " AND NOT EXISTS (SELECT 1 FROM memory_meta mm WHERE mm.memory_id=m.id AND mm.superseded_by IS NOT NULL)" : ""}`;
+    // A project memory on the same topic hides the shared one, as in context().
+    const shared = project === null ? { sql: "m.scope='shared'", args: [] as string[] }
+      : { sql: "(m.scope='shared' AND NOT EXISTS (SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key))", args: [project] };
+    const pinnedFrom = `FROM memories m WHERE ${live} AND m.pinned=1 AND (${[shared.sql, ...owners].join(" OR ")})`;
+    const essentials = db.query(`SELECT m.id,m.scope,m.title ${pinnedFrom}
+      ORDER BY CASE m.scope WHEN 'shared' THEN 0 WHEN 'ecosystem' THEN 1 ELSE 2 END,m.topic_key IS ? DESC,m.updated_at DESC,m.id ASC LIMIT ${CANDIDATES}`)
+      .all(...shared.args, ...args, ECOSYSTEM_STATUS_TOPIC) as Row[];
+    const essentialsTotal = (db.query(`SELECT count(*) AS n ${pinnedFrom}`).get(...shared.args, ...args) as { n: number }).n;
+    const drawers = owners.map((owner, n) => {
+      const from = `FROM memories m WHERE ${live} AND m.pinned=0 AND (m.topic_key IS NULL OR m.topic_key NOT GLOB 'session/*/summary') AND ${owner}`;
+      return { rows: db.query(`SELECT m.id,m.scope,m.title ${from} ORDER BY m.updated_at DESC,m.id ASC LIMIT ${CANDIDATES}`).all(args[n]!) as Row[],
+        total: (db.query(`SELECT count(*) AS n ${from}`).get(args[n]!) as { n: number }).n };
+    });
+    const index: Row[] = [];
+    for (let n = 0; n < CANDIDATES; n++) for (const drawer of drawers) if (drawer.rows[n]) index.push(drawer.rows[n]!);
+    const indexTotal = drawers.reduce((sum, drawer) => sum + drawer.total, 0);
+    const metas = intelligence ? readMetas(db, [...essentials, ...index].map(row => row.id)) : new Map();
+    const item = (row: Row): StartupItem => {
+      const meta = metas.get(row.id) ?? null;
+      return { id: row.id, scope: row.scope, title: row.title, short: meta?.short ?? null, marks: marksFor(meta, now) };
+    };
+    const previous = project === null ? null : previousInterrupted(db, project, now);
+    return renderStartupBlock({
+      essentials: essentials.map(item), essentialsTotal,
+      previous: previous === null ? null : { sessionId: previous.sessionId, interruptedAt: previous.interruptedAt,
+        summary: previous.summary === null ? null : { id: previous.summary.id, version: previous.summary.version, content: previous.summary.content } },
+      index: index.map(item), indexTotal,
+    });
+  }).deferred();
+}
+```
+
+- [ ] **Step 5: Fachada, app, CLI y guardas del contrato**
+
+`src/app/memory-store.ts`:
+1. Justo después de la línea `import * as sessions from "../infrastructure/sqlite/sessions";` agregar `import { startupBlock } from "../infrastructure/sqlite/startup";`.
+2. Reemplazar `import { type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";` por `import { type ContextInput,type ContextResult,type PreviewResult,type StartupBlock,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";`.
+3. Justo después de la línea `  previousInterrupted(projectId: string): PreviousSession | null { return previousInterrupted(this.db, projectId); }` agregar:
+
+```ts
+  startupBlock(projectId: string | null): StartupBlock { return startupBlock(this.db, projectId); }
+```
+
+`src/index.ts`: reemplazar la línea `export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult } from "./modules/search";` por:
+
+```ts
+export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult,StartupBlock } from "./modules/search";
+```
+
+`src/app/startup-context.ts`:
+1. Reemplazar `import type { ContextInput, ContextResult } from "../modules/search";` por `import type { ContextInput, ContextResult, StartupBlock } from "../modules/search";`.
+2. Agregar al final del archivo, después de una línea en blanco:
+
+```ts
+/**
+ * Format 2: the same project resolution as readStartupContext, rendered by Engram as one ready-to-inject text
+ * block within 5000 characters (see startupBlock). Identity notices are not part of this format.
+ */
+export function readStartupBlock(store: MemoryStore, directory: string): StartupBlock {
+  return store.startupBlock(resolveStartupProjectContext(store, directory).projectId);
+}
+```
+
+`src/app/index.ts`: reemplazar `export { readProjectContext, readStartupContext } from "./startup-context";` por `export { readProjectContext, readStartupBlock, readStartupContext } from "./startup-context";`.
+
+`src/interfaces/cli/arguments.ts`:
+1. Reemplazar `  "startup-context":["directory","json"],` por `  "startup-context":["directory","json","format"],`.
+2. Justo después del bloque
+
+```ts
+  if (command === "startup-context" && !values.has("json")) {
+    invalid("startup-context requiere --json.");
+  }
+```
+
+agregar:
+
+```ts
+  if (command === "startup-context" && values.has("format") && !["1","2"].includes(values.get("format")!)) {
+    invalid("format debe ser 1 o 2.");
+  }
+```
+
+`src/interfaces/cli/commands.ts`:
+1. En la primera línea (`import { MemoryWorkspace, … } from "../../app";`) reemplazar `readProjectContext, readStartupContext } from "../../app";` por `readProjectContext, readStartupBlock, readStartupContext } from "../../app";`.
+2. En el comando `startup-context`, justo después de la línea `    const directory=need("directory");` que precede al comentario `    // Read-only first: the common case writes nothing to the base, …`, agregar:
+
+```ts
+    const read=values.get("format")==="2"?readStartupBlock:readStartupContext;
+```
+
+3. Reemplazar `    try{console.log(JSON.stringify(readStartupContext(readonlyStore,directory),null,2));return;}` por `    try{console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}`.
+4. Reemplazar `    const store=workspace.open();try{console.log(JSON.stringify(readStartupContext(store,directory),null,2));}finally{store.close();}return;` por `    const store=workspace.open();try{console.log(JSON.stringify(read(store,directory),null,2));}finally{store.close();}return;`.
+
+`src/interfaces/cli/help.ts`:
+1. Reemplazar la línea `startup-context --directory <carpeta> --json` por `startup-context --directory <carpeta> --json [--format 1|2]`.
+2. Justo después de la línea `                que trae su .forge614/project.json y escribe ese archivo a un proyecto vinculado solo por ruta.` agregar estas dos líneas (16 espacios de sangría, como las de arriba):
+
+```text
+                --format 2 devuelve un solo bloque de texto listo para inyectar (máximo 5000 caracteres):
+                esencial fijado, sesión anterior interrumpida e índice de títulos. Defecto 1.
+```
+
+`src/index.test.ts`: reemplazar `const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory"];` por:
+
+```ts
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory", "startupBlock"];
+```
+
+`tests/fixtures/sdk-contract.ts`:
+1. Reemplazar la línea `  PreviousSession, GroupSource,` por `  PreviousSession, GroupSource, StartupBlock,`.
+2. Justo después de la línea `  demoteMemory(projectId:string,id:string):{memory:Memory;from:{scope:"ecosystem";groupId:string};to:{scope:"project";projectId:string}};` agregar:
+
+```ts
+  startupBlock(projectId:string|null):StartupBlock;
+```
+
+- [ ] **Step 6: Verde**
+
+Run: `bun test src/modules/search/startup.test.ts src/infrastructure/sqlite/startup.test.ts src/app/startup-context.test.ts src/interfaces/cli/__tests__/startup-context.e2e.test.ts`
+Expected: PASS (módulo 4, SQLite 3, `startup-context.test.ts` 10, `startup-context.e2e.test.ts` 14: 31 en total, 10 nuevas).
+
+- [ ] **Step 7: Suite completa y tipos**
+
+Run: `bun test` y `bun run typecheck`. Expected: 662 pass / 10 skip / 0 fail; typecheck sin errores. La suite completa tarda ~32 s; si el entorno la corta, córrela por grupos **sin repetir carpetas** (`bun test src/modules`, `bun test src/infrastructure`, `bun test src/app src/interfaces src/shared src/index.test.ts`, `bun test tests scripts`).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/modules/search/startup.ts src/modules/search/startup.test.ts src/modules/search/index.ts src/infrastructure/sqlite/startup.ts src/infrastructure/sqlite/startup.test.ts src/index.ts src/app/memory-store.ts src/app/startup-context.ts src/app/startup-context.test.ts src/app/index.ts src/interfaces/cli/arguments.ts src/interfaces/cli/commands.ts src/interfaces/cli/help.ts src/interfaces/cli/__tests__/startup-context.e2e.test.ts src/index.test.ts tests/fixtures/sdk-contract.ts
+git commit -m "feat(context): ready-to-inject startup block via startup-context --format 2"
+```
+
+- [ ] **Step 9: Documentación (prompt aparte, sesión nueva, commit propio)**
+
+Se prepara tras aprobar el código, con los datos verificados del commit y los lugares exactos (capítulos 03, 04, 05 y 10 es/en, CHANGELOG y `docs/notion-map.json` según la regla de documentación tarea por tarea).
 
 ### Task 7: Protocolo v4 *(detalle tras aprobar T6)*
 
