@@ -121,16 +121,17 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (0 corridas) |
-| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (2 corridas: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente; Engram T7 Sonnet medium con laboratorio, 0,63 M tokens ≈ $0,39 en 1,8 min, 0 rondas, commit idéntico al plan) |
+| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (3 corridas; Engram T8 Sonnet medium con parche completo aplicado por `git apply`: 0,42 M tokens ≈ $0,27, 4,2 min, 0 rondas, commit idéntico al parche; Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente; Engram T7 Sonnet medium con laboratorio, 0,63 M tokens ≈ $0,39 en 1,8 min, 0 rondas, commit idéntico al plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
-| Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | provisional (2 corridas: Engram T4 docs, 1,08 M tokens ≈ $0,74, 0 rondas, todas las frases correctas; Engram T7 docs, 1,43 M tokens ≈ $0,68 en 6,1 min, 0 rondas, y atrapó un dato falso del plan; sin costo de subagente) |
+| Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | **firme** (3 corridas, todas a la primera: Engram T4 docs, 1,08 M tokens ≈ $0,74; T7 docs, 1,43 M ≈ $0,68, atrapó un dato falso del plan; T8 docs + versión, 22 archivos, 1,36 M ≈ $0,76 en 3,1 min) |
 | Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
 | Revisión independiente de una rama | otro proveedor · high | provisional (0 corridas) |
 | Ejecución de un plan ya escrito (referencia) | Sonnet · high: Sentinel 0.1.1, 8,86 M tokens, 3 rondas (todas error del plan) | 1 corrida |
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Documentación redactada por el agente pasa a firme (§6, 3 corridas); parche completo con `git apply` como forma de entregar código (§6).
 - 2026-09-25 — Lección de Engram T8: costo real de un subagente de trabajo abierto (§5).
 - 2026-09-25 — Lecciones de Engram T7 y T7 docs: revisar todos los campos que reutilizan una pieza del esquema (§4), comprobar cada frase de la documentación en el código (§4b) y segundas corridas en §6.
 - 2026-09-24 — Lecciones de Engram T6: anclas completas (sin «…») y segunda corrida de Sonnet high con laboratorio (§6).
