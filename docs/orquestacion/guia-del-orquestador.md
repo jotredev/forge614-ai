@@ -133,7 +133,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
-| Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (1 corrida: Engram T10b, activación del esquema 11 en la base real, 1,14 M tokens ≈ $0,84 en 8,4 min, a la primera, 1 parada correcta ante procesos viejos, 0 filas cambiadas) |
+| Migración de datos o cambios con riesgo sobre datos reales | Opus · high, en dos fases con parada para que el propietario apruebe entre plan y aplicación | provisional (2 corridas: Engram T10b, activación del esquema 11 en la base real, 1,14 M tokens ≈ $0,84 en 8,4 min, a la primera, 1 parada correcta ante procesos viejos, 0 filas cambiadas; Engines E4b, instalación de 1.13.0 y migración del manual en Claude Code y Codex, ensayada antes en laboratorio con HOME falso, 0,54 M ≈ $0,67 en 4 min, a la primera, parada correcta hasta «aplica») |
 | Código + pruebas con plan preciso | Sonnet · medium con parche o plan probado en laboratorio | **firme** (3 corridas Sonnet medium a la primera: Engram T7 con laboratorio, 0,63 M ≈ $0,39; T8 con parche por `git apply`, 0,42 M ≈ $0,27; T9b con parche, 0,31 M ≈ $0,23 en 4,1 min; cuarta: Reglamento 1.1.0 R1 con parche, 0,61 M ≈ $0,31 en 2 rondas, la segunda por error del plan, `dist/` ignorado; quinta: Engines E1 con parche desde forge614-shell, 0,32 M ≈ $0,23 en menos de 1 min, a la primera; sexta: Engines E1b+E2, dos parches en dos commits en una sesión, 0,37 M ≈ $0,22 en 1,5 min, a la primera). Codex · medium: 1 corrida (Engram T2, 4,58 M tokens, 1 ronda por error del plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
 | Documentación, versión, publicación | Sonnet · low | **firme** (3 corridas; cuarta: Engines E4a, PR + CI + fusión + `bun run release` desde `main`, 0,60 M ≈ $0,32 en 13 min, a la primera; Reglamento 1.1.0 R2, publicación a la primera, 0,48 M ≈ $0,24 en 12 min; antes: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T10a publicación, 0,98 M ≈ $0,43 en 2 rondas, se detuvo bien ante el CI rojo y la ronda 2 fue por error del plan; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
@@ -144,6 +144,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Engines E4b: segunda corrida con datos reales en Opus high, en dos fases con aprobación del propietario (§6).
 - 2026-09-25 — Engines E4a: cuarta corrida de publicación en Sonnet low (§6); laboratorio con HOME falso antes de instalar en la Mac (§4).
 - 2026-09-25 — Engines E3: verificadores fuera de la CI (§4b) y quinta corrida de documentación redactada por el agente (§6).
 - 2026-09-25 — Engines E1b+E2: sexta corrida de parche en Sonnet medium, dos parches en una sesión (§6).
