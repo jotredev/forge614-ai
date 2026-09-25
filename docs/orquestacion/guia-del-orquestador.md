@@ -18,7 +18,7 @@
    A futuro, Sentinel hará esta verificación de forma automática.
 4. **Al cerrar cada paso, antes de entregar el siguiente prompt, el orquestador anota todo, sin que se lo pidan** (regla firme del propietario, 2026-09-25: «nunca se te debe pasar»): fila del agente **y** fila del propio orquestador en «Corridas de agentes» (medidas en su registro, §5), lecciones nuevas o actualizadas en «Lecciones de orquestación», esta guía al día (reglas y §6) y el estado en Engram. El mensaje al propietario dice qué quedó anotado.
 5. **Los prompts se entregan en el chat del orquestador, en un solo bloque de código listo para copiar y pegar** (decisión del propietario, 2026-09-24: la página de tarjetas se retiró porque cada publicación costaba $1,5–2 y agregaba pasos). Antes del bloque, una línea dice dónde pegarlo (repositorio, herramienta, modelo y razonamiento). Un solo paso a la vez. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
-6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5). El tamaño se **mide en el registro** (`costo.py`, apéndice B), nunca se estima: el 2026-09-25 el orquestador dijo «unos 100K» cuando medía 290K.
+6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5). El tamaño se **mide en el registro** (`costo.py`, apéndice B), nunca se estima: el 2026-09-25 el orquestador dijo «unos 100K» cuando medía 290K. El traspaso dice el estado de cada prompt entregado: «entregado, sin pegar», «corriendo» o «reportado»; el orquestador nuevo lo comprueba en solo lectura (rama y commit) antes de pedir un reporte y, si no se corrió, vuelve a dar el prompt en su primer mensaje (provisional: Engram 1.7.1 T1, el propietario preguntó «¿cuál reporte?»).
 
 ## 2. Forma del prompt
 
@@ -162,6 +162,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Engram 1.7.1 T1 y T1 docs: el traspaso dice si cada prompt entregado se pegó y corrió (§1.6); sexta muestra del subagente de borrador, esta vez de documentación (Notion «Lecciones»).
 - 2026-09-25 — Plan de Engram 1.7.1: reloj congelado solo desde donde hace falta (§4), quinta muestra del subagente de borrador (§5), estudio del punto de traspaso por tipo de sesión y medir el propio contexto en el registro (§1.6, §5, apéndice B).
 - 2026-09-25 — Reglamento 1.1.1 publicado: séptima corrida de parche en Sonnet medium y quinta de publicación en Sonnet low (§6).
 - 2026-09-25 — Reglamento 1.1.1 (R3): la versión del puntero se cambia a mano (§4); cuarta muestra del subagente de borrador (§5).
