@@ -3737,7 +3737,7 @@ git commit -m "docs: memory protocol v4 (manual, MCP instructions, field descrip
 
 **Medición del orquestador (2026-09-25, laboratorio sobre `c3be0a4`, nunca en el repositorio):**
 - Parche aplicado con `git apply` sobre una copia nueva de `c3be0a4`: **672 pass / 10 skip / 0 fail** (+5 pruebas), typecheck 0, `git diff --check` limpio; 14 archivos (1 nuevo). Con `package.json` en 1.7.0: mismo resultado.
-- El ajuste de las pruebas existentes lo hizo un subagente Sonnet de contexto limpio (≈ 0,31 M tokens, 32 min); el orquestador revisó cada cambio y agregó la prueba de garantía con la base real de 1.6.0, la prueba estable del bloque de arranque y `sessionProjectId`.
+- El ajuste de las pruebas existentes lo hizo un subagente Sonnet de contexto limpio (medido en su registro: 34 M tokens ≈ $8, 165 mensajes, 32 min, razonamiento high heredado; el resumen de la herramienta decía 0,31 M porque no cuenta la entrada releída); preparación del orquestador ≈ $4,6; el orquestador revisó cada cambio y agregó la prueba de garantía con la base real de 1.6.0, la prueba estable del bloque de arranque y `sessionProjectId`.
 - Huella SHA-256 del parche: `614feb8325d8d6b249dcb300a5c1a76d3a85a21bd6971dc868cfb90a35db4c71` (584 líneas).
 
 **Decisiones de esta tarea:**
