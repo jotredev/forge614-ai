@@ -240,8 +240,9 @@ proceso (eso es de Workers).
 ## `forge614-engram` — la memoria
 
 **Decisión:** agregar un agente nuevo **no requiere cambiar Engram** mientras su integración use el
-protocolo público `forge614-engram-memory` versión 1 y convierta la información del agente al formato
-canónico de Engram. Engines es quien adapta al agente; Engram no debe recibir plugins, reglas o formatos
+protocolo público `forge614-engram-memory` (versión 1 por defecto; la 3 desde Engram 1.6.0 anuncia el
+ámbito `ecosystem`; la 4 desde 1.7.0 es el manual de la memoria inteligente) y convierta la información
+del agente al formato canónico de Engram. Engines es quien adapta al agente; Engram no debe recibir plugins, reglas o formatos
 especiales por agente.
 
 **Novedad (Engram v1.5.0): precarga desde el host, sin depender del modelo.** Engram ahora expone
@@ -279,17 +280,42 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       lectura. **Ya implementado en Engines para Claude Code y Codex** vía SessionStart hooks — ver la
       checklist "Integración automática de memoria vía SessionStart hooks" en la sección de
       `forge614-engines` arriba antes de repetir esa investigación para un agente nuevo.
+- [ ] Si el host (Engines o Shell) usa `startup-context --format 2` para el agente nuevo, verificar que
+      inyecta `text` tal cual y como dato recuperado, sin reescribirlo; que el bloque mide ≤ 5 000
+      caracteres y empieza con el encabezado de ocupación; que, tras cortar una sesión, la siguiente
+      muestra «Previous session (interrupted)»; y que con el bloque presente el agente no vuelve a llamar
+      `memory_context` al arrancar (regla 2 del manual v4). Verificación: el registro del gancho guarda
+      `chars` y el texto inyectado.
 
 **Compatibilidad con el protocolo público:**
 
 - [ ] Confirmar que el adaptador consume `forge614-engram memory-protocol --json` y reconoce
-      `id: "forge614-engram-memory"` y `version: 1`; no copiar instrucciones privadas ni depender de
+      `id: "forge614-engram-memory"` y la versión que pidió (1 a 4); no copiar instrucciones privadas ni depender de
       archivos internos, SQLite o imports internos de Engram.
 - [ ] Confirmar que la integración configura las herramientas MCP públicas de Engram: `memory_context`,
-      `memory_save`, `memory_session_summary` y `memory_session_end`.
+      `memory_search`, `memory_get`, `memory_save`, `memory_session_start`, `memory_session_summary` y
+      `memory_session_end`.
 - [ ] Confirmar el ciclo completo: al iniciar y después de compactar usa `memory_context`; ante un
       “recuerda/guarda” explícito usa `memory_save`; antes de compactar guarda resumen; al terminar guarda
-      el resumen útil y cierra la sesión.
+      el resumen útil y cierra la sesión. Con la versión 4, el cierre deja de ser obligatorio: el resumen
+      vivo (ver el punto de las instrucciones del servidor MCP, más abajo) reemplaza al resumen final, porque ninguna conducta depende de que la sesión se cierre.
+- [ ] Con esquema 11, abrir una sesión del agente nuevo en un repositorio, cortarla sin cerrarla y abrir
+      otra en el mismo repositorio; verificar que la segunda recibe `previous` de `memory_session_start` y
+      que el agente se lo dice a la persona y ofrece continuar desde el resumen, sin inventar lo que hizo
+      la primera (si no hay resumen, dice que no dejó ninguno). Verificación: comparar lo que dice con el
+      resumen real (`memory_get` del id que trae `previous`).
+- [ ] Si la integración pide la versión 4 (`memory-protocol --json --protocol-version 4`), verificar que
+      instala `instructions` completo y sin recortar (≤ 2 500 caracteres) en el archivo de instrucciones
+      del agente, sin agregarle reglas de memoria propias, y que no copia allí `mcpInstructions` (llegan
+      solas por el servidor MCP). Verificación: el texto instalado es byte a byte igual a `instructions`
+      de la salida del comando.
+- [ ] Verificar que el agente nuevo recibe las instrucciones del servidor MCP de Engram (desde 1.7.0 son
+      las del manual v4 para todo cliente) y las sigue: en una sesión nueva, sin archivo de instrucciones,
+      tras dos pasos importantes, `memory_history` de su resumen de sesión muestra al menos dos versiones
+      (resumen vivo, no solo al final). Si el cliente descarta las instrucciones del servidor, anotarlo en
+      la fila del agente: entonces el manual completo es obligatorio.
+- [ ] Si el host crea la base con `init` para el agente nuevo, verificar que queda en el esquema 11
+      (`intelligence-enable` responde `migrated: false`) y que una base existente no cambia de nivel.
 - [ ] Si Engram no está disponible, el agente debe continuar y decir la verdad; nunca sustituirlo por un
       archivo privado del cliente ni afirmar que recordó algo que no pudo recuperar.
 
@@ -310,13 +336,32 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
 **Memorias durables y seguridad:**
 
 - [ ] Para preferencias que deban funcionar entre clientes, usar alcance `shared` con un `globalIntent`
-      verdadero; para conocimiento de un repositorio, usar alcance `project`.
+      verdadero; para conocimiento de un repositorio, usar alcance `project`; para reglas o contratos que
+      atan a varios proyectos del mismo grupo, alcance `ecosystem` con un `groupIntent` verdadero (con
+      esquema 11, además tipo `decision`, `procedure` o `warning` y `affects`; ver el punto de
+      `ECOSYSTEM_*`).
 - [ ] Usar un `topicKey` estable al actualizar un tema duradero, para no duplicar recuerdos.
 - [ ] Verificar que la adaptación nunca mande contraseñas, tokens, llaves privadas, credenciales ni cadenas
       de conexión con credenciales en memorias, resúmenes, `topicKey`, errores o logs.
+- [ ] Probar con el agente nuevo que, si Engram responde `SECRET_REJECTED`, el agente vuelve a guardar el
+      recuerdo sin el valor (nombrando dónde vive, por ejemplo `password: <redacted>` o el nombre de la
+      variable de entorno), no reintenta con el secreto, no descarta el recuerdo en silencio y le dice a la
+      persona qué quitó. Verificación: pedirle que recuerde un texto con una clave de prueba inventada y
+      revisar con `memory_search` que se guardó sin el valor.
+- [ ] Con esquema 11 y un proyecto que pertenece a un grupo, pedirle al agente nuevo que suba al tablero una
+      regla que afecta a varios proyectos y verificar que manda un tipo permitido y `affects` con al menos
+      dos proyectos del grupo; y que ante cualquier código `ECOSYSTEM_*` corrige el guardado, lo deja en el
+      proyecto o consolida el tablero, sin reintentar igual, y le dice a la persona qué pasó. Verificación:
+      `memory_search` con `scope: "ecosystem"` muestra el recuerdo con sus `affects`.
 - [ ] Probar con el agente nuevo: inicio, guardado explícito, recuperación en una conversación nueva,
       compactación/reanudación y cierre. Debe usarse Engram compartido y no almacenamiento privado del
       agente.
+- [ ] Con esquema 11, pedirle al agente nuevo que guarde dos veces, sin `topicKey`, el mismo aprendizaje
+      redactado distinto, y verificar que ante la respuesta `similar` de `memory_save` hace una de las tres
+      cosas que manda el protocolo v4 (actualiza el parecido, lo deja aparte diciendo por qué, o guarda con
+      `supersedes`), sin dejar dos recuerdos activos iguales en silencio y sin borrar nada. Verificación:
+      `memory_search` con esas palabras devuelve un solo recuerdo activo, o el viejo con la marca
+      `superseded`.
 
 ---
 

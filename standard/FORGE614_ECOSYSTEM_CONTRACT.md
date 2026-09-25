@@ -113,7 +113,7 @@ Durante la inicialización de memoria por primera vez, Engram solo necesita esta
 | Directorio privado del producto | Siempre obligatorio |
 | SQLite y FTS5 locales | Siempre obligatorio |
 | Sincronización con PostgreSQL | Opcional |
-| Refuerzo por memorias repetidas | Opcional |
+| Refuerzo por memorias repetidas | Incluido en una base nueva (Engram ≥ 1.7.0, `init`); opcional hasta `intelligence-enable` en una base existente |
 | Detectar motores de IA | No es responsabilidad de Engram |
 | Configurar integraciones de IA | No es responsabilidad de Engram |
 | Crear o seleccionar proyectos | No es parte de la inicialización |
