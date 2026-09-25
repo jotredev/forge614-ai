@@ -108,6 +108,7 @@ Bloqueos: <lista o "ninguno">
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
 | **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
 | Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado | provisional (1 muestra) | Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión; queda medir en T5 el laboratorio de código delegado |
+| Un subagente para un trabajo abierto ("ajusta las pruebas que fallen") cuesta mucho más que uno de redacción: acotarlo con la lista exacta de pruebas y medirlo **en su registro**, no con el total que devuelve la herramienta | provisional | Engram T8: el subagente que ajustó 21 pruebas hizo 165 mensajes con razonamiento high heredado: 34 M tokens ≈ $8 (la herramienta informó 0,31 M); el trabajo salió bien y atrapó un fallo real |
 | Plan con solo pruebas y contratos, sin laboratorio (el worker implementa) | provisional (1 muestra) | Engram T4 (Codex medium): 2 rondas (1 por error del agente, 2 fallos del plan atrapados en la revisión), 3,77 M tokens, 2 % del límite semanal; T2 con código completo: 4,58 M, 1 ronda. Costo del orquestador sin laboratorio claramente menor que en T3 y T5 |
 | Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
 
@@ -130,6 +131,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Lección de Engram T8: costo real de un subagente de trabajo abierto (§5).
 - 2026-09-25 — Lecciones de Engram T7 y T7 docs: revisar todos los campos que reutilizan una pieza del esquema (§4), comprobar cada frase de la documentación en el código (§4b) y segundas corridas en §6.
 - 2026-09-24 — Lecciones de Engram T6: anclas completas (sin «…») y segunda corrida de Sonnet high con laboratorio (§6).
 - 2026-09-24 — Lecciones de Engram T4: extraer pruebas del plan con un script, revisar casos borde sin laboratorio, datos de "solo pruebas y contratos" y de documentación redactada por el agente.
