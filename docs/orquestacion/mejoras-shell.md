@@ -10,3 +10,4 @@
 
 | # | Fecha | Qué pasó o qué quiere | Qué se espera | Prioridad | Estado |
 |---|---|---|---|---|---|
+| 1 | 2026-09-25 | «No puedo cambiar el modo de trabajo en medio, tengo que esperar a que termine todo; aquí en Orca sí puedo cambiar el modo de trabajo cuando está en proceso de algo.» Con un permiso de Bash pendiente, cambiar de modo respondió `Error: Termina o usa /stop en el turno actual primero.` | Cambiar el modo de trabajo (manual ↔ otros, `Shift+Tab`) en cualquier momento, también a mitad de un turno o con un permiso pendiente, sin tener que esperar ni usar `/stop`, como en Orca | — | pendiente |
