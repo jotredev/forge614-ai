@@ -16,7 +16,7 @@
    - corre pruebas y typecheck en una copia temporal: `git -C <repo> archive <commit> | tar -x -C <scratchpad>/verif-<tarea>`, luego `bun install --frozen-lockfile --ignore-scripts`, `bun test` y `bun run typecheck`, leyendo el código de salida de cada comando por separado;
    - registra el conteo **medido**, no el reportado, y borra la copia.
    A futuro, Sentinel hará esta verificación de forma automática.
-4. Al cerrar cada tarea, el orquestador mide la corrida desde el registro de la herramienta (§5) y agrega la fila en Notion; si aprendió algo, agrega o actualiza una lección.
+4. **Al cerrar cada paso, antes de entregar el siguiente prompt, el orquestador anota todo, sin que se lo pidan** (regla firme del propietario, 2026-09-25: «nunca se te debe pasar»): fila del agente **y** fila del propio orquestador en «Corridas de agentes» (medidas en su registro, §5), lecciones nuevas o actualizadas en «Lecciones de orquestación», esta guía al día (reglas y §6) y el estado en Engram. El mensaje al propietario dice qué quedó anotado.
 5. **Los prompts se entregan en el chat del orquestador, en un solo bloque de código listo para copiar y pegar** (decisión del propietario, 2026-09-24: la página de tarjetas se retiró porque cada publicación costaba $1,5–2 y agregaba pasos). Antes del bloque, una línea dice dónde pegarlo (repositorio, herramienta, modelo y razonamiento). Un solo paso a la vez. Nunca se manda un prompt solo para decirle a una sesión que su trabajo quedó aprobado: con el visto bueno del propietario va directo el prompt de la siguiente tarea.
 6. **Traspaso del orquestador:** cuando cada mensaje del orquestador relee más de ~300K tokens, se guarda el estado (resumen en Engram, plan, esta guía, página de prompts y Notion) y se continúa en una sesión nueva de `forge614-ai` (§5).
 
@@ -79,6 +79,7 @@ Bloqueos: <lista o "ninguno">
 | Antes de escribir un documento en `forge614-ai`, revisar `standard/forbidden-mentions.json`: no nombrar productos prohibidos (acta 0012) | provisional | spec de memoria inteligente: 2 menciones que habrían hecho fallar `verify` |
 | Indicar archivos y líneas exactos a tocar, para que la sesión no explore el repositorio | provisional (hipótesis a medir) | la entrada re-leída es el 99 % del costo (§5) |
 | **Probar el plan completo en un laboratorio antes de entregarlo** (§1): código y pruebas literales ya verdes, anclas de reemplazo únicas | provisional | Engram 1.7.0: rondas por error del plan T1 3 → T2 1 → **T3 0** (el laboratorio atrapó 4 errores); agente T3 en 2,3 min y 1,09 M tokens |
+| Cuando el plan agrega un campo de texto, listar cada filtro o validación que recorre los campos de texto (secretos, límites, normalización) y exigir una prueba por campo nuevo en cada uno | provisional | Engram T2 agregó `affects` y el filtro de secretos no lo revisaba; nadie lo vio hasta la revisión independiente T9 (1 tarea de corrección extra, T9b) |
 | Todo filtro o expresión regular del plan se ejecuta antes contra textos normales parecidos ("casi positivos") y esos casos entran como pruebas fijas | provisional | Engram T2: el filtro de secretos rechazaba 5 de 8 textos normales, incluido `password: <redacted>`; 1 ronda |
 | Con código literal y anclas únicas, el agente aplica el plan por script (sin editar a mano): mantener las anclas exactas y únicas | provisional | Engram T3 y T3 docs: 0 Write/Edit, reemplazos con comprobación de unicidad |
 | Cuando el plan trae pruebas largas sin código de implementación, el prompt pide extraerlas del plan con un script; nunca escribirlas a mano | provisional | Engram T4 r1 (Codex medium): reescribió en 15 líneas la prueba de 114 del plan y omitió dos; r2 con extracción por script: idénticas |
@@ -126,11 +127,12 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
 | Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | **firme** (3 corridas, todas a la primera: Engram T4 docs, 1,08 M tokens ≈ $0,74; T7 docs, 1,43 M ≈ $0,68, atrapó un dato falso del plan; T8 docs + versión, 22 archivos, 1,36 M ≈ $0,76 en 3,1 min) |
 | Migración con riesgo (referencia) | Opus · xhigh por error (se pidió high): Engram T1, 22,7 M tokens ≈ $10,47, 3 rondas (todas error del plan) | 1 corrida |
-| Revisión independiente de una rama | otro proveedor · high | provisional (0 corridas) |
+| Revisión independiente de una rama | otro proveedor · high | provisional (1 corrida: Engram T9, Codex gpt-5.6-terra high, 108 archivos en ≈ 14 min, 4,25 M tokens, límite semanal 5 % → 5 %, 1 hallazgo real que las pruebas no cubrían, 0 falsos) |
 | Ejecución de un plan ya escrito (referencia) | Sonnet · high: Sentinel 0.1.1, 8,86 M tokens, 3 rondas (todas error del plan) | 1 corrida |
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Regla firme del propietario: el orquestador anota todo al cerrar cada paso, incluida su propia fila (§1.4); lección de Engram T9 sobre campos nuevos y filtros (§4); primera revisión independiente medida (§6).
 - 2026-09-25 — Documentación redactada por el agente pasa a firme (§6, 3 corridas); parche completo con `git apply` como forma de entregar código (§6).
 - 2026-09-25 — Lección de Engram T8: costo real de un subagente de trabajo abierto (§5).
 - 2026-09-25 — Lecciones de Engram T7 y T7 docs: revisar todos los campos que reutilizan una pieza del esquema (§4), comprobar cada frase de la documentación en el código (§4b) y segundas corridas en §6.
