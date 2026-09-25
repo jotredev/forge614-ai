@@ -182,6 +182,8 @@ Hallazgos de R2 para Shell 1.12.0: dentro de Shell la memoria llega dos veces (b
 
 Se detalla al cerrar R2. Lleva juntos, para revalidar una sola vez: las seis celdas en `supported` con `verifiedAt` y la evidencia; la tabla «Agentes ya evaluados» alineada con la matriz (hoy dice Engram «N/A»); y los cambios acumulados del checklist: la definición de «byte a byte», el manual incrustado en el archivo principal como forma normal (el archivo aparte de Claude Code queda como excepción), la verificación del formato 2 por la transcripción y no por la evidencia del gancho, y la nota de laboratorio para Codex (variable explícita en el servidor MCP). Las celdas se validan contra el texto nuevo, para que publicarlo no las devuelva a `revalidate`.
 
+**Cierre de R3 (2026-09-25):** reglamento 1.1.1 publicado (plan `docs/superpowers/plans/2026-09-25-reglamento-1-1-1.md`, acta 0028, PR #13, tag `standard-v1.1.1` → `1d67765`). `engines/claude-code`, `engines/codex`, `shell/claude-code` y `shell/codex` en `supported` con `verifiedAt` 2026-09-25; `engram/claude-code` y `engram/codex` siguen en `revalidate` hasta Engram 1.7.1 y un R4 corto, plazo 2026-10-25. Costo: subagente de borrador ≈ $2,58, R1 ≈ $0,27, R2 ≈ $0,26 y orquestador ≈ $5,5.
+
 ## Orden decidido por el propietario (2026-09-25)
 
 1. **R3 primero:** reglamento con `engines/claude-code`, `engines/codex`, `shell/claude-code` y `shell/codex` en `supported` (vencen el 2026-10-22), la tabla del checklist alineada y los cambios acumulados.
