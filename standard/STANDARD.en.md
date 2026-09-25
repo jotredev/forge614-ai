@@ -1,4 +1,4 @@
-# Forge614 Node Standard — version 1.0.2
+# Forge614 Node Standard — version 1.1.0
 
 > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
 

@@ -113,7 +113,7 @@ During first-time memory initialization, Engram needs only these decisions:
 | Private product directory | Always required |
 | Local SQLite and FTS5 | Always required |
 | PostgreSQL synchronization | Optional |
-| Reinforcement from repeated memories | Optional |
+| Reinforcement from repeated memories | Included in a brand-new base (Engram ≥ 1.7.0, `init`); optional until `intelligence-enable` in an existing base |
 | Detecting AI engines | Not an Engram responsibility |
 | Configuring AI integrations | Not an Engram responsibility |
 | Creating or selecting projects | Not part of initialization |

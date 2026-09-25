@@ -33,7 +33,10 @@
     {
       "node": "engram",
       "agent": "claude-code",
-      "status": "not-applicable",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-25",
+      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
+      "deadline": "2026-10-25",
       "verifiedAt": "2026-09-22",
       "verifiedBy": "owner",
       "notes": "No requiere cambios en Engram (protocolo v1)."
@@ -79,7 +82,10 @@
     {
       "node": "engram",
       "agent": "codex",
-      "status": "not-applicable",
+      "status": "revalidate",
+      "revalidateSince": "2026-09-25",
+      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
+      "deadline": "2026-10-25",
       "verifiedAt": "2026-09-22",
       "verifiedBy": "owner",
       "notes": ""

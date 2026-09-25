@@ -6,7 +6,7 @@
 
 `forge614-ai` es el núcleo del ecosistema Forge614, una familia de herramientas para trabajar con asistentes de IA. Cada herramienta es un **nodo**: un repositorio propio con un contrato público. Hoy este repositorio publica tres cosas:
 
-- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.0.2`): la norma que todo nodo cumple. Se explica en el documento 01.
+- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.1.0`): la norma que todo nodo cumple. Se explica en el documento 01.
 - Las **reglas** como paquetes y el **pack** `forge614-pack-ecosystem-node` que las agrupa. Documento 02.
 - Las **plantillas** desde las que un nodo genera sus instaladores, workflows y contratos, y el **verificador** (`bun run verify`) que comprueba el estándar sobre este mismo repositorio. Documentos 03 y 04.
 
