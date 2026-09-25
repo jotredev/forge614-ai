@@ -112,7 +112,7 @@ Bloqueos: <lista o "ninguno">
 |---|---|---|
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
 | **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
-| Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado | provisional (1 muestra) | Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión; queda medir en T5 el laboratorio de código delegado |
+| Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado; **el orquestador rehace los cambios en una copia limpia y entrega un parche** con su SHA-256, nunca el borrador tal cual | provisional (2 muestras) | Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión. Reglamento 1.1.0: borrador + laboratorio en 6,7 min ≈ $1,25, reportado «en verde» pero con 4 errores atrapados al leer su diff (matriz reescrita con otra sangría, `sed` sin `g`, orden de comandos que fallaba, texto del acta ausente) y 1 decisión de alcance corregida |
 | Un subagente para un trabajo abierto ("ajusta las pruebas que fallen") cuesta mucho más que uno de redacción: acotarlo con la lista exacta de pruebas y medirlo **en su registro**, no con el total que devuelve la herramienta | provisional | Engram T8: el subagente que ajustó 21 pruebas hizo 165 mensajes con razonamiento high heredado: 34 M tokens ≈ $8 (la herramienta informó 0,31 M); el trabajo salió bien y atrapó un fallo real |
 | Plan con solo pruebas y contratos, sin laboratorio (el worker implementa) | provisional (1 muestra) | Engram T4 (Codex medium): 2 rondas (1 por error del agente, 2 fallos del plan atrapados en la revisión), 3,77 M tokens, 2 % del límite semanal; T2 con código completo: 4,58 M, 1 ronda. Costo del orquestador sin laboratorio claramente menor que en T3 y T5 |
 | Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
@@ -136,6 +136,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Segunda muestra del subagente de borrador y laboratorio: el orquestador rehace y entrega un parche (§5).
 - 2026-09-25 — Lecciones de Engram T10b: el prompt no quita pasos del plan (§2), comandos sobre datos reales probados antes en una copia (§4), segunda muestra del control de procesos (§4) y primera corrida con datos reales (§6).
 - 2026-09-25 — Suite como en CI, sin pruebas omitidas por el entorno (§1.3, §4), tras Engram T10a r1.
 - 2026-09-25 — Código con parche o laboratorio en Sonnet medium pasa a firme (§6, Engram T9b); lección de niveles de esquema y procesos abiertos (§4).
