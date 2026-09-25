@@ -45,7 +45,7 @@
 | T5 | Sesiones: actividad e interrumpidas | medio | Claude Code · Sonnet 5 · medium | Sonnet medium vs T3 high |
 | T6 | Bloque de arranque (formato 2) | medio-alto | Claude Code · Sonnet 5 · high | Sonnet high; laboratorio del propio orquestador en sesión limpia |
 | T7 | Protocolo v4 + instrucciones MCP + descripciones | medio | Claude Code · Sonnet 5 · medium | Sonnet medium; manual redactado y probado por el orquestador en laboratorio |
-| T8 | Docs es/en, CHANGELOG, códigos, activación en init/setup, plan de réplica → 1.8.0, versión | bajo | Claude Code · Sonnet 5 · low | low |
+| T8 | Bases nuevas inteligentes (init), `sessionProjectId`, coherencia de docs es/en y CHANGELOG, réplica → 1.8.0, versión | medio | Claude Code · Sonnet 5 · medium (código y docs, dos sesiones) | parche completo aplicado con `git apply` |
 | T9 | Revisión independiente de toda la rama | — | Codex · gpt-5.6-terra · high | otro proveedor |
 | T10 | PR, CI, publicación, instalación y activación en la Mac | bajo | Claude Code · Sonnet 5 · low | low |
 
@@ -3731,9 +3731,54 @@ git add docs/es/09-protocolo-publico-de-memoria.md docs/en/09-public-memory-prot
 git commit -m "docs: memory protocol v4 (manual, MCP instructions, field descriptions) in protocol, CLI, startup context and changelog"
 ```
 
-### Task 8: Coherencia final, activación en init/setup y versión *(detalle tras aprobar T7)*
+### Task 8: Bases nuevas inteligentes, coherencia final y versión
 
-**Objetivo:** pasada final de coherencia de docs es/en y CHANGELOG (cada tarea ya documentó lo suyo; pendientes cosméticos de T6 docs `301123b`: doble línea en blanco antes de «Errores seguros» / «Safe errors» en el capítulo 10 es/en, y los ids del ejemplo del formato 2 son cortos cuando los reales son UUID completos), cosméticos de T7 docs `c3be0a4` (el CHANGELOG dice que el manual «tiene dos salidas» y el capítulo 09 «tres»: unificar en tres, con las descripciones de campos como tercera; en la lista del capítulo 09 `startupContext` aparece junto a las salidas sin serlo; la viñeta del bloque de arranque del CHANGELOG dice «las versiones 1 a 3 siguen anunciando el formato 1», pero la versión 1 no anuncia ningún comando: «las versiones 2 y 3»), descripción propia para `sessionProjectId` en `memory_save` (hallazgo de la revisión de T7: hoy hereda «Memory id returned by search, save or context.»; debe decir que es el `projectId` de la sesión, obligatorio junto con `sessionId` cuando `scope` es `shared`; agregar la clave a `FIELD_DESCRIPTIONS` y su comprobación en `memory-tools.test.ts`, y documentarla en el capítulo 09), revisar si los capítulos 04 (SDK: `memoryProtocol()` «versión 1») y 08 (límites) necesitan mencionar la versión 4, `CONTRACT_CODES` completos, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
+**Experimento:** dos prompts, dos sesiones nuevas. **T8 código:** Claude Code · Sonnet 5 · medium; variable nueva: el código llega como **un parche completo probado** (`2026-09-24-engram-1-7-0-t8.patch`, junto a este plan) que el agente aplica con `git apply`, en vez de anclas de reemplazo. **T8 docs y versión:** Claude Code · Sonnet 5 · medium, documentación redactada por el agente con datos verificados y lugares exactos, más la versión en un commit aparte.
+
+**Medición del orquestador (2026-09-25, laboratorio sobre `c3be0a4`, nunca en el repositorio):**
+- Parche aplicado con `git apply` sobre una copia nueva de `c3be0a4`: **672 pass / 10 skip / 0 fail** (+5 pruebas), typecheck 0, `git diff --check` limpio; 14 archivos (1 nuevo). Con `package.json` en 1.7.0: mismo resultado.
+- El ajuste de las pruebas existentes lo hizo un subagente Sonnet de contexto limpio (≈ 0,31 M tokens, 32 min); el orquestador revisó cada cambio y agregó la prueba de garantía con la base real de 1.6.0, la prueba estable del bloque de arranque y `sessionProjectId`.
+- Huella SHA-256 del parche: `614feb8325d8d6b249dcb300a5c1a76d3a85a21bd6971dc868cfb90a35db4c71` (584 líneas).
+
+**Decisiones de esta tarea:**
+- **D-T8-1 (decisión del propietario, 2026-09-25): una base nueva nace inteligente.** `MemoryWorkspace.init()` deja en el nivel 11 una base **cuyo archivo no existía** antes de esa llamada (no hay nada que respaldar). Todos los caminos que crean el espacio pasan por ahí: `init`, `init --json`, el `init` de terminal, `project-create`, etc. El servidor MCP no crea ni migra bases. Una base que ya existe, **aun sin su configuración**, nunca se migra en `init`: se activa con `intelligence-enable`, con respaldo. Hallazgo del laboratorio: el primer borrador migraba una base existente cuyo archivo de configuración faltaba; se corrigió con la comprobación del archivo.
+- **D-T8-2 (garantía del propietario, probada):** una base real de 1.6.0 en nivel 10 (fixture `v1.6.0/schema-10.db`, tres ámbitos) pasa dos veces por `init()` (primero sin configuración y luego con ella) y queda con el mismo nivel, las mismas filas y sin respaldos nuevos. Otra prueba hace lo mismo con una base de nivel 3 con datos.
+- **D-T8-3 (init de terminal):** en una base nueva ya no se pregunta por el refuerzo (el nivel 11 lo incluye) y se dice: «La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.». En una base existente por debajo del nivel 7, la pregunta sigue igual.
+- **D-T8-4 (pruebas existentes):** 21 pruebas describían la conducta de una base recién creada por debajo del nivel 11. Las de conducta general (A, 16) pasan a la conducta nueva sin perder comprobaciones: el tablero con `affects` y un segundo proyecto del grupo, `reinforcementEnabled: true`, sesión `manual` en MCP, sin `DATABASE_MIGRATED`. Las que prueban la conducta de una base vieja (B, 5) parten de una base vieja creada con el helper nuevo `tests/fixtures/legacy-workspace.ts` (`legacyConfiguredWorkspace`); una de ellas (adjuntar una base existente) no cambió y fue la que destapó el hallazgo de D-T8-1. No se borró ninguna prueba ni comprobación.
+- **D-T8-5 (`sessionProjectId`):** gana su propia descripción en `FIELD_DESCRIPTIONS` («Only with scope shared and a sessionId: the projectId that memory_session_start returned.») y su comprobación en `memory-tools.test.ts`; deja de heredar la del id de recuerdo.
+- **D-T8-6 (prueba intermitente de T6):** `startup.test.ts` fallaba ~1 de cada 3 corridas: dos recuerdos guardados en el mismo milisegundo empataban en `updated_at` y el desempate por id (aleatorio) cambiaba el orden. El código está bien; la prueba fija la fecha de uno de ellos (8 de 8 corridas en verde).
+- **D-T8-7:** `CONTRACT_CODES` ya incluye los 9 códigos nuevos de 1.7.0 (sin cambios). `setup` está retirado (`COMMAND_RETIRED`): la activación va solo en `init`.
+- **D-T8-8 (contrato del ecosistema):** la tabla «first-time memory initialization» de `FORGE614_ECOSYSTEM_CONTRACT` dice «Reinforcement from repeated memories | Optional». Con D-T8-1, en una base nueva viene incluido. El original vive en `forge614-ai` (`standard/FORGE614_ECOSYSTEM_CONTRACT.en.md`) y se corrige con el reglamento 1.1.0 (acta 0027), junto con los puntos del checklist. La copia de Engram se actualiza cuando se publique; T8 no la toca.
+
+**Files (T8 código):** los 14 del parche: `src/app/workspace.ts`, `src/app/setup.ts`, `src/modules/memory-protocol/protocol.ts`, `src/interfaces/mcp/schemas.ts`; pruebas `src/app/workspace.test.ts`, `src/app/setup.test.ts`, `src/app/initialization.test.ts`, `src/interfaces/terminal/setup.test.ts`, `src/interfaces/cli/commands.test.ts`, `src/interfaces/cli/__tests__/ecosystem.e2e.test.ts`, `src/interfaces/mcp/__tests__/mcp.e2e.test.ts`, `src/interfaces/mcp/memory-tools.test.ts`, `src/infrastructure/sqlite/startup.test.ts`; nuevo `tests/fixtures/legacy-workspace.ts`.
+
+- [ ] **Step 1 (código): aplicar el parche**
+
+```bash
+git -C ~/Desktop/forge614-ai show engram/memoria-inteligente-spec:docs/superpowers/plans/2026-09-24-engram-1-7-0-t8.patch > "$SCRATCH/t8.patch"
+shasum -a 256 "$SCRATCH/t8.patch"   # debe ser 614feb8325d8d6b249dcb300a5c1a76d3a85a21bd6971dc868cfb90a35db4c71
+git apply --check "$SCRATCH/t8.patch" && git apply "$SCRATCH/t8.patch"
+```
+
+- [ ] **Step 2 (código): suite y tipos.** `bun test` → 672 pass / 10 skip / 0 fail; `bun run typecheck` sin errores; `git diff --check` sin salida; `git status --short` con los 14 archivos.
+
+- [ ] **Step 3 (código): commit**
+
+```bash
+git add src/app/workspace.ts src/app/setup.ts src/modules/memory-protocol/protocol.ts src/interfaces/mcp/schemas.ts src/app/workspace.test.ts src/app/setup.test.ts src/app/initialization.test.ts src/interfaces/terminal/setup.test.ts src/interfaces/cli/commands.test.ts src/interfaces/cli/__tests__/ecosystem.e2e.test.ts src/interfaces/mcp/__tests__/mcp.e2e.test.ts src/interfaces/mcp/memory-tools.test.ts src/infrastructure/sqlite/startup.test.ts tests/fixtures/legacy-workspace.ts
+git commit -m "feat(init): a brand-new database starts with memory intelligence; own description for sessionProjectId"
+```
+
+- [ ] **Step 4 (docs y versión, prompt aparte):** se detalla tras aprobar el código, con los datos verificados contra su commit. Lista de lo que entra:
+  1. Base nueva inteligente (D-T8-1 y D-T8-3): la viñeta del esquema 11 del CHANGELOG («Se activa solo con `intelligence-enable`…») y una viñeta nueva; capítulo 05 es/en («El nivel 11 se activa solo de forma explícita…»); capítulo 01 es/en («…refuerzo opcional»); capítulo 03 es/en (líneas de `init` e `intelligence-enable`).
+  2. `sessionProjectId` en el párrafo «Descripciones de campos» del capítulo 09 es/en.
+  3. La réplica de grupos pasa de «1.7.0, formato 4» a 1.8.0 en los capítulos 06, 07, 08 y 11 es/en (8 líneas; la sección 1.6.0 del CHANGELOG no se toca porque es historia).
+  4. Cosméticos: doble línea en blanco antes de «Errores seguros» / «Safe errors» (capítulo 10 es/en); ids cortos del ejemplo del formato 2 → UUID completos; el CHANGELOG dice «dos salidas» y el capítulo 09 «tres» (unificar en tres: completo, MCP y descripciones de campos; en la lista del 09, `startupContext` aparte de las salidas); la viñeta del bloque de arranque del CHANGELOG («Sin cambios en MCP ni en el protocolo (las versiones 1 a 3…)») pasa a decir que el protocolo v4 lo anuncia y que las versiones 2 y 3 anuncian el formato 1.
+  5. Capítulo 04 es/en (`memoryProtocol()` «versión 1»: agregar las versiones 2–4) y capítulo 08 es/en (sección nueva «Capacidades incorporadas en v1.7.0» después de la de 1.6.0, con la réplica de grupos en 1.8.0 como límite, y una frase de la versión 4 en «Protocolo público de memoria: estado de integración»).
+  6. `docs/notion-map.json`: marcar `"notionSyncPending": true` solo en entradas existentes de capítulos tocados que aún no lo tengan.
+  7. **Commit aparte de versión:** `package.json` 1.6.0 → 1.7.0 (probado: la suite no cambia) y en el CHANGELOG el encabezado `## 1.7.0 — en desarrollo` → `## 1.7.0`, con la línea «esta sección crece tarea por tarea» cambiada por un resumen de una línea, como la de 1.6.0. Mensaje: `chore: version 1.7.0 and changelog`.
+
+**Objetivo original del esqueleto (queda cubierto arriba):** pasada final de coherencia de docs es/en y CHANGELOG (cada tarea ya documentó lo suyo; pendientes cosméticos de T6 docs `301123b`: doble línea en blanco antes de «Errores seguros» / «Safe errors» en el capítulo 10 es/en, y los ids del ejemplo del formato 2 son cortos cuando los reales son UUID completos), cosméticos de T7 docs `c3be0a4` (el CHANGELOG dice que el manual «tiene dos salidas» y el capítulo 09 «tres»: unificar en tres, con las descripciones de campos como tercera; en la lista del capítulo 09 `startupContext` aparece junto a las salidas sin serlo; la viñeta del bloque de arranque del CHANGELOG dice «las versiones 1 a 3 siguen anunciando el formato 1», pero la versión 1 no anuncia ningún comando: «las versiones 2 y 3»), descripción propia para `sessionProjectId` en `memory_save` (hallazgo de la revisión de T7: hoy hereda «Memory id returned by search, save or context.»; debe decir que es el `projectId` de la sesión, obligatorio junto con `sessionId` cuando `scope` es `shared`; agregar la clave a `FIELD_DESCRIPTIONS` y su comprobación en `memory-tools.test.ts`, y documentarla en el capítulo 09), revisar si los capítulos 04 (SDK: `memoryProtocol()` «versión 1») y 08 (límites) necesitan mencionar la versión 4, `CONTRACT_CODES` completos, `init`/`setup` activan inteligencia en bases nuevas, renombrar el esbozo de réplica a 1.8.0, versión 1.7.0 en commit aparte.
 
 ### Task 9: Revisión independiente *(prompt tras aprobar T8)*
 

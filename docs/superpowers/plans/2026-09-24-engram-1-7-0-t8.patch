@@ -1,0 +1,584 @@
+diff --git a/src/app/initialization.test.ts b/src/app/initialization.test.ts
+index 1266c55..b0c6210 100644
+--- a/src/app/initialization.test.ts
++++ b/src/app/initialization.test.ts
+@@ -77,12 +77,14 @@ test("apply initializes local storage without creating a project", async () => {
+ 
+   const result = await applyMemoryInitialization(request, preview.expectedRevision, config);
+ 
++  // A brand-new database is born with memory intelligence (schema 11), which already includes
++  // reinforcement: it reports enabled even though this request did not ask to enable it.
+   expect(result).toEqual({
+     status: {
+       initialized: true,
+       storage: "sqlite",
+       postgresConfigured: false,
+-      reinforcementEnabled: false,
++      reinforcementEnabled: true,
+     },
+     initializedStorage: true,
+     configuredPostgres: false,
+diff --git a/src/app/setup.test.ts b/src/app/setup.test.ts
+index 2628059..2df1aaf 100644
+--- a/src/app/setup.test.ts
++++ b/src/app/setup.test.ts
+@@ -5,6 +5,7 @@ import { join } from "node:path";
+ import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
+ import { MemoryWorkspace } from "./workspace";
+ import { runSetup, type SetupIO } from "./setup";
++import { legacyConfiguredWorkspace } from "../../tests/fixtures/legacy-workspace";
+ 
+ const directories: string[] = [];
+ function fixture() {
+@@ -47,17 +48,30 @@ test("setup automatically restricts an existing user-owned workspace directory b
+ 
+ test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
+   const { config, workspace } = fixture();
+-  const { io, output, questions } = conversation(["", "", "sí"], () => expect(existsSync(config.root)).toBe(false));
++  // The new database is born already at schema 11: no reinforcement question is asked, and it
++  // reports enabled from the start.
++  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
+   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
+-  expect(questions).toHaveLength(3);
++  expect(questions).toHaveLength(2);
+   expect(workspace.listProjects()).toEqual([]);
+   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
+   expect(output.join("\n")).toContain(config.databasePath);
++  expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
+   const store = workspace.open(true);
+-  try { expect(store.reinforcementEnabled()).toBe(false); }
++  try { expect(store.reinforcementEnabled()).toBe(true); }
+   finally { store.close(); }
+ });
+ 
++test("setup on a brand-new database writes the intelligence phrase and never asks about reinforcement", async () => {
++  const { config } = fixture();
++  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
++  expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
++  expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
++  expect(output.join("\n")).not.toContain("¿Quieres habilitar el refuerzo de recuerdos?");
++  // Only the PostgreSQL question and the final confirmation: no reinforcement question in between.
++  expect(questions).toHaveLength(2);
++});
++
+ test("setup preserves existing projects and memories without asking which project to use", async () => {
+   const { config, workspace } = fixture();
+   const project = workspace.createProject("PRIVATE_PROJECT_NAME");
+@@ -66,9 +80,12 @@ test("setup preserves existing projects and memories without asking which projec
+   try { id = store.save({ projectId: project.projectId, title: "Keep", content: "SQLite", type: "fact" }).id; }
+   finally { store.close(); }
+   const before = readFileSync(join(config.root, ".env"));
+-  const { io, output, questions } = conversation(["no", "no", "yes"]);
++  // The project was created through workspace.createProject(), which already births the
++  // database at schema 11 (memory intelligence): reinforcement is already enabled, so setup
++  // reports it instead of asking.
++  const { io, output, questions } = conversation(["no", "yes"]);
+   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
+-  expect(questions).toHaveLength(3);
++  expect(questions).toHaveLength(2);
+   expect(workspace.listProjects()).toEqual([project]);
+   expect(readFileSync(join(config.root, ".env"))).toEqual(before);
+   const reopened = workspace.open(true);
+@@ -80,9 +97,11 @@ test("setup preserves existing projects and memories without asking which projec
+ 
+ test("setup retries invalid confirmation without interpreting old project menu choices", async () => {
+   const { config, workspace } = fixture();
+-  const { io, questions } = conversation(["no", "no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
++  // Brand new: no reinforcement question is asked, so the confirmation loop starts right after
++  // the PostgreSQL question.
++  const { io, questions } = conversation(["no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
+   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
+-  expect(questions).toHaveLength(8);
++  expect(questions).toHaveLength(7);
+   expect(workspace.listProjects()).toEqual([]);
+ });
+ 
+@@ -111,8 +130,11 @@ test("setup refuses a missing configured database before prompting without recre
+ });
+ 
+ test("setup only enrolls reinforcement after the final confirmation", async () => {
++  // The reinforcement question is only ever asked for a database that already exists below
++  // level 7: a brand-new workspace is born with it enabled already (see the tests above), so
++  // each scenario here starts from a pre-existing, still-configured legacy-level database.
+   const declined = fixture();
+-  declined.workspace.init();
++  legacyConfiguredWorkspace(declined.config);
+   const declinedConfig = readFileSync(join(declined.config.root, ".env"));
+   expect(await runSetup(conversation(["no", "no", "si"]).io, declined.config))
+     .toEqual({ cancelled: false, storage: "sqlite" });
+@@ -122,7 +144,7 @@ test("setup only enrolls reinforcement after the final confirmation", async () =
+   finally { store.close(); }
+ 
+   const cancelled = fixture();
+-  cancelled.workspace.init();
++  legacyConfiguredWorkspace(cancelled.config);
+   const cancelledDatabase = readFileSync(cancelled.config.databasePath);
+   const cancelledConfig = readFileSync(join(cancelled.config.root, ".env"));
+   expect(await runSetup(conversation(["no", "si", "no"]).io, cancelled.config))
+@@ -134,7 +156,8 @@ test("setup only enrolls reinforcement after the final confirmation", async () =
+   finally { store.close(); }
+ 
+   const accepted = fixture();
+-  const { io, output } = conversation(["no", "si", "si"], () => expect(existsSync(accepted.config.root)).toBe(false));
++  legacyConfiguredWorkspace(accepted.config);
++  const { io, output } = conversation(["no", "si", "si"]);
+   expect(await runSetup(io, accepted.config)).toEqual({ cancelled: false, storage: "sqlite" });
+   store = accepted.workspace.open(true);
+   try { expect(store.reinforcementEnabled()).toBe(true); }
+diff --git a/src/app/setup.ts b/src/app/setup.ts
+index e864ff4..61648d8 100644
+--- a/src/app/setup.ts
++++ b/src/app/setup.ts
+@@ -62,6 +62,8 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
+     let enableReinforcement=reinforcementEnabled;
+     if(reinforcementEnabled) {
+       io.write("El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación.");
++    } else if(!configured) {
++      io.write("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
+     } else {
+       io.write("registrar repeticiones mejora el orden; no verifica la verdad.");
+       io.write("sincronizar esta función requiere actualizar todos los equipos.");
+diff --git a/src/app/workspace.test.ts b/src/app/workspace.test.ts
+index 3bbf8f9..b899cd9 100644
+--- a/src/app/workspace.test.ts
++++ b/src/app/workspace.test.ts
+@@ -1,6 +1,6 @@
+ import { afterEach, expect, test } from "bun:test";
+ import { Database } from "bun:sqlite";
+-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
++import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+ import { join } from "node:path";
+ import { tmpdir } from "node:os";
+ import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
+@@ -58,6 +58,61 @@ test("init can attach existing compatible database without rewriting or losing p
+   expect(existsSync(join(f.root,".env"))).toBe(true);
+ });
+ 
++function userVersion(path: string): number {
++  const db = new Database(path, { readonly: true });
++  try { return (db.query("PRAGMA user_version").get() as { user_version: number }).user_version; }
++  finally { db.close(); }
++}
++
++test("init on a folder with no database leaves PRAGMA user_version at 11 and creates no .bak file", () => {
++  const f = fixture();
++  f.workspace.init();
++  expect(userVersion(f.db)).toBe(11);
++  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
++});
++
++test("OWNER GUARANTEE: an existing populated database below level 11 passes through init() unchanged", () => {
++  const f = fixture();
++  const store = new MemoryStore(f.db);
++  const a = store.createProject("Alpha"); const b = store.createProject("Beta");
++  store.save({ projectId: a.projectId, title: "One", content: "Project memory", type: "fact" });
++  store.save({ projectId: b.projectId, title: "Two", content: "Another project memory", type: "decision" });
++  store.save({ scope: "shared", projectId: null, title: "Three", content: "Shared memory", type: "preference" });
++  store.close();
++  const versionBefore = userVersion(f.db);
++  expect(versionBefore).toBeLessThan(11);
++  const fingerprint = () => {
++    const db = new Database(f.db, { readonly: true });
++    try { return db.query("SELECT id,version,title,content FROM memories ORDER BY id").all(); }
++    finally { db.close(); }
++  };
++  const rowsBefore = fingerprint();
++
++  f.workspace.init();
++
++  expect(userVersion(f.db)).toBe(versionBefore);
++  expect(fingerprint()).toEqual(rowsBefore);
++  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
++});
++
++test("OWNER GUARANTEE: a configured 1.6.0 database at level 10 passes through init() twice untouched", () => {
++  const f = fixture();
++  mkdirSync(f.root, { mode: 0o700 });
++  copyFileSync(join(import.meta.dir, "../../tests/fixtures/v1.6.0/schema-10.db"), f.db);
++  const rows = () => {
++    const db = new Database(f.db, { readonly: true });
++    try { return db.query("SELECT id,scope,version,title,content,state FROM memories ORDER BY id").all(); }
++    finally { db.close(); }
++  };
++  const before = rows();
++  expect(before.length).toBeGreaterThan(0);
++  f.workspace.init(); // attaches the existing database and writes the config
++  f.workspace.init(); // the everyday case: config and database already there
++  expect(userVersion(f.db)).toBe(10);
++  expect(rows()).toEqual(before);
++  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
++});
++
+ test("foreign and old databases are refused before config publication", () => {
+   for (const version of [0,1,2]) {
+     const f = fixture(); mkdirSync(f.root, {mode:0o700});
+@@ -162,11 +217,16 @@ test("group operations fail cleanly and never migrate a database only to report
+ });
+ 
+ test("enrolling the ecosystem level backs up a database that holds data and skips an empty one", () => {
+-  const empty = fixture();
+-  empty.workspace.init(); empty.workspace.createGroup("primero");
++  // A brand-new workspace is now born at level 11 (ecosystem already included), so it never
++  // exercises this migration. It still applies to a database that already existed below level 8;
++  // init() attaches such a database without migrating it (see the "init can attach..." test above),
++  // and only the explicit createGroup enrollment below performs the ecosystem migration.
++  const empty = fixture(); new MemoryStore(empty.db).close();
++  empty.workspace.createGroup("primero");
+   expect(readdirSync(empty.root).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
+   const used = fixture();
+-  used.workspace.createProject("Con datos"); used.workspace.createGroup("primero");
++  const usedStore = new MemoryStore(used.db); usedStore.createProject("Con datos"); usedStore.close();
++  used.workspace.createGroup("primero");
+   expect(readdirSync(used.root).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
+ });
+ 
+diff --git a/src/app/workspace.ts b/src/app/workspace.ts
+index be38e8e..a42cc1f 100644
+--- a/src/app/workspace.ts
++++ b/src/app/workspace.ts
+@@ -1,3 +1,4 @@
++import { existsSync } from "node:fs";
+ import { MemoryError } from "../shared/errors";
+ import { groupName,type Group,type GroupSource,type GroupSummary } from "../modules/ecosystem";
+ import type { Memory } from "../modules/memory";
+@@ -27,8 +28,11 @@ export class MemoryWorkspace {
+       return;
+     }
+     this.config.prepare();
++    // Only a database file created right here starts with memory intelligence (schema 11): it holds nothing to
++    // back up. One already on disk, even without its config, is never migrated here; intelligence-enable does it.
++    const brandNew = !existsSync(this.config.databasePath);
+     const store = openWorkspaceDatabase(this.config.databasePath, true, false, (path, options) => new MemoryStore(path, options));
+-    try { this.config.save(); }
++    try { if (brandNew) store.enableIntelligence(); this.config.save(); }
+     finally { store.close(); }
+   }
+ 
+diff --git a/src/infrastructure/sqlite/startup.test.ts b/src/infrastructure/sqlite/startup.test.ts
+index cff41fc..fc7aacb 100644
+--- a/src/infrastructure/sqlite/startup.test.ts
++++ b/src/infrastructure/sqlite/startup.test.ts
+@@ -28,6 +28,8 @@ test("at level 11 the block orders essentials, uses short versions, reports the
+   const old = save(db, { scope: "project", projectId: ai, title: "Old note", content: "Replaced", type: "fact" });
+   const fresh = save(db, { scope: "project", projectId: ai, title: "New note", content: "Replaces the old one", type: "fact", supersedes: old.id });
+   save(db, { scope: "project", projectId: other, title: "Other project note", content: "Elsewhere", type: "fact" });
++  // Saves in the same millisecond tie on updated_at (then id decides): make the project order explicit.
++  db.run("UPDATE memories SET updated_at=? WHERE id=?", ["2026-01-01T00:00:00.000Z", language.id]);
+   startSession(db, ai, "first", "/ai");
+   const summary = saveSessionSummary(db, ai, "first", fields, { requestKey: "summary-1" });
+   startSession(db, ai, "second", "/ai");
+diff --git a/src/interfaces/cli/__tests__/ecosystem.e2e.test.ts b/src/interfaces/cli/__tests__/ecosystem.e2e.test.ts
+index 45ef129..6e98666 100644
+--- a/src/interfaces/cli/__tests__/ecosystem.e2e.test.ts
++++ b/src/interfaces/cli/__tests__/ecosystem.e2e.test.ts
+@@ -44,8 +44,10 @@ const T = 60_000;
+ test("group-create, group-list and group-rename speak the machine contract with schemaVersion", async () => {
+   const engram = await machine();
+   const created = await engram.ok("group-create", "--name", "mi-tienda");
+-  // Creating the first group upgrades the (still empty) base, and the result says so.
+-  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) }, notices: [expect.objectContaining({ code: "DATABASE_MIGRATED" })] });
++  // A brand-new base is now born already at the ecosystem-and-intelligence level (schema 11),
++  // so creating the first group never migrates it: no notices field at all (an empty array is
++  // never serialized).
++  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) } });
+   expect(await engram.ok("group-list")).toEqual({ schemaVersion: 1, groups: [{ ...created.group, projects: [] }] });
+   const renamed = await engram.ok("group-rename", "--group", "mi-tienda", "--name", "tienda-2");
+   expect(renamed).toMatchObject({ schemaVersion: 1, group: { id: created.group.id, name: "tienda-2" } });
+@@ -96,7 +98,12 @@ test("a node file that declares ecosystem forge614 binds the fixed group, writes
+   const group = bound.project.group;
+   expect(group.id).toMatch(/^[0-9a-f-]{36}$/);
+   expect(readIdentity(repository)).toEqual({ schemaVersion: 1, project: { id: bound.project.projectId, name: expect.any(String) }, ecosystem: group });
+-  await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Fuente de verdad", "--content", "las actas viven en forge614-ai", "--type", "decision", "--topic", "eco/source");
++  // The ecosystem board now requires (memory intelligence, born with a brand-new base) an
++  // allowed type plus at least two affected member projects: bind a second project to the group.
++  const repositoryName = readIdentity(repository).project.name as string;
++  const sibling = await engram.ok("project-create", "--name", "forge614-sibling");
++  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "forge614");
++  await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Fuente de verdad", "--content", "las actas viven en forge614-ai", "--type", "decision", "--topic", "eco/source", "--affects", `${repositoryName},forge614-sibling`);
+   const after = await engram.ok("startup-context", "--directory", repository, "--json");
+   expect(after.ecosystem).toMatchObject({ status: "member", group });
+   expect(after.ecosystem.context.recent.map((row: any) => row.title)).toEqual(["Fuente de verdad"]);
+@@ -207,7 +214,9 @@ test("when the local binding and the file disagree the file wins, the event is r
+   const digest = sha(identityPath(repository));
+   const context = await engram.ok("startup-context", "--directory", repository, "--json");
+   expect(context.project).toMatchObject({ projectId: declared, source: "file" });
+-  expect(context.project.notices.map((item: any) => item.code)).toEqual(["DATABASE_MIGRATED", "PROJECT_REBOUND_FROM_FILE"]);
++  // A brand-new base is already at the ecosystem-and-intelligence level: rebinding from the file
++  // is the only notice, with no migration ahead of it.
++  expect(context.project.notices.map((item: any) => item.code)).toEqual(["PROJECT_REBOUND_FROM_FILE"]);
+   expect(sha(identityPath(repository))).toBe(digest);
+   const db = new Database(engram.database, { readonly: true });
+   try { expect(db.query("SELECT previousProjectId FROM identity_events WHERE action='PROJECT_REBOUND_FROM_FILE'").all()).toEqual([{ previousProjectId: local.projectId }]); }
+@@ -248,9 +257,14 @@ test("a repeated topic key resolves project over ecosystem over shared", async (
+   const { project } = await engram.ok("init", "--json", "--directory", repository);
+   await engram.ok("group-create", "--name", "tienda");
+   await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
++  // The ecosystem board now requires at least two affected member projects (memory
++  // intelligence, born with a brand-new base): bind a second one to the group.
++  const repositoryName = readIdentity(repository).project.name as string;
++  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
++  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
+   const save = (scope: string[], content: string) => engram.ok("save", ...scope, "--title", "Deploy", "--content", content, "--type", "procedure", "--topic", "deploy");
+   const shared = await save(["--scope", "shared"], "compartida despliegue");
+-  const ecosystem = await save(["--scope", "ecosystem", "--group", "tienda"], "ecosistema despliegue");
++  const ecosystem = await save(["--scope", "ecosystem", "--group", "tienda", "--affects", `${repositoryName},tienda-sibling`], "ecosistema despliegue");
+   const titles = async () => (await engram.ok("search", "--project-id", project.projectId, "--scope", "all", "--query", "despliegue")).map((result: any) => `${result.memory.scope}`);
+   expect(await titles()).toEqual(["ecosystem"]);
+   const mine = await save(["--project-id", project.projectId], "proyecto despliegue");
+@@ -265,7 +279,13 @@ test("a repeated topic key resolves project over ecosystem over shared", async (
+ test("save, get, history, search and context accept --scope ecosystem --group and refuse inconsistent flags", async () => {
+   const engram = await machine();
+   const group = (await engram.ok("group-create", "--name", "tienda")).group;
+-  const saved = await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "usa kebab-case", "--type", "decision", "--topic", "estilo");
++  // The ecosystem board now requires at least two affected member projects (memory
++  // intelligence, born with a brand-new base).
++  const a = await engram.ok("project-create", "--name", "tienda-a");
++  const b = await engram.ok("project-create", "--name", "tienda-b");
++  await engram.ok("group-bind", "--project-id", a.projectId, "--group", "tienda");
++  await engram.ok("group-bind", "--project-id", b.projectId, "--group", "tienda");
++  const saved = await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "usa kebab-case", "--type", "decision", "--topic", "estilo", "--affects", "tienda-a,tienda-b");
+   expect(await engram.ok("get", "--scope", "ecosystem", "--group", group.id, "--id", saved.id)).toMatchObject({ id: saved.id, scope: "ecosystem", groupId: group.id });
+   expect((await engram.ok("get", "--scope", "ecosystem", "--group", "tienda", "--id", saved.id, "--version", "1")).memory.title).toBe("Regla");
+   expect(await engram.ok("history", "--scope", "ecosystem", "--group", "tienda", "--id", saved.id)).toHaveLength(1);
+@@ -286,7 +306,11 @@ test("context for a project in a group also returns its ecosystem block; for a l
+   const member = await engram.ok("project-create", "--name", "miembro");
+   const group = (await engram.ok("group-create", "--name", "tienda")).group;
+   await engram.ok("group-bind", "--project-id", member.projectId, "--group", "tienda");
+-  await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "de grupo", "--type", "decision");
++  // The ecosystem board now requires at least two affected member projects (memory
++  // intelligence, born with a brand-new base).
++  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
++  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
++  await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "de grupo", "--type", "decision", "--affects", "miembro,tienda-sibling");
+   expect(Object.keys(await engram.ok("context", "--project-id", loose.projectId))).toEqual(["format", "pinned", "recent", "summaries", "omitted", "truncated"]);
+   const withGroup = await engram.ok("context", "--project-id", member.projectId);
+   expect(withGroup.ecosystem).toMatchObject({ status: "member", group: { id: group.id, name: "tienda" } });
+@@ -298,7 +322,13 @@ test("memory-move re-scopes a memory into a group keeping its id, history and ve
+   const engram = await machine();
+   const project = await engram.ok("project-create", "--name", "frontend");
+   await engram.ok("group-create", "--name", "tienda");
+-  const first = await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v1", "--type", "decision", "--topic", "api");
++  // The ecosystem board now requires at least two affected member projects (memory
++  // intelligence, born with a brand-new base): bind the project and a sibling, and record the
++  // affected projects on the memory before it moves (the move itself reuses that metadata).
++  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
++  await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
++  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
++  const first = await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v1", "--type", "decision", "--topic", "api", "--affects", "frontend,tienda-sibling");
+   await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v2", "--type", "decision", "--topic", "api", "--expected-version", "1");
+   const moved = await engram.ok("memory-move", "--id", first.id, "--project-id", project.projectId, "--to-scope", "ecosystem", "--group", "tienda");
+   expect(moved).toMatchObject({ schemaVersion: 1, from: { scope: "project", projectId: project.projectId }, to: { scope: "ecosystem" }, memory: { id: first.id, scope: "ecosystem", projectId: null, version: 3, content: "v2", state: "active" } });
+@@ -310,12 +340,13 @@ test("memory-move re-scopes a memory into a group keeping its id, history and ve
+   try { expect(db.query("SELECT action,groupId IS NOT NULL AS g FROM identity_events WHERE action='MEMORY_MOVED'").all()).toEqual([{ action: "MEMORY_MOVED", g: 1 }]); }
+   finally { db.close(); }
+   // Nothing is copied or deleted silently: a topic already taken in the group stops the move.
+-  const other = await engram.ok("save", "--project-id", project.projectId, "--title", "Otro", "--content", "c", "--type", "fact", "--topic", "api");
++  // (type decision, not fact: the ecosystem board no longer allows fact outside the status note.)
++  const other = await engram.ok("save", "--project-id", project.projectId, "--title", "Otro", "--content", "c", "--type", "decision", "--topic", "api", "--affects", "frontend,tienda-sibling");
+   const conflict = await engram.fail("memory-move", "--id", other.id, "--project-id", project.projectId, "--to-scope", "ecosystem", "--group", "tienda");
+   expect(conflict).toEqual({ schemaVersion: 1, code: "TOPIC_CONFLICT", error: expect.any(String) });
+   expect(await engram.ok("get", "--project-id", project.projectId, "--id", other.id)).toMatchObject({ scope: "project" });
+   // Shared memories can move too.
+-  const shared = await engram.ok("save", "--scope", "shared", "--title", "Global", "--content", "g", "--type", "fact", "--topic", "g");
++  const shared = await engram.ok("save", "--scope", "shared", "--title", "Global", "--content", "g", "--type", "decision", "--topic", "g", "--affects", "frontend,tienda-sibling");
+   expect((await engram.ok("memory-move", "--id", shared.id, "--scope", "shared", "--to-scope", "ecosystem", "--group", "tienda")).from).toEqual({ scope: "shared", projectId: null });
+ }, T);
+ 
+@@ -415,8 +446,11 @@ test("group-source-set, memory-demote and save --affects speak the machine contr
+   const node = await engram.ok("project-create", "--name", "forge614-engram");
+   await engram.ok("group-create", "--name", "forge614");
+   for (const project of [ai, node]) await engram.ok("group-bind", "--project-id", project.projectId, "--group", "forge614");
+-  expect(await engram.fail("group-source-set", "--group", "forge614", "--project-id", ai.projectId)).toMatchObject({ schemaVersion: 1, code: "INTELLIGENCE_REQUIRED" });
+-  await engram.ok("intelligence-enable");
++  // A brand-new base is already born at level 11 (memory intelligence included), so
++  // intelligence-enable is a no-op here; the INTELLIGENCE_REQUIRED gate itself (group-source-set
++  // refusing a pre-intelligence database) is covered directly in board.test.ts and
++  // meta-save.test.ts against a database built at a lower level.
++  expect(await engram.ok("intelligence-enable")).toMatchObject({ enabled: true, migrated: false });
+   expect(await engram.ok("group-source-set", "--group", "forge614", "--project-id", ai.projectId))
+     .toEqual({ schemaVersion: 1, source: { groupId: expect.any(String), projectId: ai.projectId, setAt: expect.any(String) } });
+   expect(await engram.fail("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Hecho", "--content", "libre", "--type", "fact"))
+diff --git a/src/interfaces/cli/commands.test.ts b/src/interfaces/cli/commands.test.ts
+index 6182635..baf8a96 100644
+--- a/src/interfaces/cli/commands.test.ts
++++ b/src/interfaces/cli/commands.test.ts
+@@ -7,6 +7,7 @@ import { MemoryWorkspace } from "../../app/workspace";
+ import { parseArguments } from "./arguments";
+ import { dispatch, runUpdateCommand, updateResultJson } from "./commands";
+ import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
++import { legacyConfiguredWorkspace } from "../../../tests/fixtures/legacy-workspace";
+ 
+ const directories: string[] = [];
+ function workspace() {
+@@ -122,17 +123,27 @@ test("init --json remains noninteractive, reports initialization status and does
+   const dir = workspace();
+   const result = (await run(dir, "init", "--json"));
+   expect(result.code).toBe(0);
++  // A brand-new database is born with memory intelligence (schema 11), which already includes
++  // reinforcement.
+   expect(JSON.parse(result.stdout)).toEqual({
+     initialized: true,
+     storage: "sqlite",
+     postgresConfigured: false,
+-    reinforcementEnabled: false,
++    reinforcementEnabled: true,
+   });
+   expect(result.stderr).toBe("");
+   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
+   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
+ }, 40000);
+ 
++test("intelligence-enable right after init --json on a fresh folder is a no-op that reports schema 11", async () => {
++  const dir = workspace();
++  expect((await run(dir, "init", "--json")).code).toBe(0);
++  const result = await run(dir, "intelligence-enable");
++  expect(result.code).toBe(0);
++  expect(JSON.parse(result.stdout)).toEqual({ enabled: true, schema: 11, migrated: false, backup: null });
++}, 40000);
++
+ test("init --json rejects an unavailable PostgreSQL URL without exposing it or creating storage", async () => {
+   const dir = workspace();
+   const secret = "POSTGRES_SECRET_MARKER";
+@@ -158,8 +169,10 @@ test("repeating init --json preserves an existing PostgreSQL configuration", asy
+ 
+ test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", async () => {
+   const dir=workspace();
+-  expect((await run(dir,"init","--json")).code).toBe(0);
+   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
++  // A brand-new database is already born with reinforcement enabled (schema 11); only a
++  // pre-existing, still-configured legacy-level database can observe it being off beforehand.
++  legacyConfiguredWorkspace(config);
+   const memoryWorkspace=new MemoryWorkspace(config);
+   let store=memoryWorkspace.open(true);
+   try { expect(store.reinforcementEnabled()).toBe(false); }
+@@ -189,6 +202,10 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
+ 
+ test("intelligence enrollment is explicit and a second run is a no-op", async () => {
+   const dir=workspace();
++  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
++  // A brand-new database is already at schema 11 (no migration to observe); only a pre-existing
++  // legacy-level database exercises an actual migration here.
++  legacyConfiguredWorkspace(config);
+   const first=(await run(dir,"intelligence-enable"));
+   expect(first.code).toBe(0);
+   expect(JSON.parse(first.stdout)).toMatchObject({enabled:true,schema:11,migrated:true});
+diff --git a/src/interfaces/mcp/__tests__/mcp.e2e.test.ts b/src/interfaces/mcp/__tests__/mcp.e2e.test.ts
+index 9c99ebe..0b11630 100644
+--- a/src/interfaces/mcp/__tests__/mcp.e2e.test.ts
++++ b/src/interfaces/mcp/__tests__/mcp.e2e.test.ts
+@@ -100,9 +100,11 @@ test("stdio save, search, get, history, update and request replay persist across
+     directory: project, title: "Database decision", content: "Use SQLite locally", type: "decision",
+     topicKey: "architecture/database", requestKey: "save-1",
+   };
+-  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:null;sessionSource:null };
++  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:string;sessionSource:string };
+   expect(saved.version).toBe(1);
+-  expect(saved).toMatchObject({sessionId:null,sessionSource:null});
++  // A brand-new database is born with sessions already enabled (schema 11): a directory-scoped
++  // save with no explicit session attaches to that directory's manual session.
++  expect(saved).toMatchObject({sessionId:expect.any(String),sessionSource:"manual"});
+   expect(data(await call(connection.client, "memory_save", input))).toEqual(saved);
+   expect((data(await call(connection.client, "memory_search", { directory: project, query: "SQLite" })) as {format:number;results:unknown[]}).results).toHaveLength(1);
+   expect(data(await call(connection.client, "memory_get", { directory: project, id: saved.id }))).toMatchObject({ memory:{id: saved.id},currentVersion:1 });
+@@ -206,6 +208,15 @@ test("MCP accepts the SDK session identifier boundary and reports ambiguous assi
+   expect((await call(client,"memory_session_start",{sessionId:"x".repeat(201)})).isError).toBe(true);
+   expect((await call(client,"memory_session_start",{sessionId:" chat"})).isError).toBe(true);
+   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
++  // At level 11, starting chat-two marks every other open runtime session (longId) as
++  // interrupted; session inference ignores interrupted sessions, so only chat-two remains a
++  // candidate and this save is not ambiguous.
++  const solo=await call(client,"memory_save",{title:"Not ambiguous yet",content:"Only chat-two is live",type:"fact"});
++  expect(solo.isError).not.toBe(true);
++  expect(data(solo)).toMatchObject({sessionId:"chat-two",sessionSource:"inferred"});
++  // Explicit activity on longId clears its interruption mark (touchSession), so both runtime
++  // sessions are open and live again: assistant inference is genuinely ambiguous once more.
++  expect((await call(client,"memory_save",{title:"Revive",content:"Touch longId",type:"fact",sessionId:longId})).isError).not.toBe(true);
+   const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
+   expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
+ }, 40000);
+diff --git a/src/interfaces/mcp/memory-tools.test.ts b/src/interfaces/mcp/memory-tools.test.ts
+index 65f3e57..3828a0a 100644
+--- a/src/interfaces/mcp/memory-tools.test.ts
++++ b/src/interfaces/mcp/memory-tools.test.ts
+@@ -168,7 +168,7 @@ test("tools/list publishes the manual's field descriptions for memory_save and m
+     const tools=(await h.client.listTools()).tools;
+     const fields=(name:string)=>tools.find(tool=>tool.name===name)!.inputSchema.properties as Record<string,{description?:string}>;
+     const save=fields("memory_save");
+-    for (const field of ["directory","scope","globalIntent","groupIntent","title","content","type","topicKey","pinned","expectedVersion","requestKey","short","supersedes","affects","sessionId"] as const) {
++    for (const field of ["directory","scope","globalIntent","groupIntent","title","content","type","topicKey","pinned","expectedVersion","requestKey","short","supersedes","affects","sessionId","sessionProjectId"] as const) {
+       expect(save[field]?.description).toBe(FIELD_DESCRIPTIONS[field]);
+     }
+     expect(fields("memory_search").query?.description).toBe(FIELD_DESCRIPTIONS.query);
+diff --git a/src/interfaces/mcp/schemas.ts b/src/interfaces/mcp/schemas.ts
+index 473756c..6243f14 100644
+--- a/src/interfaces/mcp/schemas.ts
++++ b/src/interfaces/mcp/schemas.ts
+@@ -28,7 +28,7 @@ export const toolSchemas = {
+       expectedVersion:z.number().int().min(1).describe(describe.expectedVersion).optional(),requestKey:text(300).describe(describe.requestKey).optional(),
+       short:text(300).describe(describe.short).optional(),supersedes:id.describe(describe.supersedes).optional(),
+       affects:z.array(text(64)).min(1).max(20).describe(describe.affects).optional(),
+-      sessionId:sessionId.optional(),sessionProjectId:id.optional(),
++      sessionId:sessionId.optional(),sessionProjectId:text(128).describe(describe.sessionProjectId).optional(),
+     }).strict(),
+   memory_history: z.object({ directory,id,scope:projectScope.optional() }).strict(),
+   memory_session_start: z.object({directory,sessionId}).strict(),
+diff --git a/src/interfaces/terminal/setup.test.ts b/src/interfaces/terminal/setup.test.ts
+index 5db52ca..8d7176e 100644
+--- a/src/interfaces/terminal/setup.test.ts
++++ b/src/interfaces/terminal/setup.test.ts
+@@ -32,7 +32,9 @@ test("terminal EOF and Ctrl+C cancel without initializing storage", () => {
+ });
+ 
+ test("terminal completes memory setup without opening assistant selection", () => {
+-  const { result, config } = terminal("no\nno\nmaybe\nsi\n");
++  // Brand new: the reinforcement question is skipped (schema 11 already includes it), so the
++  // confirmation loop starts right after the PostgreSQL question.
++  const { result, config } = terminal("no\nmaybe\nsi\n");
+   expect(result.exitCode).toBe(0);
+   expect(result.stderr.toString()).toBe("");
+   const projects = new MemoryWorkspace(config).listProjects();
+diff --git a/src/modules/memory-protocol/protocol.ts b/src/modules/memory-protocol/protocol.ts
+index b6276dc..dc3fe75 100644
+--- a/src/modules/memory-protocol/protocol.ts
++++ b/src/modules/memory-protocol/protocol.ts
+@@ -205,6 +205,7 @@ export const FIELD_DESCRIPTIONS = Object.freeze({
+   expectedVersion: "The version you read; the save fails if the memory changed since.",
+   requestKey: "Stable key of one logical save; reuse it to retry safely.",
+   sessionId: "Stable id of this conversation: start it with memory_session_start and pass it on every save.",
++  sessionProjectId: "Only with scope shared and a sessionId: the projectId that memory_session_start returned.",
+   query: "Natural-language words to look for.",
+   id: "Memory id returned by search, save or context.",
+   summary: "Live summary of the session; update it after each important step, not only at the end.",
+diff --git a/tests/fixtures/legacy-workspace.ts b/tests/fixtures/legacy-workspace.ts
+new file mode 100644
+index 0000000..7f30aaf
+--- /dev/null
++++ b/tests/fixtures/legacy-workspace.ts
+@@ -0,0 +1,27 @@
++import { MemoryStore } from "../../src/app/memory-store";
++import type { WorkspaceConfig } from "../../src/infrastructure/filesystem/workspace-config";
++
++/**
++ * Builds a configured (.env present) workspace database at the oldest supported schema level
++ * (3: no project bindings, sessions, reinforcement, ecosystem or intelligence structure yet) --
++ * exactly what a real installation predating memory intelligence looks like on disk.
++ *
++ * Since MemoryWorkspace.init() now births every brand-new database directly at schema 11
++ * (memory intelligence, which already includes sessions and reinforcement), tests of behavior
++ * that only makes sense for an older, still-configured base -- an existing database is never
++ * migrated by init; reinforcement/intelligence enrollment explicitly migrating an older base;
++ * setup asking whether to enable reinforcement -- must start from a database built with this
++ * helper instead of a fresh MemoryWorkspace.init().
++ *
++ * `populate` runs against the open store before the level-3 database is closed and the config
++ * is saved, e.g. to create projects or memories, or to advance specific features
++ * (store.enableProjectBindings(), store.enableSessions(), store.enableEcosystem(), ...) while
++ * keeping others -- notably reinforcement and intelligence -- off.
++ */
++export function legacyConfiguredWorkspace(config: WorkspaceConfig, populate?: (store: MemoryStore) => void): void {
++  config.prepare();
++  const store = new MemoryStore(config.databasePath);
++  try { populate?.(store); }
++  finally { store.close(); }
++  config.save();
++}
