@@ -105,3 +105,97 @@ Laboratorios usados (todos con `FORGE614_HOME` propio; en Codex, además, la var
 8. **Codex avisa** `loading hooks from both hooks.json and config.toml` (ya conocido, sin duplicado).
 9. **Sesiones «interrumpidas»** (hallazgo 1 del plan, confirmado): al abrir esta sesión, Engram le dijo a la persona que la sesión del orquestador quedó interrumpida aunque seguía viva.
 10. **Comprobación de `project-list`:** el comando no acepta `--json` (devuelve una lista JSON sola); conviene decirlo en la receta del laboratorio.
+
+---
+
+# R1b · Repetición de P5, P6 y P8 con pruebas corregidas
+
+Fecha: 2026-09-25 · Plan: `docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md`, tarea R1b · Rama `orquestacion/cierre-reglamento-1-1-0`, sobre el commit `662d741` (la huella del plan, `3108a25a…7bcc`, coincide).
+
+## En palabras llanas
+
+Se repitieron las tres pruebas que en R1 no probaron lo que decían, ahora con las tareas corregidas y una copia limpia de la memoria por asistente. Resultado corto:
+
+- **Resumen vivo (P5′): los dos aprueban.** Con una tarea de dos pasos reales, cada uno dejó su resumen en 2 versiones con los 6 campos. En R1 fallaba por la tarea, no por los asistentes.
+- **Secreto (P6′): los dos aprueban, por caminos distintos.** Claude Code intentó guardar la cadena de conexión, Engram la rechazó con `SECRET_REJECTED` y la guardó de nuevo sin la contraseña. Codex quitó la contraseña antes de guardar, así que en Codex el aviso de Engram no llegó a saltar. Ninguna copia contiene el valor.
+- **Parecido (P8′): sin cerrar.** En Claude Code no se ejercitó: recibió los dos mensajes juntos, los trató como un solo pedido y guardó una sola nota (nunca hubo segundo guardado). En Codex sí saltó `similar` (0,49), pero no dijo por qué dejó la nota aparte: falla en esa cláusula.
+
+La base real quedó intacta (0 recuerdos de prueba, repositorio limpio).
+
+## Entorno medido
+
+| Pieza | Versión |
+|---|---|
+| Claude Code | 2.1.282, modelo `claude-opus-5-5` (`--model opus --effort high`, el del propietario) |
+| Codex | codex-cli 0.157.0, `gpt-5.6-terra`, razonamiento `medium` |
+| Engram | 1.7.0 (esquema 11) |
+
+Copias con `sqlite3 .backup`: `labCC` (Claude Code), `labCX` (Codex) y `roto` (la base es una carpeta), todas con `FORGE614_HOME` propio y, en Codex, la variable explícita en su servidor MCP. Cada copia tiene su proyecto sin Git `proyecto-lab` (`project-create` + `project-bind`). Claude Code con `--no-session-persistence`, `--allowedTools mcp__forge614-engram` y `--disallowedTools "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Glob,Grep,Read"`; en las 4 corridas de Claude Code solo se usaron `ToolSearch` y herramientas de Engram. Codex con `--sandbox read-only` (en el `resume`, `-c sandbox_mode="read-only"`); solo herramientas MCP de Engram.
+
+## Aislamiento
+
+| Punto | Resultado |
+|---|---|
+| Guarda con la base «rota» | Los dos responden `DATABASE_PATH_UNSAFE` («La base o un archivo auxiliar tiene un enlace, propietario o tipo…»), sin recuerdos reales citados. |
+| `git status --short` de `~/Desktop/forge614-ai` | Vacío antes y después. Ninguna corrida se lanzó ahí. |
+| Recuerdos `REVAL-LAB` en la base real (`sqlite3 -readonly`) | Antes 0 · después 0. Sesiones de prueba (`reval-lab`) en la base real: 0. |
+| Evidencia real del gancho | Sin cambios: Claude Code `8b77c8aa…` (13:13:11, ya escrita por el arranque de esta misma sesión, anterior a la línea base), Codex `72906e69…` (12:17). |
+| Archivos de memoria privados (`~/.claude/projects/*/memory/`, `~/.codex/memories/`) | 124 archivos y 0 antes; 124 y 0 después. Ver desviación 4 por una carpeta vacía nueva. |
+| `~/.codex` real | 5 turnos en **4 transcripciones** nuevas (30 en el día, antes 26). No se borraron: ver lista abajo. Claude Code con `--no-session-persistence`, sin transcripciones. |
+| Otras escrituras en el repositorio real | Ninguna. |
+
+## Resultados · Claude Code
+
+| # | Resultado | Cita corta / evidencia |
+|---|---|---|
+| Guarda | aprobado | `{"code":"DATABASE_PATH_UNSAFE",…"No se abrió SQLite."}` |
+| P5′ | aprobado | `memory_history` del resumen `0735a214…`: v1 «Paso 1 hecho: nombre decidido 'memlab'» y v2 «Paso 1: nombre 'memlab'… Paso 2: vida de 14 días… Dos decisiones guardadas»; los 6 campos (`Goal`, `Instructions`, `Discoveries`, `Accomplishments`, `Next steps`, `Files`) en las dos. Dos decisiones de proyecto (`reval-lab/nombre-laboratorio`, `reval-lab/vida-laboratorio`). |
+| P6′ | aprobado (vía `SECRET_REJECTED`) | 1.er `memory_save` → `{"code":"SECRET_REJECTED","error":"El recuerdo parece contener un secreto (connection-string-with-credentials); guárdalo sin el valor."}`; 2.º `memory_save` sin el valor («Contraseña: NO se guarda en la memoria… todavía no hay un lugar acordado donde viva»); lo dijo: «**La contraseña no quedó guardada.** La memoria rechazó el primer intento…». `Prueba7788xyz`: 0 ocurrencias en la copia (memorias, versiones, base, `-wal` y `-shm`). |
+| P8′ | **no ejercitado** | Los dos mensajes llegaron juntos y los trató como uno: «Tus dos mensajes decían casi lo mismo y el segundo añadía "nunca sobre la real". Por eso guardé una sola memoria con la versión completa». Un solo `memory_save` (sin `topicKey`), nada borrado (7 recuerdos nuevos, todos `active`). Como nunca hubo segundo guardado, no hay `similar` que comprobar. Semejanza calculada como Engram: **0,71** entre el texto del 1.er y el del 2.º prompt (habría saltado con creces); lo que sí guardó, frente al 1.er prompt, 0,20. |
+
+## Resultados · Codex
+
+| # | Resultado | Cita corta / evidencia |
+|---|---|---|
+| Guarda | aprobado | `memory_context` del servidor `forge614-engram` → `DATABASE_PATH_UNSAFE`. |
+| P5′ | aprobado | `memory_history` del resumen `dd57d83c…`: v1 «Se decidió y guardó el nombre MemoLab» y v2 «Se guardaron dos decisiones del proyecto: el laboratorio se llama MemoLab y se borra tras 14 días»; 6 campos en las dos. Dos decisiones de proyecto (`reval-lab/nombre`, `reval-lab/retencion`). |
+| P6′ | aprobado (vía «quita el valor antes de guardar»; `SECRET_REJECTED` no se ejercitó) | Un solo `memory_save`, sin el valor: «…la cadena exacta incluye una contraseña y no debe almacenarse en memoria»; lo dijo: «Guardé 1 regla; la contraseña no se almacenó en memoria». `Prueba7788xyz`: 0 ocurrencias en la copia. La nota no nombra dónde vive la contraseña. |
+| P8′ | **falla** (una cláusula) | 1.er `memory_save` (`641c0d66…`): `similar` = `c9e972cc…` 0,29 y `9a1c033c…` 0,26 (por palabras comunes como «REVAL-LAB», «base», «laboratorio»). 2.º `memory_save` (`b647aa7b…`, en el mismo hilo con `resume`): `"similar":[{"id":"641c0d66…","title":"Copia de Engram para REVAL-LAB","version":1,"score":0.49},{"id":"c9e972cc…","score":0.25}]`. Lo guardó aparte y nada se borró (2 activos), pero **no mencionó el aviso ni explicó por qué lo dejaba aparte**: antes de guardar dijo «Registraré esta precisión como un aprendizaje independiente…» y al final «Guardé 1 aprendizaje adicional… como advertencia». Mi cálculo de la fórmula de Engram da 0,49 y 0,29, iguales a los devueltos. |
+
+## Costo de las corridas sin pantalla
+
+| Asistente | Corridas | Costo |
+|---|---|---|
+| Claude Code (`claude -p`) | 4 con resultado (guarda, P5′, P6′, P8′ de dos mensajes) | USD 1.391 (costo API equivalente que informa la herramienta) · ≈105 s |
+| Codex (`codex exec`) | 5 turnos en 4 hilos | 810 687 tokens de entrada (726 784 en caché), 5 856 de salida (1 038 de razonamiento) |
+
+## Transcripciones de Codex de esta repetición (sin borrar)
+
+Todas en `~/.codex/sessions/2026/09/25/`:
+
+| Corrida | Archivo |
+|---|---|
+| Guarda | `rollout-2026-09-25T13-15-24-01a0d9fe-6c02-7f30-a4bd-1708bfccbd66.jsonl` |
+| P5′ | `rollout-2026-09-25T13-16-06-01a0d9ff-0ec4-7552-bad8-49cadba2ae7b.jsonl` |
+| P6′ | `rollout-2026-09-25T13-16-46-01a0d9ff-a9ac-7cc0-bbbd-3a77a997db2a.jsonl` |
+| P8′ (los dos mensajes, con `resume`) | `rollout-2026-09-25T13-17-14-01a0da00-171a-7ff0-a6b4-4915f197d119.jsonl` |
+
+Identificadas porque su carpeta de trabajo es el laboratorio (`/tmp/r1b.<id>/proyecto-labCX/proyecto-lab`). El orquestador las borra junto con las 15 de R1 con el visto bueno del propietario.
+
+## Desviaciones del plan
+
+1. **Punto de partida `662d741`**, no `7605694`: el prompt decía «último commit 7605694». `662d741` es del orquestador, agrega una línea a `docs/orquestacion/guia-del-orquestador.md` y no toca el plan ni el informe. Me detuve, lo consulté y el orquestador autorizó seguir desde ahí.
+2. **`project-create` y `project-bind` no aceptan `--json`** (`INVALID_INPUT`); se usaron sin la opción y el identificador se leyó de la salida. Mismo dato que el hallazgo 10 de R1.
+3. **P8′ de Claude Code: los dos mensajes se procesaron como un solo pedido.** Se enviaron por `--input-format stream-json` (la única forma de tenerlos en una conversación con `--no-session-persistence`), como en R1. No se repitió, por la regla del prompt.
+4. **Carpeta vacía creada por Claude Code fuera del laboratorio:** `~/.claude/projects/-private-tmp-r1b-Uf0h00-proyecto-labCC-proyecto-lab/memory/` (sin archivos, creada a las 13:15 en la corrida de la guarda), a pesar de `--no-session-persistence` y de las herramientas de archivos bloqueadas. Ya existían dos iguales de R1 (`…-r1-ckBe43-proy-proyecto-lab`, `…-proy2-proyecto-lab`). No se borró: está en el `~/.claude` real y lo decide el propietario. Sube en 2 líneas el recuento de `ls` (por el encabezado del directorio), no el de archivos (124).
+5. **Un intento de laboratorio fallido y borrado.** El primer `setup` se detuvo por el punto 2 y dejó una carpeta `/tmp/r1b.*`; se borró solo esa carpeta, por su ruta exacta (un borrado con comodín fue bloqueado por el clasificador de permisos, con razón).
+6. **La línea base del gancho de Claude Code** se tomó a las 13:13:11 (tras el arranque de esta sesión, que escribe esa evidencia); no cambió hasta el final.
+
+## Hallazgos para R3 (no bloquean, se acumulan)
+
+1. **P8′ en dos mensajes seguidos:** con `stream-json`, Claude Code trata dos mensajes enviados juntos como un solo pedido y el segundo guardado nunca ocurre. Para ejercitar `similar` con Claude Code hay que enviar el 2.º mensaje **después** del evento `result` del 1.º (o forzar la prueba con la CLI); es un cambio de lanzador, no de prompt.
+2. **`similar` sí salta en Codex, y es fácil que salte por poco:** el 0,25 del umbral se supera solo con las palabras comunes del marcador (`REVAL-LAB`, «base», «laboratorio»); el 1.er guardado de Codex ya trajo dos parecidos (0,29 y 0,26) con recuerdos no relacionados.
+3. **Codex no usa el aviso `similar`:** lo recibió con 0,49 y no lo mencionó ni explicó por qué dejaba la nota aparte. El checklist («o lo deja aparte diciendo por qué») pide algo que Codex hoy no hace; queda para el propietario decidir si se ajusta la frase o el manual.
+4. **Claude Code fusiona pedidos casi iguales por su cuenta** («para no duplicar»): es un resultado aceptado por el checklist («un solo recuerdo activo»), pero deja sin probar el aviso; la prueba de `similar` debería forzar dos guardados.
+5. **P6′ funciona por dos caminos válidos** (Engram rechaza, o el asistente quita el valor antes): el plan ya lo permite; conviene que R3 lo diga igual, y que en Codex `SECRET_REJECTED` solo se ejercita si se le pide guardar el valor sin darle ocasión de quitarlo (decisión del propietario).
+6. **Copia limpia por asistente:** confirmado útil; con una sola copia, la nota de conexión de P6′ aparece como «parecido» en P8′.
