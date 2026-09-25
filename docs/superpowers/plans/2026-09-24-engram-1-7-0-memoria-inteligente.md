@@ -3909,6 +3909,8 @@ PR, CI verde, fusión con rebase, tag, release; en la Mac del propietario: insta
 - Commit 2: `git add CHANGELOG.md docs/es/05-arquitectura-interna-y-formulas.md docs/en/05-internal-architecture-and-formulas.md && git commit -m "docs: the first sync of a new database needs sync --upgrade-format"`
 - Luego `git push`, los checks del PR #11 en verde y se sigue con los pasos 4–7 de T10a, con `git diff <HEAD de la rama> main` vacío en el paso 4.
 
+**Resultado T10a (2026-09-25):** ronda 2 en la misma sesión: `572b5f7` (pruebas) y `52c6ddc` (docs), PR #11 en verde (ubuntu y macOS, push y pull_request) y fusionado con rebase; `main` = `2813295` (`git diff 52c6ddc main` vacío); tag anotado `v1.7.0` → `2813295`; release «Release standalone artifacts» en verde con 6 archivos. Verificado por el orquestador: suite con PostgreSQL sobre `2813295` **682 pass / 1 skip / 0 fail**, typecheck 0; el binario `darwin-arm64` descargado coincide con `SHA256SUMS` y responde `forge614-engram 1.7.0`; sin atribuciones en commits ni PR. Agente: r1 0,46 M ≈ $0,29 (detenida por error del plan), r2 0,52 M ≈ $0,14; total 0,98 M ≈ $0,43. **T10a cerrada.** Impacto en el checklist de agentes: **No** (publicar no cambia la integración; el punto de T8 ya cubre las bases nuevas).
+
 **T10b — instalar y activar en la Mac** (datos reales; guía §6: Opus · high; sesión nueva **abierta después** de cerrar todas las demás, etiqueta `[Engram · T10b]`). Base: `~/.forge614/engram/engram.db`, nivel 10, 107 recuerdos (92 proyecto, 14 compartidos, 1 ecosistema) al 2026-09-24.
 1. `forge614-engram update --json` → `installedVersion` 1.7.0; `forge614-engram --version`.
 2. El propietario cierra todas las sesiones de IA y abre solo la de T10b (el prompt lo pide antes de seguir).
