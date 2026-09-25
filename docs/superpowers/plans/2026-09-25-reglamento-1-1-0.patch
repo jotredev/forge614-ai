@@ -1,0 +1,370 @@
+diff --git a/docs/decisions/0027-memoria-inteligente-de-engram-en-el-procedimiento.md b/docs/decisions/0027-memoria-inteligente-de-engram-en-el-procedimiento.md
+new file mode 100644
+index 0000000..2aeb9fc
+--- /dev/null
++++ b/docs/decisions/0027-memoria-inteligente-de-engram-en-el-procedimiento.md
+@@ -0,0 +1,76 @@
++# 0027 — Memoria inteligente de Engram en el procedimiento de agentes
++
++**Fecha:** 2026-09-25
++**Estado:** aceptada
++**Sesión:** forge614-ai-2026-09-25-reglamento-1-1-0
++
++## Contexto
++
++Engram 1.7.0 publica el esquema 11 (memoria inteligente), con activación explícita
++(`intelligence-enable`) en una base existente y nacimiento directo en el nivel 11 para una base nueva
++(`init`); un filtro de secretos que rechaza el guardado con `SECRET_REJECTED` en todo nivel; reglas del
++tablero del ecosistema (`ECOSYSTEM_TYPE_NOT_ALLOWED`, `ECOSYSTEM_AFFECTS_REQUIRED`,
++`ECOSYSTEM_AFFECTS_UNKNOWN`, `ECOSYSTEM_BOARD_FULL`, `ECOSYSTEM_STATUS_FORBIDDEN`,
++`ECOSYSTEM_STATUS_TOO_LONG`); detección de parecidos en `memory_save` (`similar`); sesiones interrumpidas
++(`previous` en `memory_session_start`); un bloque de arranque en formato 2 (`startup-context --format 2`,
++≤ 5 000 caracteres); y el protocolo público `forge614-engram-memory` versión 4, que documenta la conducta
++completa de esta memoria inteligente para todo cliente MCP desde 1.7.0.
++
++El plan `docs/superpowers/plans/2026-09-24-engram-1-7-0-memoria-inteligente.md` dejó redactados, tarea por tarea, los puntos nuevos del checklist de agentes que este cambio exige
++y una corrección pendiente desde T1: la sección `forge614-engram` de
++`standard/procedures/new-agent-checklist.md` describía solo el protocolo v1 y los ámbitos `shared`/`project`,
++sin mencionar `ecosystem` (ya vigente desde Engram 1.6.0) ni las versiones 2 a 4. Por acta 0017, el
++procedimiento se revisa en cada cambio de nodo, no solo al llegar un agente nuevo; los cambios se acumulan
++y se publican juntos en el reglamento siguiente.
++
++## Decisión
++
++1. **Checklist de agentes:** la sección `forge614-engram` de `standard/procedures/new-agent-checklist.md`
++   incorpora los puntos T2 (`SECRET_REJECTED`), T4 (`ECOSYSTEM_*`), P-T3 (parecidos), P-T5 (sesión
++   interrumpida), P-T6 (bloque de arranque, lado del host), P-T7a (manual completo) y P-T7b (resumen vivo
++   e instrucciones del servidor MCP) redactados en el plan de Engram 1.7.0, y las cinco correcciones de esa
++   misma sección (versión del protocolo en la Decisión, versión reconocida, lista de herramientas MCP,
++   cierre no obligatorio con la versión 4, alcance `ecosystem` en el primer punto de memorias durables).
++2. **Contrato del ecosistema:** la fila «Refuerzo por memorias repetidas» de
++   `standard/FORGE614_ECOSYSTEM_CONTRACT.md` y `.en.md` deja de decir «Opcional» sin matiz: en una base
++   nueva (Engram ≥ 1.7.0, `init`) el refuerzo viene incluido; en una base existente sigue siendo opcional
++   hasta `intelligence-enable`.
++3. **Matriz de soporte:** por el candado 3 de la sección 12 de `STANDARD.md` (cambia la sección de un nodo
++   en el procedimiento ⇒ la matriz marca `revalidate` en todas las celdas de ese nodo), las celdas de
++   `engram` de `claude-code` y `codex` en `standard/support-matrix.json` pasan a `revalidate` con
++   `revalidateSince: "2026-09-25"` y `deadline: "2026-10-25"`. La de `cursor` sigue en `not-applicable`:
++   Cursor no tiene integración de memoria (no se ejecuta sin interfaz; ver su celda de `engines`), así que
++   no hay conducta que revalidar. Ninguna otra celda cambia.
++4. **Versión del reglamento:** `standard/VERSION` sube de `1.0.2` a `1.1.0` (cambio aditivo de
++   procedimiento y contrato, no de estructura de archivos ni de esquemas), con el encabezado de
++   `STANDARD.md` / `STANDARD.en.md`, las menciones de la versión vigente en los documentos 00 y 01 (es/en),
++   el puntero (`forge614.node.json`, versión y huella nueva vía `bun run standard:pack --update-pointer`)
++   y el mapa de documentación (`bun run notion-map:build`).
++
++## Alternativas descartadas
++
++- **Esperar a que exista un agente nuevo para tocar el checklist:** el acta 0017 ya obliga a revisar el
++  procedimiento en cada cambio de nodo relevante, no solo al integrar un agente; posponerlo dejaría el
++  checklist describiendo un protocolo (v1) que ya no es el único vigente.
++- **Dejar el refuerzo como "Opcional" sin matiz en el contrato:** contradice el comportamiento real de
++  `init` desde Engram 1.7.0 (T8 del plan de Engram) y confundiría a quien lea el contrato como fuente de
++  verdad pública.
++
++## Consecuencias
++
++- El checklist de agentes queda alineado con el protocolo v4 y con las reglas del tablero del ecosistema;
++  cualquier integración nueva puede apoyarse en él sin reconstruir la conducta desde el plan de Engram.
++- La matriz de soporte exige revalidar `claude-code` y `codex` en `engram` dentro de 30 días
++  (antes del 2026-10-25) o el verificador falla (`forge614-rule-agent-checklist-impact`,
++  `supportMatrixStale`).
++- El reglamento 1.1.0 se publica con este acta, el checklist corregido, el contrato corregido y la matriz
++  revalidada; la publicación (segunda tarea de este plan) es un paso separado, con aprobación del
++  propietario.
++
++## Referencias
++
++- Plan: `docs/superpowers/plans/2026-09-25-reglamento-1-1-0.md`
++- Plan de origen: `docs/superpowers/plans/2026-09-24-engram-1-7-0-memoria-inteligente.md` (sección
++  «Impacto en el procedimiento de agentes (acta 0017), tarea por tarea»)
++- Spec: `docs/superpowers/specs/2026-09-24-memoria-inteligente-engram-design.md`
++- Actas relacionadas: `0017`, `0022`, `0024`, `0025`
+diff --git a/docs/decisions/INDEX.json b/docs/decisions/INDEX.json
+index 721683a..69365da 100644
+--- a/docs/decisions/INDEX.json
++++ b/docs/decisions/INDEX.json
+@@ -234,6 +234,15 @@
+       "date": "2026-09-23",
+       "session": "forge614-ai-2026-09-22-fase-0-1-tarea-10-b",
+       "file": "0026-bun-version-unica-del-ecosistema.md"
++    },
++    {
++      "number": "0027",
++      "slug": "memoria-inteligente-de-engram-en-el-procedimiento",
++      "title": "Memoria inteligente de Engram en el procedimiento de agentes",
++      "status": "aceptada",
++      "date": "2026-09-25",
++      "session": "forge614-ai-2026-09-25-reglamento-1-1-0",
++      "file": "0027-memoria-inteligente-de-engram-en-el-procedimiento.md"
+     }
+   ]
+ }
+diff --git a/docs/en/00-summary-and-quickstart.md b/docs/en/00-summary-and-quickstart.md
+index e6338bc..ab1ade0 100644
+--- a/docs/en/00-summary-and-quickstart.md
++++ b/docs/en/00-summary-and-quickstart.md
+@@ -6,7 +6,7 @@
+ 
+ `forge614-ai` is the core of the Forge614 ecosystem, a family of tools for working with AI assistants. Each tool is a **node**: its own repository with a public contract. Today this repository publishes three things:
+ 
+-- The **Node Standard** (`standard/STANDARD.md`, version `1.0.2`): the norm every node complies with. Explained in document 01.
++- The **Node Standard** (`standard/STANDARD.md`, version `1.1.0`): the norm every node complies with. Explained in document 01.
+ - The **rules** as packages and the **pack** `forge614-pack-ecosystem-node` that groups them. Document 02.
+ - The **templates** from which a node generates its installers, workflows and contracts, and the **verifier** (`bun run verify`) that checks the standard against this very repository. Documents 03 and 04.
+ 
+diff --git a/docs/en/01-node-standard.md b/docs/en/01-node-standard.md
+index e9969bb..0031eaa 100644
+--- a/docs/en/01-node-standard.md
++++ b/docs/en/01-node-standard.md
+@@ -29,7 +29,7 @@ Where a decision originated a point, the norm cites the corresponding record (se
+ 
+ Two files pin the version:
+ 
+-- `standard/VERSION` holds the standard's version (today `1.0.2`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.0.2.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
++- `standard/VERSION` holds the standard's version (today `1.1.0`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.1.0.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
+ - `forge614.node.json` is the **node pointer**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` is the standard version the node declares to comply with and `standard.sha256` the fingerprint of the standard archive for that version; `kind` tells `product` (installable) from `internal` (nobody installs it by hand); `ecosystem`, optional in the schema (record 0022), names the group the node belongs to. The `NodePointerSchema` schema (`src/modules/standard/schemas/node-pointer.ts`) validates it and rejects unknown fields.
+ 
+ In this repository the pointer carries the fingerprint of the archive that `bun run standard:pack` produces from `standard/` itself; `bun run standard:pack --check` checks that they still match (document 04).
+diff --git a/docs/es/00-resumen-y-guia-rapida.md b/docs/es/00-resumen-y-guia-rapida.md
+index eb0394a..7cc88cb 100644
+--- a/docs/es/00-resumen-y-guia-rapida.md
++++ b/docs/es/00-resumen-y-guia-rapida.md
+@@ -6,7 +6,7 @@
+ 
+ `forge614-ai` es el núcleo del ecosistema Forge614, una familia de herramientas para trabajar con asistentes de IA. Cada herramienta es un **nodo**: un repositorio propio con un contrato público. Hoy este repositorio publica tres cosas:
+ 
+-- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.0.2`): la norma que todo nodo cumple. Se explica en el documento 01.
++- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.1.0`): la norma que todo nodo cumple. Se explica en el documento 01.
+ - Las **reglas** como paquetes y el **pack** `forge614-pack-ecosystem-node` que las agrupa. Documento 02.
+ - Las **plantillas** desde las que un nodo genera sus instaladores, workflows y contratos, y el **verificador** (`bun run verify`) que comprueba el estándar sobre este mismo repositorio. Documentos 03 y 04.
+ 
+diff --git a/docs/es/01-estandar-de-nodo.md b/docs/es/01-estandar-de-nodo.md
+index a906187..b70d001 100644
+--- a/docs/es/01-estandar-de-nodo.md
++++ b/docs/es/01-estandar-de-nodo.md
+@@ -29,7 +29,7 @@ Donde una decisión originó un punto, la norma cita el acta correspondiente (se
+ 
+ Dos archivos fijan la versión:
+ 
+-- `standard/VERSION` contiene la versión del estándar (hoy `1.0.2`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.0.2.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
++- `standard/VERSION` contiene la versión del estándar (hoy `1.1.0`) en formato SemVer (`MAYOR.MENOR.PARCHE`). Aparece en el título de `STANDARD.md`, en el nombre del paquete (`standard-1.1.0.tar.gz`) y en los archivos renderizados desde plantilla (variable `STANDARD_VERSION`, documento 03).
+ - `forge614.node.json` es el **puntero del nodo**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` es la versión del estándar que el nodo declara cumplir y `standard.sha256` la huella del paquete del estándar de esa versión; `kind` distingue `product` (se instala) de `internal` (nadie lo instala a mano); `ecosystem`, opcional en el esquema (acta 0022), nombra el grupo al que pertenece el nodo. El esquema `NodePointerSchema` (`src/modules/standard/schemas/node-pointer.ts`) lo valida y rechaza campos desconocidos.
+ 
+ En este repositorio el puntero lleva la huella del paquete que `bun run standard:pack` produce a partir del propio `standard/`; `bun run standard:pack --check` comprueba que siguen coincidiendo (documento 04).
+diff --git a/docs/notion-map.json b/docs/notion-map.json
+index a5aa9b1..b9b5621 100644
+--- a/docs/notion-map.json
++++ b/docs/notion-map.json
+@@ -5,15 +5,15 @@
+     {
+       "es": "docs/es/00-resumen-y-guia-rapida.md",
+       "en": "docs/en/00-summary-and-quickstart.md",
+-      "sha256Es": "860dab928aefff03115dfdf9d649b49e5bba9be24c053f81fe4f55ec39283ffe",
+-      "sha256En": "802d2d8641eb7caaf3ca70709d0cfdcc60d2f15a6e1112946ff78c366be19224",
++      "sha256Es": "8da7bb1e21990c6969c5ae89e0db6eb7c4553752c9bee6eb2296a591b2de8775",
++      "sha256En": "28535b531820ef08965513295d954f416eb893dd7d338132594baba793a17d85",
+       "notionPageId": null
+     },
+     {
+       "es": "docs/es/01-estandar-de-nodo.md",
+       "en": "docs/en/01-node-standard.md",
+-      "sha256Es": "3452828b60cfac8d4f33318b2bb3f1e5a93ea40be600acf8d2c36dc7c02bee71",
+-      "sha256En": "af6b7f2f726ec5cf26a3d0d9d5cd6be54d7a01c4e65f10373dd1a8985f460d68",
++      "sha256Es": "854c9ca368f3ddf17b84120923db655bb3b0c71ca53b2eac579f7207928197b5",
++      "sha256En": "0fe2e7ade9b7e4887115d697e0f6c8a9ab704a39bf9b4f5c45ebe2482517be7b",
+       "notionPageId": null
+     },
+     {
+diff --git a/forge614.node.json b/forge614.node.json
+index 0edbdb8..bf420e0 100644
+--- a/forge614.node.json
++++ b/forge614.node.json
+@@ -3,8 +3,8 @@
+   "node": "ai",
+   "kind": "product",
+   "standard": {
+-    "version": "1.0.2",
+-    "sha256": "10d036f02f767d54b0b7d710e96b21b249e034b480b0d83be124df5b2f97a4f5"
++    "version": "1.1.0",
++    "sha256": "cf3dd08eff859fe95981b13b9c89c179461d0f9ebbc1e8e046eb1cf4025a8be0"
+   },
+   "ecosystem": "forge614"
+ }
+diff --git a/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md b/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
+index 3db9742..07c1c2c 100644
+--- a/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
++++ b/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
+@@ -113,7 +113,7 @@ During first-time memory initialization, Engram needs only these decisions:
+ | Private product directory | Always required |
+ | Local SQLite and FTS5 | Always required |
+ | PostgreSQL synchronization | Optional |
+-| Reinforcement from repeated memories | Optional |
++| Reinforcement from repeated memories | Included in a brand-new base (Engram ≥ 1.7.0, `init`); optional until `intelligence-enable` in an existing base |
+ | Detecting AI engines | Not an Engram responsibility |
+ | Configuring AI integrations | Not an Engram responsibility |
+ | Creating or selecting projects | Not part of initialization |
+diff --git a/standard/FORGE614_ECOSYSTEM_CONTRACT.md b/standard/FORGE614_ECOSYSTEM_CONTRACT.md
+index 923a642..7462605 100644
+--- a/standard/FORGE614_ECOSYSTEM_CONTRACT.md
++++ b/standard/FORGE614_ECOSYSTEM_CONTRACT.md
+@@ -113,7 +113,7 @@ Durante la inicialización de memoria por primera vez, Engram solo necesita esta
+ | Directorio privado del producto | Siempre obligatorio |
+ | SQLite y FTS5 locales | Siempre obligatorio |
+ | Sincronización con PostgreSQL | Opcional |
+-| Refuerzo por memorias repetidas | Opcional |
++| Refuerzo por memorias repetidas | Incluido en una base nueva (Engram ≥ 1.7.0, `init`); opcional hasta `intelligence-enable` en una base existente |
+ | Detectar motores de IA | No es responsabilidad de Engram |
+ | Configurar integraciones de IA | No es responsabilidad de Engram |
+ | Crear o seleccionar proyectos | No es parte de la inicialización |
+diff --git a/standard/STANDARD.en.md b/standard/STANDARD.en.md
+index 716cbdb..824ff1a 100644
+--- a/standard/STANDARD.en.md
++++ b/standard/STANDARD.en.md
+@@ -1,4 +1,4 @@
+-# Forge614 Node Standard — version 1.0.2
++# Forge614 Node Standard — version 1.1.0
+ 
+ > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
+ 
+diff --git a/standard/STANDARD.md b/standard/STANDARD.md
+index 4ed298a..1508f0b 100644
+--- a/standard/STANDARD.md
++++ b/standard/STANDARD.md
+@@ -1,4 +1,4 @@
+-# Estándar de Nodo Forge614 — versión 1.0.2
++# Estándar de Nodo Forge614 — versión 1.1.0
+ 
+ > Norma vinculante para todo repositorio del ecosistema Forge614. "Debe" significa que el verificador lo comprueba o que la revisión humana lo exige antes de fusionar. Las decisiones que lo originan están en `docs/decisions/` de `forge614-ai`.
+ 
+diff --git a/standard/VERSION b/standard/VERSION
+index 6d7de6e..9084fa2 100644
+--- a/standard/VERSION
++++ b/standard/VERSION
+@@ -1 +1 @@
+-1.0.2
++1.1.0
+diff --git a/standard/procedures/new-agent-checklist.md b/standard/procedures/new-agent-checklist.md
+index 08dc436..c2b1978 100644
+--- a/standard/procedures/new-agent-checklist.md
++++ b/standard/procedures/new-agent-checklist.md
+@@ -240,8 +240,9 @@ proceso (eso es de Workers).
+ ## `forge614-engram` — la memoria
+ 
+ **Decisión:** agregar un agente nuevo **no requiere cambiar Engram** mientras su integración use el
+-protocolo público `forge614-engram-memory` versión 1 y convierta la información del agente al formato
+-canónico de Engram. Engines es quien adapta al agente; Engram no debe recibir plugins, reglas o formatos
++protocolo público `forge614-engram-memory` (versión 1 por defecto; la 3 desde Engram 1.6.0 anuncia el
++ámbito `ecosystem`; la 4 desde 1.7.0 es el manual de la memoria inteligente) y convierta la información
++del agente al formato canónico de Engram. Engines es quien adapta al agente; Engram no debe recibir plugins, reglas o formatos
+ especiales por agente.
+ 
+ **Novedad (Engram v1.5.0): precarga desde el host, sin depender del modelo.** Engram ahora expone
+@@ -279,17 +280,42 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+       lectura. **Ya implementado en Engines para Claude Code y Codex** vía SessionStart hooks — ver la
+       checklist "Integración automática de memoria vía SessionStart hooks" en la sección de
+       `forge614-engines` arriba antes de repetir esa investigación para un agente nuevo.
++- [ ] Si el host (Engines o Shell) usa `startup-context --format 2` para el agente nuevo, verificar que
++      inyecta `text` tal cual y como dato recuperado, sin reescribirlo; que el bloque mide ≤ 5 000
++      caracteres y empieza con el encabezado de ocupación; que, tras cortar una sesión, la siguiente
++      muestra «Previous session (interrupted)»; y que con el bloque presente el agente no vuelve a llamar
++      `memory_context` al arrancar (regla 2 del manual v4). Verificación: el registro del gancho guarda
++      `chars` y el texto inyectado.
+ 
+ **Compatibilidad con el protocolo público:**
+ 
+ - [ ] Confirmar que el adaptador consume `forge614-engram memory-protocol --json` y reconoce
+-      `id: "forge614-engram-memory"` y `version: 1`; no copiar instrucciones privadas ni depender de
++      `id: "forge614-engram-memory"` y la versión que pidió (1 a 4); no copiar instrucciones privadas ni depender de
+       archivos internos, SQLite o imports internos de Engram.
+ - [ ] Confirmar que la integración configura las herramientas MCP públicas de Engram: `memory_context`,
+-      `memory_save`, `memory_session_summary` y `memory_session_end`.
++      `memory_search`, `memory_get`, `memory_save`, `memory_session_start`, `memory_session_summary` y
++      `memory_session_end`.
+ - [ ] Confirmar el ciclo completo: al iniciar y después de compactar usa `memory_context`; ante un
+       “recuerda/guarda” explícito usa `memory_save`; antes de compactar guarda resumen; al terminar guarda
+-      el resumen útil y cierra la sesión.
++      el resumen útil y cierra la sesión. Con la versión 4, el cierre deja de ser obligatorio: el resumen
++      vivo (ver el punto de las instrucciones del servidor MCP, más abajo) reemplaza al resumen final, porque ninguna conducta depende de que la sesión se cierre.
++- [ ] Con esquema 11, abrir una sesión del agente nuevo en un repositorio, cortarla sin cerrarla y abrir
++      otra en el mismo repositorio; verificar que la segunda recibe `previous` de `memory_session_start` y
++      que el agente se lo dice a la persona y ofrece continuar desde el resumen, sin inventar lo que hizo
++      la primera (si no hay resumen, dice que no dejó ninguno). Verificación: comparar lo que dice con el
++      resumen real (`memory_get` del id que trae `previous`).
++- [ ] Si la integración pide la versión 4 (`memory-protocol --json --protocol-version 4`), verificar que
++      instala `instructions` completo y sin recortar (≤ 2 500 caracteres) en el archivo de instrucciones
++      del agente, sin agregarle reglas de memoria propias, y que no copia allí `mcpInstructions` (llegan
++      solas por el servidor MCP). Verificación: el texto instalado es byte a byte igual a `instructions`
++      de la salida del comando.
++- [ ] Verificar que el agente nuevo recibe las instrucciones del servidor MCP de Engram (desde 1.7.0 son
++      las del manual v4 para todo cliente) y las sigue: en una sesión nueva, sin archivo de instrucciones,
++      tras dos pasos importantes, `memory_history` de su resumen de sesión muestra al menos dos versiones
++      (resumen vivo, no solo al final). Si el cliente descarta las instrucciones del servidor, anotarlo en
++      la fila del agente: entonces el manual completo es obligatorio.
++- [ ] Si el host crea la base con `init` para el agente nuevo, verificar que queda en el esquema 11
++      (`intelligence-enable` responde `migrated: false`) y que una base existente no cambia de nivel.
+ - [ ] Si Engram no está disponible, el agente debe continuar y decir la verdad; nunca sustituirlo por un
+       archivo privado del cliente ni afirmar que recordó algo que no pudo recuperar.
+ 
+@@ -310,13 +336,32 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
+ **Memorias durables y seguridad:**
+ 
+ - [ ] Para preferencias que deban funcionar entre clientes, usar alcance `shared` con un `globalIntent`
+-      verdadero; para conocimiento de un repositorio, usar alcance `project`.
++      verdadero; para conocimiento de un repositorio, usar alcance `project`; para reglas o contratos que
++      atan a varios proyectos del mismo grupo, alcance `ecosystem` con un `groupIntent` verdadero (con
++      esquema 11, además tipo `decision`, `procedure` o `warning` y `affects`; ver el punto de
++      `ECOSYSTEM_*`).
+ - [ ] Usar un `topicKey` estable al actualizar un tema duradero, para no duplicar recuerdos.
+ - [ ] Verificar que la adaptación nunca mande contraseñas, tokens, llaves privadas, credenciales ni cadenas
+       de conexión con credenciales en memorias, resúmenes, `topicKey`, errores o logs.
++- [ ] Probar con el agente nuevo que, si Engram responde `SECRET_REJECTED`, el agente vuelve a guardar el
++      recuerdo sin el valor (nombrando dónde vive, por ejemplo `password: <redacted>` o el nombre de la
++      variable de entorno), no reintenta con el secreto, no descarta el recuerdo en silencio y le dice a la
++      persona qué quitó. Verificación: pedirle que recuerde un texto con una clave de prueba inventada y
++      revisar con `memory_search` que se guardó sin el valor.
++- [ ] Con esquema 11 y un proyecto que pertenece a un grupo, pedirle al agente nuevo que suba al tablero una
++      regla que afecta a varios proyectos y verificar que manda un tipo permitido y `affects` con al menos
++      dos proyectos del grupo; y que ante cualquier código `ECOSYSTEM_*` corrige el guardado, lo deja en el
++      proyecto o consolida el tablero, sin reintentar igual, y le dice a la persona qué pasó. Verificación:
++      `memory_search` con `scope: "ecosystem"` muestra el recuerdo con sus `affects`.
+ - [ ] Probar con el agente nuevo: inicio, guardado explícito, recuperación en una conversación nueva,
+       compactación/reanudación y cierre. Debe usarse Engram compartido y no almacenamiento privado del
+       agente.
++- [ ] Con esquema 11, pedirle al agente nuevo que guarde dos veces, sin `topicKey`, el mismo aprendizaje
++      redactado distinto, y verificar que ante la respuesta `similar` de `memory_save` hace una de las tres
++      cosas que manda el protocolo v4 (actualiza el parecido, lo deja aparte diciendo por qué, o guarda con
++      `supersedes`), sin dejar dos recuerdos activos iguales en silencio y sin borrar nada. Verificación:
++      `memory_search` con esas palabras devuelve un solo recuerdo activo, o el viejo con la marca
++      `superseded`.
+ 
+ ---
+ 
+diff --git a/standard/support-matrix.json b/standard/support-matrix.json
+index 58e110b..b69a2d6 100644
+--- a/standard/support-matrix.json
++++ b/standard/support-matrix.json
+@@ -33,7 +33,10 @@
+     {
+       "node": "engram",
+       "agent": "claude-code",
+-      "status": "not-applicable",
++      "status": "revalidate",
++      "revalidateSince": "2026-09-25",
++      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
++      "deadline": "2026-10-25",
+       "verifiedAt": "2026-09-22",
+       "verifiedBy": "owner",
+       "notes": "No requiere cambios en Engram (protocolo v1)."
+@@ -79,7 +82,10 @@
+     {
+       "node": "engram",
+       "agent": "codex",
+-      "status": "not-applicable",
++      "status": "revalidate",
++      "revalidateSince": "2026-09-25",
++      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
++      "deadline": "2026-10-25",
+       "verifiedAt": "2026-09-22",
+       "verifiedBy": "owner",
+       "notes": ""
