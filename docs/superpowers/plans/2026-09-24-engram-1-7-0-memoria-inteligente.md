@@ -3880,9 +3880,31 @@ Severidad: **crítico** = pérdida o alteración de datos reales, o un secreto q
 - [ ] **Step 3 (commit 1):** `git add src/infrastructure/sqlite/writes.ts src/infrastructure/sqlite/meta-save.test.ts && git commit -m "fix(memory): the secret filter also checks affected projects"`
 - [ ] **Step 4 (commit 2):** `git add docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/06-resolucion-de-errores.md docs/en/06-troubleshooting.md && git commit -m "docs: the secret filter also covers affected projects"`; al final `git status --short` sin salida.
 
+**Resultado T9b (2026-09-25):** `23c9b25` y `9855eac`, diff idéntico al parche (sin las líneas `index`); suite en copia sobre `9855eac` **673 pass / 10 skip / 0 fail**, typecheck 0. Agente: Claude Code · Sonnet 5 · medium, 0,31 M tokens ≈ $0,23, 4,1 min, 4 llamadas, 0 rondas. Para mostrar la prueba en rojo usó `git stash` sobre `writes.ts` y lo restauró (no pedido, sin efecto en el resultado). **T9 y T9b cerradas.** Impacto en el checklist de agentes: **No**; el punto de `SECRET_REJECTED` (T2) ya cubre cualquier campo.
+
 ### Task 10: Publicación *(prompt tras aprobar T9)*
 
 PR, CI verde, fusión con rebase, tag, release; en la Mac del propietario: instalar, `forge614-engram intelligence-enable` (con respaldo) y verificar la base real (107 recuerdos intactos).
+
+**Hallazgo del orquestador (2026-09-25, leyendo `9cbb7b5`):** Engram 1.6.0 no reconoce el nivel 11 (`decode()` solo acepta 3–10) y responde `DATABASE_VERSION` («Base incompatible»). Cualquier proceso 1.6.0 que siga abierto (los servidores MCP de las sesiones de IA abiertas) falla contra la base en cuanto pasa al nivel 11. Por eso: **primero** se instala 1.7.0, **luego** se cierran todas las sesiones de IA (Claude Code, Codex y cualquier otra que use Engram) para que sus servidores MCP arranquen con 1.7.0, y **solo entonces** se activa. La activación va en su propia tarea (T10b).
+
+**T10a — publicar** (Claude Code · Sonnet 5 · low, sesión nueva en `forge614-engram`, etiqueta `[Engram · T10a]`). Estado esperado: rama `work/1.7.0-memoria-inteligente` en `9855eac`, árbol limpio, `main` = `origin/main` = `9cbb7b5`. El repositorio permite fusión con rebase; `Verify` corre en `pull_request` y `push`; `Release standalone artifacts` corre al subir un tag `v*` y publica 4 binarios, `SHA256SUMS` e `install.sh`. El tag de 1.6.0 es anotado con mensaje `1.6.0`.
+1. `git push -u origin work/1.7.0-memoria-inteligente`.
+2. `gh pr create --base main --head work/1.7.0-memoria-inteligente --title "Engram 1.7.0: memory intelligence"` con un cuerpo corto en inglés que resume la sección `## 1.7.0` del CHANGELOG (sin líneas de atribución ni menciones a ninguna IA).
+3. `gh pr checks <n> --watch`: todo en verde. Si algo falla, detenerse y reportar el nombre del trabajo y las últimas líneas del error; no corregir.
+4. `gh pr merge <n> --rebase --delete-branch`; luego `git switch main && git pull --ff-only`; comprobar que `git diff 9855eac main` sale vacío (mismo contenido; los hashes cambian con el rebase).
+5. `git tag -a v1.7.0 -m "1.7.0"` sobre `main` y `git push origin v1.7.0`.
+6. `gh run watch` de «Release standalone artifacts» del tag hasta terminar en verde; `gh release view v1.7.0 --json assets --jq '.assets[].name'` lista los 6 archivos.
+7. **No** instalar ni actualizar el Engram de la Mac, no correr `intelligence-enable` y no tocar `~/.forge614`.
+
+**T10b — instalar y activar en la Mac** (datos reales; guía §6: Opus · high; sesión nueva **abierta después** de cerrar todas las demás, etiqueta `[Engram · T10b]`). Base: `~/.forge614/engram/engram.db`, nivel 10, 107 recuerdos (92 proyecto, 14 compartidos, 1 ecosistema) al 2026-09-24.
+1. `forge614-engram update --json` → `installedVersion` 1.7.0; `forge614-engram --version`.
+2. El propietario cierra todas las sesiones de IA y abre solo la de T10b (el prompt lo pide antes de seguir).
+3. **Antes**, solo lectura: `sqlite3 -readonly <base>` con `PRAGMA user_version;`, `SELECT scope, count(*) FROM memories GROUP BY scope;`, conteos de `memory_versions`, `requests`, `sessions`, y `.sha3sum memories memory_versions requests projects sessions`; se guarda la salida en la carpeta temporal.
+4. `forge614-engram intelligence-enable` → `enabled: true`, `schema: 11`, `migrated: true` y la ruta del respaldo; el respaldo existe con permisos `-rw-------`.
+5. **Después**, las mismas consultas: `user_version` = 11 y conteos y huellas **idénticos**; `PRAGMA integrity_check` = `ok`. Un segundo `intelligence-enable` responde `migrated: false`, `backup: null`.
+6. Prueba de uso: `forge614-engram search --query decision` (o `memory_search`) encuentra recuerdos con «Decisión».
+7. Si algo no cuadra: detenerse, no borrar nada y reportar; el respaldo es la vuelta atrás.
 
 ---
 
@@ -3899,6 +3921,7 @@ Revisión de `standard/procedures/new-agent-checklist.md` al cerrar cada tarea. 
 | T4 | **Sí** | Con el esquema 11, Engram rechaza un guardado en el tablero del ecosistema que no cumpla sus reglas (`ECOSYSTEM_TYPE_NOT_ALLOWED`, `ECOSYSTEM_AFFECTS_REQUIRED`, `ECOSYSTEM_AFFECTS_UNKNOWN`, `ECOSYSTEM_BOARD_FULL`, `ECOSYSTEM_STATUS_FORBIDDEN`, `ECOSYSTEM_STATUS_TOO_LONG`), así que un asistente que usa `scope: "ecosystem"` como en el protocolo v3 recibirá rechazos. Punto nuevo para la sección `forge614-engram`, junto al de `SECRET_REJECTED`: «- [ ] En una base con esquema 11 y un proyecto que pertenece a un grupo, pedirle al agente nuevo que suba al tablero una regla que afecta a varios proyectos y verificar que manda un tipo permitido y `affects` con al menos dos proyectos del grupo; y que ante cualquier código `ECOSYSTEM_*` corrige el guardado, lo deja en el proyecto o consolida el tablero, sin reintentar igual, y le dice a la persona qué pasó. Verificación: `memory_search` con `scope: "ecosystem"` muestra el recuerdo con sus `affects`.» La conducta completa (cuándo subir, bajar y escribir la nota de estado) la fija el protocolo v4 (T7). |
 | T6 | **No (por ahora)** | El formato 1 de `startup-context` queda byte-idéntico y sigue siendo el predeterminado, así que los ganchos de arranque que el checklist ya exige (Engines, Shell) no cambian. El formato 2 es opcional y lo adopta el host, no el asistente; su punto del checklist se redacta cuando el protocolo v4 (T7) lo anuncie y Engines/Shell lo consuman, con su prueba: el gancho inyecta `text` tal cual, el bloque mide ≤ 5 000 caracteres con el encabezado de ocupación y, tras cortar una sesión, la siguiente muestra la sección «Previous session (interrupted)». |
 | T8 | **Sí** | Una base nueva nace en el nivel 11 (incluye refuerzo), lo que contradice la fila «Reinforcement from repeated memories \| Optional» de `standard/FORGE614_ECOSYSTEM_CONTRACT.en.md`; se corrige con el reglamento 1.1.0 (acta 0027). Punto nuevo para la sección `forge614-engram`, bajo «Compatibilidad con el protocolo público»: «- [ ] Si el host crea la base con `init` para el agente nuevo, verificar que queda en el esquema 11 (`intelligence-enable` responde `migrated: false`) y que una base existente no cambia de nivel.» |
+| T9 / T9b | **No** | La revisión no cambia conducta; la corrección solo extiende a `affects` el rechazo `SECRET_REJECTED` que el punto de T2 ya exige manejar, sin importar el campo. |
 | T7 | **Sí** | El protocolo v4 fija la conducta que T3, T5 y T6 dejaron pendiente, y las instrucciones del servidor MCP cambian para **todo** cliente desde 1.7.0 (aunque Engines siga pidiendo la versión 1). Puntos nuevos redactados abajo («Puntos del checklist redactados al cerrar T7»): P-T3, P-T5, P-T6, P-T7a y P-T7b, más la corrección de la sección `forge614-engram` (hallazgo de T1). |
 
 ### Puntos del checklist redactados al cerrar T7 (para el reglamento 1.1.0)
