@@ -3,8 +3,8 @@
   "node": "ai",
   "kind": "product",
   "standard": {
-    "version": "1.1.0",
-    "sha256": "cf3dd08eff859fe95981b13b9c89c179461d0f9ebbc1e8e046eb1cf4025a8be0"
+    "version": "1.1.1",
+    "sha256": "bbe1e3487d267483a2aebf36337551efaee5429c43c5a36a215578e36de2cac9"
   },
   "ecosystem": "forge614"
 }

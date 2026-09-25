@@ -29,7 +29,7 @@ Where a decision originated a point, the norm cites the corresponding record (se
 
 Two files pin the version:
 
-- `standard/VERSION` holds the standard's version (today `1.1.0`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.1.0.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
+- `standard/VERSION` holds the standard's version (today `1.1.1`) in SemVer format (`MAJOR.MINOR.PATCH`). It appears in the title of `STANDARD.md`, in the archive name (`standard-1.1.1.tar.gz`) and in the files rendered from templates (variable `STANDARD_VERSION`, document 03).
 - `forge614.node.json` is the **node pointer**: `{ schemaVersion: 1, node, kind, standard: { version, sha256 }, ecosystem? }`. `standard.version` is the standard version the node declares to comply with and `standard.sha256` the fingerprint of the standard archive for that version; `kind` tells `product` (installable) from `internal` (nobody installs it by hand); `ecosystem`, optional in the schema (record 0022), names the group the node belongs to. The `NodePointerSchema` schema (`src/modules/standard/schemas/node-pointer.ts`) validates it and rejects unknown fields.
 
 In this repository the pointer carries the fingerprint of the archive that `bun run standard:pack` produces from `standard/` itself; `bun run standard:pack --check` checks that they still match (document 04).
