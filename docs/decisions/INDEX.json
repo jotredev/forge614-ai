@@ -243,6 +243,15 @@
       "date": "2026-09-25",
       "session": "forge614-ai-2026-09-25-reglamento-1-1-0",
       "file": "0027-memoria-inteligente-de-engram-en-el-procedimiento.md"
+    },
+    {
+      "number": "0028",
+      "slug": "revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist",
+      "title": "Revalidación de Claude Code y Codex, y aclaraciones del checklist",
+      "status": "aceptada",
+      "date": "2026-09-25",
+      "session": "forge614-ai-orquestador-2026-09-25-r3-e4ec550",
+      "file": "0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md"
     }
   ]
 }
