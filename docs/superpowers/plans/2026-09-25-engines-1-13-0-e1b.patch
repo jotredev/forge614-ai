@@ -1,0 +1,40 @@
+diff --git a/src/modules/memory-protocol/render.test.ts b/src/modules/memory-protocol/render.test.ts
+index e37da02..65b5b25 100644
+--- a/src/modules/memory-protocol/render.test.ts
++++ b/src/modules/memory-protocol/render.test.ts
+@@ -58,10 +58,8 @@ describe("renderProtocolMarkdown (version 4)", () => {
+     expect(markdown).toContain(protocolV4.instructions);
+   });
+ 
+-  test("includes the identifying id/version header line, same as v1", () => {
+-    const markdown = renderProtocolMarkdown(protocolV4);
+-    expect(markdown).toContain("forge614-engram-memory");
+-    expect(markdown).toContain("version 4");
++  test("installs exactly `instructions`, byte for byte, with nothing added (new-agent checklist)", () => {
++    expect(renderProtocolMarkdown(protocolV4)).toBe(protocolV4.instructions);
+   });
+ 
+   test("never synthesizes Lifecycle/Scopes/Security sections v4 does not carry", () => {
+diff --git a/src/modules/memory-protocol/render.ts b/src/modules/memory-protocol/render.ts
+index 50dd133..578c01c 100644
+--- a/src/modules/memory-protocol/render.ts
++++ b/src/modules/memory-protocol/render.ts
+@@ -11,14 +11,12 @@ export function renderProtocolMarkdown(protocol: AnyMemoryProtocol): string {
+ 
+ /**
+  * Version 4 carries no lifecycle/scopes/security: `instructions` is already the
+- * complete manual, so it is installed verbatim — never rewritten or summarized.
+- * Only the identifying header line (id + version) is added, matching v1's own
+- * header, since that line is Engines' own bookkeeping, not part of the manual.
++ * complete manual, so it is installed exactly as Engram serves it — byte for byte,
++ * with nothing added (the new-agent checklist verifies it that way). Around it
++ * Engines writes only its own block markers and managed-header comment line.
+  */
+ function renderProtocolMarkdownV4(protocol: MemoryProtocolV4): string {
+-  return ["## Forge614 Engram memory protocol", "", `Protocol: ${protocol.id} (version ${protocol.version})`, "", protocol.instructions].join(
+-    "\n",
+-  );
++  return protocol.instructions;
+ }
+ 
+ function renderProtocolMarkdownV1(protocol: MemoryProtocol): string {
