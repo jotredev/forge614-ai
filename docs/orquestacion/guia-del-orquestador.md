@@ -13,7 +13,7 @@
 2. **Una tarea = una sesión nueva** en el repositorio que toca. El propietario pega el prompt, la sesión trabaja y reporta, el propietario pega el reporte aquí.
 3. El orquestador revisa el reporte **y verifica por su cuenta**, sin tocar el otro repositorio (autorización del propietario, 2026-09-24):
    - lee el diff completo del commit contra el plan, línea por línea (`git -C <repo> diff/show`), y lo revisa como experto;
-   - corre pruebas y typecheck en una copia temporal: `git -C <repo> archive <commit> | tar -x -C <scratchpad>/verif-<tarea>`, luego `bun install --frozen-lockfile --ignore-scripts`, `bun test` y `bun run typecheck`, leyendo el código de salida de cada comando por separado;
+   - corre pruebas y typecheck en una copia temporal: `git -C <repo> archive <commit> | tar -x -C <scratchpad>/verif-<tarea>`, luego `bun install --frozen-lockfile --ignore-scripts`, `bun test` y `bun run typecheck`, leyendo el código de salida de cada comando por separado; **la suite se corre como en CI, sin pruebas omitidas por el entorno** (en Engram: `FORGE614_TEST_POSTGRES_BIN=$(pg_config --bindir) bun test`, porque PostgreSQL está instalado en la Mac) y cada prueba que siga omitida se justifica;
    - registra el conteo **medido**, no el reportado, y borra la copia.
    A futuro, Sentinel hará esta verificación de forma automática.
 4. **Al cerrar cada paso, antes de entregar el siguiente prompt, el orquestador anota todo, sin que se lo pidan** (regla firme del propietario, 2026-09-25: «nunca se te debe pasar»): fila del agente **y** fila del propio orquestador en «Corridas de agentes» (medidas en su registro, §5), lecciones nuevas o actualizadas en «Lecciones de orquestación», esta guía al día (reglas y §6) y el estado en Engram. El mensaje al propietario dice qué quedó anotado.
@@ -81,6 +81,7 @@ Bloqueos: <lista o "ninguno">
 | **Probar el plan completo en un laboratorio antes de entregarlo** (§1): código y pruebas literales ya verdes, anclas de reemplazo únicas | provisional | Engram 1.7.0: rondas por error del plan T1 3 → T2 1 → **T3 0** (el laboratorio atrapó 4 errores); agente T3 en 2,3 min y 1,09 M tokens |
 | Cuando el plan agrega un campo de texto, listar cada filtro o validación que recorre los campos de texto (secretos, límites, normalización) y exigir una prueba por campo nuevo en cada uno | provisional | Engram T2 agregó `affects` y el filtro de secretos no lo revisaba; nadie lo vio hasta la revisión independiente T9 (1 tarea de corrección extra, T9b) |
 | Antes de activar un nivel de esquema nuevo sobre la base real, comprobar qué hace la versión anterior con ese nivel; si lo rechaza, el plan ordena instalar, cerrar todas las sesiones que usan la base y activar desde una sesión abierta después | provisional | Engram T10: 1.6.0 responde `DATABASE_VERSION` con el nivel 11; los servidores MCP abiertos (procesos 1.6.0) habrían perdido la memoria al activar |
+| Una prueba omitida no está verificada: el laboratorio y la verificación corren la suite como CI (con las variables que activan las pruebas de servicios, como PostgreSQL) y cuentan y justifican cada omisión | provisional | Engram T10a r1: 2 pruebas de PostgreSQL rotas desde T8 pasaron T8, T9 y T9b como «10 skip»; CI las encontró en el PR; 1 ronda extra |
 | Todo filtro o expresión regular del plan se ejecuta antes contra textos normales parecidos ("casi positivos") y esos casos entran como pruebas fijas | provisional | Engram T2: el filtro de secretos rechazaba 5 de 8 textos normales, incluido `password: <redacted>`; 1 ronda |
 | Con código literal y anclas únicas, el agente aplica el plan por script (sin editar a mano): mantener las anclas exactas y únicas | provisional | Engram T3 y T3 docs: 0 Write/Edit, reemplazos con comprobación de unicidad |
 | Cuando el plan trae pruebas largas sin código de implementación, el prompt pide extraerlas del plan con un script; nunca escribirlas a mano | provisional | Engram T4 r1 (Codex medium): reescribió en 15 líneas la prueba de 114 del plan y omitió dos; r2 con extracción por script: idénticas |
@@ -133,6 +134,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Suite como en CI, sin pruebas omitidas por el entorno (§1.3, §4), tras Engram T10a r1.
 - 2026-09-25 — Código con parche o laboratorio en Sonnet medium pasa a firme (§6, Engram T9b); lección de niveles de esquema y procesos abiertos (§4).
 - 2026-09-25 — Regla firme del propietario: el orquestador anota todo al cerrar cada paso, incluida su propia fila (§1.4); lección de Engram T9 sobre campos nuevos y filtros (§4); primera revisión independiente medida (§6).
 - 2026-09-25 — Documentación redactada por el agente pasa a firme (§6, 3 corridas); parche completo con `git apply` como forma de entregar código (§6).
