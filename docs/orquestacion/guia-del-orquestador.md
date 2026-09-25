@@ -84,6 +84,7 @@ Bloqueos: <lista o "ninguno">
 | Cuando el plan trae pruebas largas sin código de implementación, el prompt pide extraerlas del plan con un script; nunca escribirlas a mano | provisional | Engram T4 r1 (Codex medium): reescribió en 15 líneas la prueba de 114 del plan y omitió dos; r2 con extracción por script: idénticas |
 | Aunque no haya laboratorio, el orquestador revisa la implementación del agente contra casos borde que las pruebas no cubren | provisional | Engram T4: la revisión encontró 2 fallos (tope que ignoraba recuerdos sin tema; huella de la petición antes de fijar la nota) que las pruebas del plan dejaban pasar |
 | Las anclas de reemplazo del plan se citan completas, nunca recortadas con «…» | provisional | Engram T6: un ancla de `commands.ts` terminaba en «…»; el agente la resolvió uniendo dos líneas (sin error, pero lo tuvo que deducir) |
+| Cuando el plan le pone algo a una pieza reutilizada (una descripción, un límite, un valor por defecto), listar **todos** los campos que usan esa pieza y comprobar que les sirve a cada uno | provisional | Engram T7: la descripción «id de recuerdo» puesta en la pieza `id` pasó también a `sessionProjectId`, que es un id de proyecto; las pruebas no lo vieron y la revisión sí (se corrige en T8) |
 
 ## 4b. Documentación
 
@@ -118,7 +119,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high | provisional (0 corridas) |
-| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (1 corrida: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente) |
+| Código + pruebas con plan preciso | Sonnet · medium o Codex · medium | provisional (2 corridas: Engram T2 Codex medium, 4,58 M tokens, 1 ronda por error del plan, 0 del agente; Engram T7 Sonnet medium con laboratorio, 0,63 M tokens ≈ $0,39 en 1,8 min, 0 rondas, commit idéntico al plan) |
 | Algoritmos con muchos casos borde, plan probado en laboratorio | Sonnet · high | provisional (2 corridas: Engram T3, 1,09 M tokens ≈ $0,59, 0 rondas; Engram T6, 0,96 M tokens ≈ $0,56, 0 rondas, commit idéntico al laboratorio) |
 | Documentación, versión, publicación | Sonnet · low | provisional (1 corrida: Engram T3 docs, 0,48 M tokens ≈ $0,28, 0 rondas; Engram T2 docs se hizo con Codex medium: 0,44 M tokens en 2 rondas, una por error del prompt) |
 | Documentación redactada por el agente a partir de datos verificados y lugares exactos | Sonnet · medium | provisional (1 corrida: Engram T4 docs, 1,08 M tokens ≈ $0,74, 0 rondas, todas las frases correctas; sin costo de subagente) |
@@ -128,6 +129,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Lecciones de Engram T7: revisar todos los campos que reutilizan una pieza del esquema (§4) y segunda corrida de "código + pruebas con plan preciso" (§6).
 - 2026-09-24 — Lecciones de Engram T6: anclas completas (sin «…») y segunda corrida de Sonnet high con laboratorio (§6).
 - 2026-09-24 — Lecciones de Engram T4: extraer pruebas del plan con un script, revisar casos borde sin laboratorio, datos de "solo pruebas y contratos" y de documentación redactada por el agente.
 - 2026-09-24 — Los prompts se entregan en el chat del orquestador, en un solo bloque para copiar (§1.5); se retira la página de tarjetas.
