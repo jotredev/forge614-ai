@@ -1,0 +1,46 @@
+diff --git a/docs/en/07-architecture-and-code-map.md b/docs/en/07-architecture-and-code-map.md
+index 369cdcd..1e7b81a 100644
+--- a/docs/en/07-architecture-and-code-map.md
++++ b/docs/en/07-architecture-and-code-map.md
+@@ -23,7 +23,7 @@ An architecture test checks relative imports. An inner layer cannot import an ou
+ - `config-io/` reads and changes JSON/TOML; JSON preserves edits through `jsonc-parser`, while TOML serializes the document again through `smol-toml`.
+ - `memory-protocol/` defines and validates the Engram protocol shape (the v4 manual with its `instructions` and `mcpInstructions` fields, and v1 as the fallback), resolves the canonical `forge614-engram` executable from `FORGE614_HOME` or `~/.forge614/engram/bin/forge614-engram`, renders the protocol into instructions markdown (with v4, Engram's `instructions` text unchanged), and combines the MCP and instructions component statuses into one overall result.
+ - `instructions-writer/` inserts, extracts, and removes the delimited managed block inside an agent's existing instructions file without disturbing the rest of it.
+-- `infrastructure/engram/` invokes the canonical absolute path of `forge614-engram memory-protocol --json --protocol-version 4` (falling back to v1 only on INVALID_INPUT) and of `startup-context ... --format 2` (falling back to format 1 in the same case) without relying on `PATH`, validates the response, and returns it together with a content fingerprint and, when it fell back, a bilingual notice; it never reads Engram internals. The instructions write decision (`instructions-write-decision.ts`, in `app/`) embeds the manual in the agent's main file and migrates the old `@file` block.
++- `infrastructure/engram/` invokes the canonical absolute path of `forge614-engram memory-protocol --json --protocol-version 4` (falling back to v1 only on INVALID_INPUT) and of `startup-context ... --format 2` (falling back to format 1 in the same case) without relying on `PATH`, validates the response, and returns it (the manual together with a content fingerprint) and, when it fell back, a bilingual notice; it never reads Engram internals. The instructions write decision (`instructions-write-decision.ts`, in `app/`) embeds the manual in the agent's main file and migrates the old `@file` block.
+ - `plan-store.ts` persists proposals with private permissions; `snapshot.ts` backs up files; `atomic-write.ts` performs verified writes.
+ - `main.ts` accepts only public commands and translates errors into stable codes.
+ 
+diff --git a/docs/es/07-arquitectura-y-mapa-del-codigo.md b/docs/es/07-arquitectura-y-mapa-del-codigo.md
+index 8b7ebfd..350e9e8 100644
+--- a/docs/es/07-arquitectura-y-mapa-del-codigo.md
++++ b/docs/es/07-arquitectura-y-mapa-del-codigo.md
+@@ -23,7 +23,7 @@ Una prueba de arquitectura revisa importaciones relativas. Una capa interna no p
+ - `config-io/` lee y modifica JSON/TOML; JSON conserva ediciones mediante `jsonc-parser` y TOML vuelve a serializar el documento mediante `smol-toml`.
+ - `memory-protocol/` define y valida la forma del protocolo de Engram (el manual v4 con sus campos `instructions` y `mcpInstructions`, y el v1 como respaldo), resuelve el ejecutable canónico `forge614-engram` desde `FORGE614_HOME` o `~/.forge614/engram/bin/forge614-engram`, lo convierte en Markdown de instrucciones (con la v4, el texto `instructions` de Engram sin cambios) y combina el estado del componente MCP y del componente de instrucciones en un solo resultado general.
+ - `instructions-writer/` inserta, extrae y retira el bloque administrado delimitado dentro del archivo de instrucciones existente de un agente sin alterar el resto.
+-- `infrastructure/engram/` ejecuta la ruta absoluta canónica de `forge614-engram memory-protocol --json --protocol-version 4` (con respaldo a v1 solo ante INVALID_INPUT) y de `startup-context ... --format 2` (con respaldo al formato 1 en el mismo caso) sin depender de `PATH`, valida la respuesta y la devuelve junto con una huella del contenido y, si hubo respaldo, un aviso bilingüe; nunca lee archivos internos de Engram. La decisión de escribir las instrucciones (`instructions-write-decision.ts`, en `app/`) incrusta el manual en el archivo principal del agente y migra el bloque `@archivo` antiguo.
++- `infrastructure/engram/` ejecuta la ruta absoluta canónica de `forge614-engram memory-protocol --json --protocol-version 4` (con respaldo a v1 solo ante INVALID_INPUT) y de `startup-context ... --format 2` (con respaldo al formato 1 en el mismo caso) sin depender de `PATH`, valida la respuesta y la devuelve (el manual, junto con una huella del contenido) y, si hubo respaldo, un aviso bilingüe; nunca lee archivos internos de Engram. La decisión de escribir las instrucciones (`instructions-write-decision.ts`, en `app/`) incrusta el manual en el archivo principal del agente y migra el bloque `@archivo` antiguo.
+ - `plan-store.ts` persiste propuestas con permisos privados; `snapshot.ts` respalda archivos; `atomic-write.ts` realiza escrituras verificadas.
+ - `main.ts` acepta solo los comandos públicos y convierte errores a códigos estables.
+ 
+diff --git a/docs/notion-map.json b/docs/notion-map.json
+index 8b35ff0..380afab 100644
+--- a/docs/notion-map.json
++++ b/docs/notion-map.json
+@@ -100,13 +100,13 @@
+       "localPath": "docs/es/07-arquitectura-y-mapa-del-codigo.md",
+       "language": "es",
+       "notionUrl": "https://app.notion.com/p/3e121943d1298111ac2dfc6ec005122c",
+-      "sha256": "03951969930f7d4866058910bc28a12ffbbf2222bc0c377a06373f8e903f2620"
++      "sha256": "bc4716382dd6b6653e77df29b455dacc9a9b938af9ac7fa007596a86ca135479"
+     },
+     {
+       "localPath": "docs/en/07-architecture-and-code-map.md",
+       "language": "en",
+       "notionUrl": "https://app.notion.com/p/3e121943d1298141af4dc49853c508e7",
+-      "sha256": "1e1ace5195cf256bbccd2f0f7e4f1b640df8c8753d63f53257fbb4e6ad693a14"
++      "sha256": "021d4f37a772ad437ab9ed8c3fd39ae7e37637b786181cf8b3e85b757f5f2930"
+     }
+   ]
+ }
