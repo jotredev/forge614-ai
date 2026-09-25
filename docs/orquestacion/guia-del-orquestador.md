@@ -127,6 +127,7 @@ Bloqueos: <lista o "ninguno">
 
 | Regla | Estado | Evidencia |
 |---|---|---|
+| Cuando el propietario prueba a mano, se le piden capturas; el orquestador se las traduce en palabras llanas y confirma cada resultado en los registros (`hook-evidence`, transcripciones de Claude Code, `rollout-*.jsonl` de Codex) antes de darlo por aprobado | provisional | Revalidación R2: 6 pruebas aprobadas, cada una con su registro; el «sí jalaron» de Codex se confirmó en 2 registros de Shell con el bloque y los fijados `shared`; de paso salieron 4 fallos de Shell |
 | Para ahorrar, bajar rondas de corrección, dar archivos exactos y pedir reportes cortos; acortar el prompt casi no mueve el costo | provisional | salida = 0,6–0,7 % del total (Codex 01a0d44c; Sentinel 0.1.1) |
 | **Medir también al orquestador**, no solo al agente: su costo por tarea domina cuando su contexto es grande | provisional | Engram T3: agentes $0,59 + $0,28, subagente de borrador $0,81, orquestador $8,49 (≈ 85–90 %); ~310K → 430K tokens releídos por mensaje |
 | Delegar la redacción y el laboratorio a un subagente de contexto limpio (Sonnet) y revisar su resultado; **el orquestador rehace los cambios en una copia limpia y entrega un parche** con su SHA-256, nunca el borrador tal cual | **firme** (3 muestras) | Engines 1.13.0: parches E1 y E2 «en verde» del subagente; la revisión línea por línea encontró que `verify` sugería reinstalar aunque la instalación estaría bloqueada; el orquestador lo corrigió con su prueba en una copia limpia y rehízo el parche (421 y 432 pruebas medidas). Engram T3 docs: borrador en 4,9 min ≈ $0,81 con 1 contradicción y 2 detalles corregidos en la revisión. Reglamento 1.1.0: borrador + laboratorio en 6,7 min ≈ $1,25, reportado «en verde» pero con 4 errores atrapados al leer su diff (matriz reescrita con otra sangría, `sed` sin `g`, orden de comandos que fallaba, texto del acta ausente) y 1 decisión de alcance corregida |
@@ -156,6 +157,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Revalidación R2: pruebas a mano del propietario con capturas verificadas en los registros (§5).
 - 2026-09-25 — Revalidación R1b: pruebas de varias vueltas por turnos, sin commits en la rama tras entregar un prompt, recuento de la base real sin lo que guarda la sesión (§4); segunda batería (§6).
 - 2026-09-25 — Revalidación R1: pruebas de conducta al pie de la letra del checklist, copia por asistente, `--disallowedTools` y modelo del archivo del día (§4); primera batería en laboratorio (§6).
 - 2026-09-25 — Plan de revalidación de la matriz: laboratorio de memoria con base «rota» como guarda y variable explícita para el MCP de Codex; los scripts de verificación van dentro del plan (§4).
