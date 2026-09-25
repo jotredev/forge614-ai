@@ -75,7 +75,7 @@ sys.exit(0 if ok else 1)
 
 ## Tarea R1: batería en laboratorio
 
-**Reglas:** nada se escribe en `~/.forge614`, `~/.claude` ni `~/.codex` reales; ninguna herramienta que no sea de Engram (`--allowedTools mcp__forge614-engram` en Claude Code; `--sandbox read-only` en Codex); todo recuerdo de prueba lleva la marca `REVAL-LAB`; el laboratorio se borra al terminar (lleva una copia con datos privados).
+**Reglas:** nada se escribe en `~/.forge614`, `~/.claude` ni `~/.codex` reales; ninguna herramienta que no sea de Engram (`--allowedTools mcp__forge614-engram` en Claude Code; `--sandbox read-only` en Codex); todo recuerdo de prueba lleva la marca `REVAL-LAB`; no se renombra ni se cambia ningún proyecto o grupo en la copia (el arranque de Engram escribe el nombre del proyecto en `.forge614/project.json` de la carpeta real: en el ensayo del orquestador, un nombre cambiado solo en la copia llegó al archivo de `forge614-ai` y hubo que deshacerlo); `git status --short` de `~/Desktop/forge614-ai` igual antes y después de cada prueba que corre ahí; el laboratorio se borra al terminar (lleva una copia con datos privados).
 
 **Modelos de las pruebas:** los que el propietario usa en Shell (`~/.forge614/shell/preferences.json`): Claude Code `sonnet`; Codex `gpt-5.6-terra` con razonamiento `medium`.
 
