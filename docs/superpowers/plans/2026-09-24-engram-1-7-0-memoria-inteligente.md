@@ -3819,6 +3819,47 @@ Reglas de redacción: cada frase debe poder comprobarse en el código de `420275
 
 Revisión de solo lectura de toda la rama contra la spec y este plan, por otro proveedor.
 
+**Experimento:** Codex · gpt-5.6-terra · high, sesión nueva en `~/Desktop/forge614-engram`, etiqueta `[Engram · T9]`. Primera corrida de «revisión independiente de una rama» (guía §6). Se mide: hallazgos reales / dudosos / falsos (clasificados por el orquestador), tokens y % del límite semanal.
+
+**Alcance:** `git diff 9cbb7b5..f181a1d` en `forge614-engram` (18 commits, 108 archivos, +2 732 / −175; 85 en `src` y `tests`). Estado esperado: rama `work/1.7.0-memoria-inteligente`, HEAD `f181a1d`, árbol limpio. Se revisa el código contra la spec (§4–§9, M1–M12, R1–R7) y contra este plan (Global Constraints, Contratos compartidos y las decisiones D-T3-*, D-T8-*, etc.).
+
+**Regla de no tocar nada:** ni un archivo del repositorio (sin editar, sin `git add`/`commit`/`stash`/`checkout`/`reset`, sin `bun install` ni `bun test` dentro del repositorio). Si hace falta ejecutar algo para demostrar un hallazgo, se hace en una copia: `git archive f181a1d | tar -x -C "$TMPDIR/engram-t9"`, `bun install --frozen-lockfile --ignore-scripts` y el guion o prueba de demostración **dentro de esa copia**; nunca contra la base real (`~/.forge614-engram` o la configurada). Al terminar, `git status --short` del repositorio sin salida. La spec y este plan se leen de `forge614-ai` (solo lectura, mismo ecosistema).
+
+**Qué revisar, en este orden (lo primero pesa más):**
+
+1. **Seguridad de los datos reales** (lo más importante; la base real tiene 107 recuerdos en nivel 10):
+   - `intelligence-enable` sobre una base **con datos** en nivel 10 y por debajo (encadena bindings, sesiones, refuerzo y ecosistema): `src/infrastructure/sqlite/schema.ts` (`enableIntelligence` ~l. 456, verificación ~l. 375), `src/app/memory-store.ts`, `src/interfaces/cli/commands.ts` ~l. 59. Comprobar: sonda de escritura **antes** del respaldo (conexión de solo lectura no deja respaldo inútil), respaldo `VACUUM INTO` con nombre `…v<n>-pre-intelligence-<stamp>-<uuid8>.bak` y permisos 0600, huella y conteo de `memories` y `requests`, `integrity-check` de los dos índices FTS, todo en una transacción inmediata; cualquier diferencia → `MIGRATION_VERIFY_FAILED` y **rollback completo** (nivel intacto, sin tablas nuevas). Segunda llamada: `migrated: false`, `backup: null`, sin respaldo nuevo. Casos a pensar: otro proceso (servidor MCP) con la base abierta, disco lleno al respaldar, base con recuerdos archivados, versiones y sesiones, base de nivel 12 («versión futura»).
+   - **`init` nunca migra una base existente** (D-T8-1, D-T8-2): `src/app/workspace.ts` l. 33–35 (`existsSync` antes de abrir), `src/app/setup.ts`, `project-create` y todo camino que llama `MemoryWorkspace.init()`. Casos: base existente sin archivo de configuración, archivo de 0 bytes, ruta con enlace simbólico, ruta relativa, error después de `enableIntelligence()` y antes de `config.save()`. El servidor MCP no crea ni migra bases.
+   - Triggers de `memories_words` (insertar, borrar, actualizar): que no alteren filas de `memories` ni fallen en actualizaciones o archivado; datos nuevos fuera de `memory_versions.snapshot` (réplica formatos 1–3, `src/modules/synchronization/snapshot.ts`).
+2. **Filtro de secretos** (`src/modules/memory/secrets.ts`, `src/infrastructure/sqlite/writes.ts`): se aplica en **todo** camino de guardado y en todo campo de texto (título, contenido, `topicKey`, `short`, `affects`, resúmenes de sesión, nota de estado); el error nunca devuelve ni registra el valor; falsos positivos con textos normales («casi positivos», como `password: <redacted>`).
+3. **Buscador y parecidos** (`src/modules/search/query.ts`, `src/infrastructure/sqlite/hybrid.ts`, `search.ts`, `similar.ts`): texto del usuario que rompa la sintaxis FTS5 (comillas, `*`, `-`, `:`, `NEAR`, `AND`/`OR`, paréntesis, solo palabras de relleno, emoji); `similar` nunca devuelve recuerdos de otro proyecto, ámbito o dueño; por debajo del nivel 11 el resultado es igual al de 1.6.0.
+4. **Sesiones interrumpidas** (`src/infrastructure/sqlite/activity.ts`, `sessions.ts`, `src/modules/sessions/`): solo se interrumpen sesiones del mismo proyecto; inactividad > 6 h; `previous` no expone sesiones ni resúmenes de otro proyecto; nada depende de cerrar la sesión.
+5. **Reglas del tablero** (`src/modules/ecosystem/board.ts`, `src/infrastructure/sqlite/board.ts`, `writes.ts`): tipos permitidos, `affects` con ≥ 2 proyectos del grupo, tope de 40 activos (qué cuenta y qué no), `ecosystem/estado-actual` solo desde el proyecto fuente y ≤ 600 caracteres, `memory-demote` y `group-source-set` (permisos y datos que conserva).
+6. **Bloque de arranque** (`src/modules/search/startup.ts`, `src/infrastructure/sqlite/startup.ts`, `src/app/startup-context.ts`): topes 5 000 / 1 500 / 800 aun con textos largos o multibyte; `--format 1` byte-idéntico a 1.6.0; el texto recuperado se presenta como dato, no como instrucción.
+7. **Protocolo v4 e instrucciones MCP** (`src/modules/memory-protocol/protocol.ts`, `src/modules/mcp/protocol.ts`, `src/interfaces/mcp/schemas.ts`): v4 ≤ 2 500 caracteres, instrucciones MCP < 2 000 generadas de la misma fuente, sin `claude|openai|anthropic`, versiones 1–3 sin cambios, valor por defecto 1; cada descripción de campo dice la verdad sobre su campo.
+8. **Contrato público y documentación:** solo agregar (acta 0024: nada renombrado ni quitado en tablas, columnas, campos JSON, comandos, herramientas ni códigos), `src/index.test.ts` y `tests/fixtures/sdk-contract.ts` con cada método nuevo, `CONTRACT_CODES`; muestreo de `docs/es` y `docs/en` contra el código (es y en con el mismo contenido).
+
+**Ya decidido (no es hallazgo salvo que el código no lo cumpla):** D-T8-1 a D-T8-8; la réplica de grupos en 1.8.0 y `SYNC_ECOSYSTEM_UNSUPPORTED` (R2); el valor por defecto del protocolo en 1; `setup` retirado.
+
+**Formato del reporte** (sin diffs completos; cada hallazgo con evidencia, o no se reporta):
+
+```
+Engram: <aprobable para publicar | N hallazgos: c críticos, a altos, m medios, b bajos>
+Hallazgos:
+H<n> · <crítico|alto|medio|bajo> · <área 1–8> · <archivo:línea en f181a1d>
+  Escenario: <entrada o estado concreto → resultado incorrecto>
+  Evidencia: <código citado (≤ 5 líneas) o comando corrido en la copia y su salida resumida>
+  Contra: <frase de la spec o del plan que incumple>
+  Arreglo mínimo sugerido: <1–2 líneas; no lo apliques>
+Revisado sin hallazgos: <por área 1–8, qué comprobaste en una línea>
+Dudas: <lo que no pudiste confirmar, o "ninguna">
+Árbol: <salida de git status --short al terminar (debe estar vacía)>
+```
+
+Severidad: **crítico** = pérdida o alteración de datos reales, o un secreto que se guarda o se filtra; **alto** = rompe un contrato (formato 1, réplica 1–3, SDK, solo agregar) o bloquea el uso normal; **medio** = conducta distinta a la spec o al plan en un caso borde; **bajo** = documentación o cosmético.
+
+**Después del reporte (orquestador):** cada hallazgo se verifica en una copia `git archive f181a1d` del scratchpad (sin tocar `forge614-engram`) y se clasifica real / dudoso / falso; se mide la corrida en `~/.codex/sessions` (tokens y % del límite semanal) y se agrega la fila en Notion «Corridas de agentes». Con hallazgos reales: tarea de correcciones (plan con parche probado en laboratorio, como T8) y nueva pasada de verificación; sin hallazgos reales: T10.
+
 ### Task 10: Publicación *(prompt tras aprobar T9)*
 
 PR, CI verde, fusión con rebase, tag, release; en la Mac del propietario: instalar, `forge614-engram intelligence-enable` (con respaldo) y verificar la base real (107 recuerdos intactos).
