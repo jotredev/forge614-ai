@@ -168,6 +168,16 @@ p.stdin.close(); f.write(p.stdout.read()); p.wait(); f.close()
 
 Se entrega al cerrar R1, con los pasos exactos: abrir Shell desde `~` y desde una carpeta sin Git con cada asistente y preguntar por una preferencia compartida; en una sesión real de Claude Code y de Codex, `/compact` y comprobar que el gancho vuelve a inyectar el bloque (Claude Code lo lanza con `compact`; Codex con el matcher `^(startup|resume|clear|compact)$`).
 
+**Cierre de R2 (2026-09-25, el propietario, verificado por el orquestador en los registros):**
+
+| Prueba | Claude Code | Codex |
+|---|---|---|
+| Shell desde una carpeta sin Git (`~/Desktop`) | aprobada: «no pude abrir la sesión de memoria… Engram no la reconoce como proyecto» y reglas generales cargadas | aprobada: sesión de Shell 13:50 local, bloque con los fijados `shared` en su registro |
+| Shell desde `~` | aprobada: sesión `a64d2380`, bloque «[Forge614 Engram] Startup block… 1088/5000 chars» con los fijados | aprobada: sesión de Shell 13:46 local, bloque con los fijados `shared` |
+| `/compact` | aprobada en Shell: tras compactar llegó de nuevo el bloque (1 088/5 000) | aprobada en Codex directo: compactado 19:39:29Z y bloque inyectado de nuevo 19:41:12Z (evidencia del gancho 19:41:12Z). En Shell, `/compact` con Codex responde «Comando desconocido» (mejora 23 de Shell) |
+
+Hallazgos de R2 para Shell 1.12.0: dentro de Shell la memoria llega dos veces (bloque del gancho de Engines y el propio de Shell en formato 1); Shell no pasa `/compact` a Codex (23); los permisos de Codex salen en JSON crudo (24); el modo automático de Shell con Codex falla con `unlessTrusted` (26).
+
 ## Tarea R3: reglamento con la matriz al día
 
 Se detalla al cerrar R2. Lleva juntos, para revalidar una sola vez: las seis celdas en `supported` con `verifiedAt` y la evidencia; la tabla «Agentes ya evaluados» alineada con la matriz (hoy dice Engram «N/A»); y los cambios acumulados del checklist: la definición de «byte a byte», el manual incrustado en el archivo principal como forma normal (el archivo aparte de Claude Code queda como excepción), la verificación del formato 2 por la transcripción y no por la evidencia del gancho, y la nota de laboratorio para Codex (variable explícita en el servidor MCP). Las celdas se validan contra el texto nuevo, para que publicarlo no las devuelva a `revalidate`.
