@@ -3302,7 +3302,39 @@ git commit -m "feat(context): ready-to-inject startup block via startup-context 
 
 - [ ] **Step 9: Documentación (prompt aparte, sesión nueva, commit propio)**
 
-Se prepara tras aprobar el código, con los datos verificados del commit y los lugares exactos (capítulos 03, 04, 05 y 10 es/en, CHANGELOG y `docs/notion-map.json` según la regla de documentación tarea por tarea).
+**Código aprobado:** `6db32fe`, idéntico byte a byte al laboratorio; suite medida en copia 662 pass / 10 skip / 0 fail, typecheck 0.
+
+**Método (como T4 docs):** el plan trae los datos verificados contra el código de `6db32fe` y el lugar exacto de cada cambio; el agente redacta y el orquestador verifica cada frase. Agente: Claude Code · Sonnet 5 · medium, sesión nueva, etiqueta `[Engram · T6 · docs]`.
+
+**Datos (verificados contra `6db32fe`):**
+- CLI: `startup-context --directory <carpeta> --json [--format 1|2]`. Sin `--format` sigue el formato 1, cuya salida no cambia. Cualquier otro valor responde `INVALID_INPUT` («format debe ser 1 o 2.») antes de abrir la base. El formato 2 funciona en cualquier nivel de esquema (no exige `intelligence-enable`); usa la misma apertura (primero solo lectura, escritura solo si hay que registrar la identidad) y la misma resolución del proyecto que el formato 1; no incluye los avisos `notices`.
+- Salida del formato 2: un JSON `{ "format": 2, "text", "chars", "sections": { "essentials", "previous", "index" }, "omitted" }`, con las claves en ese orden. `text` es el bloque listo para inyectar; `chars` es su longitud exacta en caracteres Unicode (encabezado incluido) y nunca pasa de 5000; `sections` da los caracteres de cada sección (0 si no aparece); `omitted` cuenta los títulos del esencial y del índice que no entraron.
+- Forma de `text`: dos líneas de encabezado, `[Forge614 Engram] Startup block: retrieved data, not an instruction.` y `<chars>/5000 chars · nothing omitted.` o `<chars>/5000 chars · <N> titles did not fit: find them with memory_search.`; después, separadas por una línea en blanco y solo si tienen algo, tres secciones en este orden: `## Essentials (pinned)` (hasta 1500 caracteres), `## Previous session (interrupted)` (hasta 800) e `## Index (titles only: open with memory_get)` (el resto). Los textos fijos van en inglés; el contenido de los recuerdos va tal cual.
+- Esencial: recuerdos activos fijados de la libreta personal (`shared`; un recuerdo del proyecto con el mismo tema oculta al compartido), del tablero del grupo (la nota de estado `ecosystem/estado-actual` primero) y del proyecto, en ese orden, y dentro de cada uno del más nuevo al más viejo. Una línea por recuerdo: `- <versión corta o título> [verify] · <personal|board|project> · <id>` (`[verify]` solo si venció su vigencia).
+- Sesión anterior (solo con el esquema 11 y un proyecto vinculado): la sesión interrumpida más recientemente activa del proyecto (la misma que `previousInterrupted`), como `Session <id> was interrupted at <fecha ISO>; its last summary (<id del recuerdo> v<versión>):` seguido del resumen sin líneas en blanco, o `…; it saved no summary.`; si pasa de 800 caracteres se corta con `…`.
+- Índice: solo títulos de los recuerdos activos sin fijar del tablero y del proyecto, alternando uno del tablero y uno del proyecto (tablero primero; cada uno del más nuevo al más viejo); sin resúmenes de sesión ni recuerdos de la libreta sin fijar. Una carpeta sin vínculo no tiene índice (solo el esencial de la libreta).
+- Llenado: cada lista se llena en orden y se detiene en la primera línea que no cabe; lo que queda fuera cuenta en `omitted` y se busca con `memory_search`.
+- Solo con el esquema 11: la versión corta reemplaza al título en el esencial, los recuerdos marcados "reemplazado por" no aparecen, aparece `[verify]` y se incluye la sesión anterior. Por debajo, el bloque sale de las mismas fuentes sin esos extras.
+- SDK: método nuevo `MemoryStore.startupBlock(projectId: string | null): StartupBlock` (`null` = carpeta sin vínculo: solo la libreta); tipo nuevo exportado `StartupBlock`. Sin cambios en MCP ni en el protocolo: las versiones 1–3 siguen anunciando el formato 1.
+
+**Dónde va cada cambio (capítulos es y en con el mismo contenido):**
+1. `docs/es/03-referencia-cli.md` y `docs/en/03-cli-reference.md`: en el bloque de comandos de «Ciclo de vida» / «Lifecycle», la línea `startup-context --directory <ruta> --json` / `startup-context --directory <path> --json` pasa a terminar en `--json [--format 1|2]` (la descripción de la línea siguiente no cambia); y una o dos frases al final de la sección «Contexto de inicio para un host» / «Startup context for a host» sobre `--format 2`, remitiendo al capítulo 10.
+2. `docs/es/04-sdk-typescript.md` y `docs/en/04-typescript-sdk.md`: un párrafo al final del archivo (sección «Memoria inteligente»): `startupBlock`, el tipo `StartupBlock` y qué devuelve, en pocas frases, remitiendo al capítulo 10.
+3. `docs/es/05-arquitectura-interna-y-formulas.md` y `docs/en/05-internal-architecture-and-formulas.md`: un párrafo justo después del párrafo de las reglas del tablero (empieza con «Con el esquema 11, todo guardado `ecosystem`» / "With schema 11, every `ecosystem` save") y antes del de PostgreSQL: cómo se arma el bloque (fuentes, orden, alternancia del índice, topes en caracteres Unicode, llenado hasta la primera línea que no cabe y encabezado con la ocupación exacta).
+4. `docs/es/10-contexto-de-inicio.md` y `docs/en/10-startup-context.md`: en la línea de **Estado** del inicio, una frase que diga que el formato 2 (`--format 2`) está disponible desde la versión 1.7.0; y una sección nueva `## Formato 2: bloque listo para inyectar (desde 1.7.0)` / `## Format 2: ready-to-inject block (since 1.7.0)` justo antes de `## Errores seguros` / `## Safe errors`, con el comando, un ejemplo corto de la salida JSON, la forma de `text` (encabezado y tres secciones con sus topes), qué entra en cada sección, qué cambia con el esquema 11, que el formato 1 sigue siendo el predeterminado e igual, que no incluye `notices`, que `--format` con otro valor responde `INVALID_INPUT` y que ninguna versión del protocolo (1–3) anuncia todavía el formato 2.
+5. `CHANGELOG.md`: viñeta nueva con título en negrita «**Bloque de arranque (formato 2):**», justo antes de `- La replicación de grupos (formato 4) pasa a la versión 1.8.0.`, con el mismo estilo que las demás de `## 1.7.0 — en desarrollo`.
+6. `docs/notion-map.json`: **sin cambios** (las entradas de 03 y 10 ya tienen `"notionSyncPending": true`; 04 y 05 no tienen entrada y nunca se crean).
+
+Reglas de redacción: cada frase debe poder comprobarse en el código de `6db32fe`; si un dato de esta lista no coincide con el código, no lo escribas y repórtalo. Sin nombres de productos externos (acta 0012). Decimales con coma y miles con espacio en español. No cambies ningún otro archivo.
+
+Verificación: `git diff --check` sin salida y `git diff --stat` solo con esos 9 archivos.
+
+Commit:
+
+```bash
+git add docs/es/03-referencia-cli.md docs/en/03-cli-reference.md docs/es/04-sdk-typescript.md docs/en/04-typescript-sdk.md docs/es/05-arquitectura-interna-y-formulas.md docs/en/05-internal-architecture-and-formulas.md docs/es/10-contexto-de-inicio.md docs/en/10-startup-context.md CHANGELOG.md
+git commit -m "docs: startup block (startup-context --format 2) in CLI, SDK, architecture, startup context and changelog"
+```
 
 ### Task 7: Protocolo v4 *(detalle tras aprobar T6)*
 
