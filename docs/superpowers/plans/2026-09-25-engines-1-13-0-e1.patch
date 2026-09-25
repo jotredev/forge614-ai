@@ -1,0 +1,1341 @@
+diff --git a/src/app/instructions-write-decision.test.ts b/src/app/instructions-write-decision.test.ts
+index 750bb76..eeaed91 100644
+--- a/src/app/instructions-write-decision.test.ts
++++ b/src/app/instructions-write-decision.test.ts
+@@ -25,15 +25,14 @@ describe("decideInstructionsInstall", () => {
+     expect(decision.kind).toBe("unsupported");
+   });
+ 
+-  test("claude-code proposes writes for the satellite file and a one-line import in CLAUDE.md", async () => {
++  // D5: Claude Code embeds the manual directly, the same as Codex — no more satellite file.
++  test("claude-code embeds the manual directly in CLAUDE.md, same as Codex", async () => {
+     const decision = await decideInstructionsInstall(claudeCodeAdapter, home, markdown);
+     expect(decision.kind).toBe("write");
+     if (decision.kind !== "write") throw new Error("unreachable");
+-    expect(decision.writes).toHaveLength(2);
+-    const claudeMdWrite = decision.writes.find((w) => w.path === join(home, ".claude", "CLAUDE.md"))!;
+-    expect(claudeMdWrite.afterContent).toContain("@forge614-engram-memory-protocol.md");
+-    const contentWrite = decision.writes.find((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))!;
+-    expect(contentWrite.afterContent).toContain("Call memory_context.");
++    expect(decision.writes).toHaveLength(1);
++    expect(decision.writes[0].path).toBe(join(home, ".claude", "CLAUDE.md"));
++    expect(decision.writes[0].afterContent).toContain("Call memory_context.");
+   });
+ 
+   test("claude-code preserves unrelated existing content in CLAUDE.md", async () => {
+@@ -43,7 +42,57 @@ describe("decideInstructionsInstall", () => {
+     if (decision.kind !== "write") throw new Error("unreachable");
+     const claudeMdWrite = decision.writes.find((w) => w.path === join(home, ".claude", "CLAUDE.md"))!;
+     expect(claudeMdWrite.afterContent).toContain("@RTK.md");
+-    expect(claudeMdWrite.afterContent).toContain("@forge614-engram-memory-protocol.md");
++    expect(claudeMdWrite.afterContent).toContain("Call memory_context.");
++  });
++
++  describe("D5 migration: a legacy '@<file>' satellite reference on disk", () => {
++    const MANAGED_HEADER = "<!-- Managed by Forge614 Engines. Do not edit by hand; changes are overwritten on the next apply. -->";
++    const BEGIN = "<!-- forge614-engines:begin engram-memory-protocol -->";
++    const END = "<!-- forge614-engines:end engram-memory-protocol -->";
++    const legacyClaudeMd = `${BEGIN}\n@forge614-engram-memory-protocol.md\n${END}\n`;
++
++    test("replaces the reference block with the embedded manual and deletes the satellite when it carries Engines' own managed-header marker", async () => {
++      mkdirSync(join(home, ".claude"), { recursive: true });
++      writeFileSync(join(home, ".claude", "CLAUDE.md"), legacyClaudeMd);
++      writeFileSync(join(home, ".claude", "forge614-engram-memory-protocol.md"), `${MANAGED_HEADER}\n\nOld manual text.`);
++
++      const decision = await decideInstructionsInstall(claudeCodeAdapter, home, markdown);
++
++      expect(decision.kind).toBe("write");
++      if (decision.kind !== "write") throw new Error("unreachable");
++      expect(decision.notice).toBeUndefined();
++      const claudeMdWrite = decision.writes.find((w) => w.path === join(home, ".claude", "CLAUDE.md"))!;
++      expect(claudeMdWrite.afterContent).toContain("Call memory_context.");
++      expect(claudeMdWrite.afterContent).not.toContain("@forge614-engram-memory-protocol.md");
++      const satelliteWrite = decision.writes.find((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))!;
++      expect(satelliteWrite.delete).toBe(true);
++    });
++
++    test("leaves a hand-authored satellite file untouched and reports a notice instead of deleting it", async () => {
++      mkdirSync(join(home, ".claude"), { recursive: true });
++      writeFileSync(join(home, ".claude", "CLAUDE.md"), legacyClaudeMd);
++      writeFileSync(join(home, ".claude", "forge614-engram-memory-protocol.md"), "My own private notes about Engram, written by hand.");
++
++      const decision = await decideInstructionsInstall(claudeCodeAdapter, home, markdown);
++
++      expect(decision.kind).toBe("write");
++      if (decision.kind !== "write") throw new Error("unreachable");
++      expect(decision.writes.some((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))).toBe(false);
++      expect(decision.notice).toContain(join(home, ".claude", "forge614-engram-memory-protocol.md"));
++    });
++
++    test("migrates cleanly, with no notice, when the referenced satellite file is already gone", async () => {
++      mkdirSync(join(home, ".claude"), { recursive: true });
++      writeFileSync(join(home, ".claude", "CLAUDE.md"), legacyClaudeMd);
++      // No satellite file written at all.
++
++      const decision = await decideInstructionsInstall(claudeCodeAdapter, home, markdown);
++
++      expect(decision.kind).toBe("write");
++      if (decision.kind !== "write") throw new Error("unreachable");
++      expect(decision.notice).toBeUndefined();
++      expect(decision.writes.some((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))).toBe(false);
++    });
+   });
+ 
+   test("claude-code is a noop the second time nothing changed", async () => {
+@@ -98,7 +147,7 @@ describe("decideInstructionsRemove", () => {
+     expect((await decideInstructionsRemove(claudeCodeAdapter, home)).kind).toBe("noop");
+   });
+ 
+-  test("removes the managed block and marks the satellite file for deletion for claude-code", async () => {
++  test("removes the embedded block for claude-code (D5: same shape as codex, no satellite file)", async () => {
+     const installDecision = await decideInstructionsInstall(claudeCodeAdapter, home, markdown);
+     if (installDecision.kind !== "write") throw new Error("unreachable");
+     mkdirSync(join(home, ".claude"), { recursive: true });
+@@ -108,14 +157,36 @@ describe("decideInstructionsRemove", () => {
+     const removeDecision = await decideInstructionsRemove(claudeCodeAdapter, home);
+     expect(removeDecision.kind).toBe("write");
+     if (removeDecision.kind !== "write") throw new Error("unreachable");
+-    const claudeMdWrite = removeDecision.writes.find((w) => w.path === join(home, ".claude", "CLAUDE.md"))!;
++    expect(removeDecision.writes).toHaveLength(1);
+     // installDecision was computed against an empty CLAUDE.md (the file did not exist yet when
+     // decideInstructionsInstall ran), so its own write for CLAUDE.md — applied below — overwrites
+     // the "@RTK.md\n" set just before the loop. The primary file's real state going into removal is
+     // therefore "installed onto empty content", so removal restores that exact original: "".
+-    expect(claudeMdWrite.afterContent).toBe("");
+-    const contentWrite = removeDecision.writes.find((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))!;
+-    expect(contentWrite.delete).toBe(true);
++    expect(removeDecision.writes[0].afterContent).toBe("");
++  });
++
++  test("D5 migration: removal also deletes a legacy satellite it can prove is its own, and warns instead when it cannot", async () => {
++    const MANAGED_HEADER = "<!-- Managed by Forge614 Engines. Do not edit by hand; changes are overwritten on the next apply. -->";
++    const legacyClaudeMd =
++      "<!-- forge614-engines:begin engram-memory-protocol -->\n@forge614-engram-memory-protocol.md\n<!-- forge614-engines:end engram-memory-protocol -->\n";
++    mkdirSync(join(home, ".claude"), { recursive: true });
++    writeFileSync(join(home, ".claude", "CLAUDE.md"), legacyClaudeMd);
++    writeFileSync(join(home, ".claude", "forge614-engram-memory-protocol.md"), `${MANAGED_HEADER}\n\nOld manual text.`);
++
++    const provable = await decideInstructionsRemove(claudeCodeAdapter, home);
++    expect(provable.kind).toBe("write");
++    if (provable.kind !== "write") throw new Error("unreachable");
++    expect(provable.notice).toBeUndefined();
++    const satelliteWrite = provable.writes.find((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))!;
++    expect(satelliteWrite.delete).toBe(true);
++
++    writeFileSync(join(home, ".claude", "CLAUDE.md"), legacyClaudeMd);
++    writeFileSync(join(home, ".claude", "forge614-engram-memory-protocol.md"), "Hand-authored notes, not Engines' own.");
++
++    const unprovable = await decideInstructionsRemove(claudeCodeAdapter, home);
++    if (unprovable.kind !== "write") throw new Error("unreachable");
++    expect(unprovable.writes.some((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))).toBe(false);
++    expect(unprovable.notice).toContain(join(home, ".claude", "forge614-engram-memory-protocol.md"));
+   });
+ 
+   test("removes the embedded block for codex", async () => {
+diff --git a/src/app/instructions-write-decision.ts b/src/app/instructions-write-decision.ts
+index dc84ca4..c729a76 100644
+--- a/src/app/instructions-write-decision.ts
++++ b/src/app/instructions-write-decision.ts
+@@ -1,5 +1,5 @@
+ import { createHash } from "node:crypto";
+-import { basename } from "node:path";
++import { basename, dirname, join } from "node:path";
+ import { readFile } from "node:fs/promises";
+ import type { AgentAdapter } from "../modules/agents/types";
+ import { blockMarkers, extractBlock, withBlock } from "../modules/instructions-writer/block";
+@@ -12,7 +12,7 @@ const MANAGED_HEADER =
+ export type InstructionsDecision =
+   | { kind: "unsupported"; reason: string }
+   | { kind: "noop" }
+-  | { kind: "write"; writes: PlanWrite[] }
++  | { kind: "write"; writes: PlanWrite[]; notice?: string }
+   | { kind: "blocked"; reason: string; details: string };
+ 
+ async function readOrEmpty(path: string): Promise<{ raw: string; exists: boolean }> {
+@@ -28,6 +28,34 @@ function hashOf(content: string): string {
+   return createHash("sha256").update(content).digest("hex");
+ }
+ 
++// D5: an agent that no longer declares a contentFile (Claude Code, as of this change — see
++// claude-code.ts) may still carry a pre-D5 "@<file>" reference block on disk, pointing at a
++// satellite instructions file. matches that shape so the embed path below can migrate it.
++const SATELLITE_REFERENCE_PATTERN = /^@(.+)$/;
++
++/**
++ * D5 migration: when a block being replaced or removed turns out to be a legacy "@<file>"
++ * satellite reference, decides what becomes of that satellite file. It is deleted only when
++ * Engines can prove it wrote it — its content starts with the exact MANAGED_HEADER marker every
++ * satellite file Engines ever wrote always carried. Content Engines cannot vouch for (hand-authored,
++ * hand-edited past recognition, or simply a coincidentally-named file) is left in place and reported
++ * as a notice instead: never a failure, and never silently destroyed on the strength of a stale
++ * block pointing at it.
++ */
++async function resolveLegacySatellite(currentBlock: string | undefined, primaryPath: string): Promise<{ write?: PlanWrite; notice?: string }> {
++  const match = currentBlock?.match(SATELLITE_REFERENCE_PATTERN);
++  if (!match) return {};
++  const satellitePath = join(dirname(primaryPath), match[1]!);
++  const satellite = await readOrEmpty(satellitePath);
++  if (!satellite.exists) return {};
++  if (satellite.raw.startsWith(MANAGED_HEADER)) {
++    return { write: { path: satellitePath, beforeHash: hashOf(satellite.raw), afterContent: "", delete: true } };
++  }
++  return {
++    notice: `A legacy satellite instructions file at ${satellitePath} could not be confirmed as Engines' own (it does not start with Engines' managed-header marker) and was left in place; delete it manually if it is no longer needed.`,
++  };
++}
++
+ export async function decideInstructionsInstall(
+   adapter: AgentAdapter,
+   home: string,
+@@ -85,12 +113,19 @@ export async function decideInstructionsInstall(
+         details: `The memory protocol's content contains a string that collides with ${adapter.label}'s managed-block markers, so it cannot be safely embedded in ${primaryPath}`,
+       };
+     }
+-    if (extractBlock(primary.raw, MEMORY_PROTOCOL_BLOCK_ID) !== desiredBlock) {
++    const currentBlock = extractBlock(primary.raw, MEMORY_PROTOCOL_BLOCK_ID);
++    if (currentBlock !== desiredBlock) {
+       writes.push({
+         path: primaryPath,
+         beforeHash: hashOf(primary.raw),
+         afterContent: withBlock(primary.raw, MEMORY_PROTOCOL_BLOCK_ID, desiredBlock),
+       });
++      // D5: currentBlock may be a pre-migration "@<file>" reference (this agent used to have a
++      // contentFile, or one day will lose it the way Claude Code just did) — resolve its satellite
++      // file's fate alongside the block rewrite.
++      const legacy = await resolveLegacySatellite(currentBlock, primaryPath);
++      if (legacy.write) writes.push(legacy.write);
++      if (legacy.notice) return { kind: "write", writes, notice: legacy.notice };
+     }
+   }
+ 
+@@ -103,7 +138,8 @@ export async function decideInstructionsRemove(adapter: AgentAdapter, home: stri
+ 
+   const primaryPath = target.primaryFile(home);
+   const primary = await readOrEmpty(primaryPath);
+-  if (extractBlock(primary.raw, MEMORY_PROTOCOL_BLOCK_ID) === undefined) return { kind: "noop" };
++  const currentBlock = extractBlock(primary.raw, MEMORY_PROTOCOL_BLOCK_ID);
++  if (currentBlock === undefined) return { kind: "noop" };
+ 
+   const writes: PlanWrite[] = [
+     {
+@@ -119,7 +155,12 @@ export async function decideInstructionsRemove(adapter: AgentAdapter, home: stri
+     if (content.exists) {
+       writes.push({ path: contentPath, beforeHash: hashOf(content.raw), afterContent: "", delete: true });
+     }
++    return { kind: "write", writes };
+   }
+ 
+-  return { kind: "write", writes };
++  // D5: this agent has no contentFile today, but the block being removed may still be a pre-D5
++  // "@<file>" reference — same ownership-proof rule as the install/migration path.
++  const legacy = await resolveLegacySatellite(currentBlock, primaryPath);
++  if (legacy.write) writes.push(legacy.write);
++  return { kind: "write", writes, ...(legacy.notice ? { notice: legacy.notice } : {}) };
+ }
+diff --git a/src/app/pipeline.test.ts b/src/app/pipeline.test.ts
+index 0f311cb..a04b40a 100644
+--- a/src/app/pipeline.test.ts
++++ b/src/app/pipeline.test.ts
+@@ -40,7 +40,27 @@ function writeProtocolFixtureScript(home: string): string {
+     scopes: { shared: "s", project: "p" },
+     security: { neverSave: ["passwords"] },
+   };
+-  writeFileSync(script, `console.log(${JSON.stringify(JSON.stringify(protocol))});`);
++  const protocolV4 = {
++    id: "forge614-engram-memory",
++    version: 4,
++    instructions: protocol.instructions,
++    mcpInstructions: protocol.instructions,
++    startupContext: { command: "x", format: 2, description: "d" },
++  };
++  // Argv-aware, like the real forge614-engram 1.7.0+: answers --protocol-version 4 with a v4
++  // payload, and anything else (including no flag at all) with v1 — see memory-protocol-client.ts.
++  writeFileSync(
++    script,
++    [
++      "const args = process.argv.slice(2);",
++      'const idx = args.indexOf("--protocol-version");',
++      'if (idx !== -1 && args[idx + 1] === "4") {',
++      `  console.log(${JSON.stringify(JSON.stringify(protocolV4))});`,
++      "} else {",
++      `  console.log(${JSON.stringify(JSON.stringify(protocol))});`,
++      "}",
++    ].join("\n"),
++  );
+   return script;
+ }
+ 
+diff --git a/src/app/plan-memory-install.test.ts b/src/app/plan-memory-install.test.ts
+index 0ebe875..f4f756c 100644
+--- a/src/app/plan-memory-install.test.ts
++++ b/src/app/plan-memory-install.test.ts
+@@ -33,6 +33,14 @@ const PROTOCOL = {
+   security: { neverSave: ["passwords"] },
+ };
+ 
++const PROTOCOL_V4 = {
++  id: "forge614-engram-memory",
++  version: 4,
++  instructions: PROTOCOL.instructions,
++  mcpInstructions: PROTOCOL.instructions,
++  startupContext: { command: "forge614-engram startup-context --directory <dir> --json --format 2", format: 2, description: "d" },
++};
++
+ beforeEach(() => {
+   previousForgeHome = process.env.FORGE614_HOME;
+   delete process.env.FORGE614_HOME;
+@@ -42,7 +50,20 @@ beforeEach(() => {
+   registry.register(codexAdapter);
+   registry.register(cursorAdapter);
+   okScript = join(home, "ok-engram.js");
+-  writeFileSync(okScript, `console.log(${JSON.stringify(JSON.stringify(PROTOCOL))});`);
++  // Argv-aware, like the real forge614-engram 1.7.0+: answers --protocol-version 4 with a v4
++  // payload, and anything else (including no flag at all) with v1 — see memory-protocol-client.ts.
++  writeFileSync(
++    okScript,
++    [
++      "const args = process.argv.slice(2);",
++      'const idx = args.indexOf("--protocol-version");',
++      'if (idx !== -1 && args[idx + 1] === "4") {',
++      `  console.log(${JSON.stringify(JSON.stringify(PROTOCOL_V4))});`,
++      "} else {",
++      `  console.log(${JSON.stringify(JSON.stringify(PROTOCOL))});`,
++      "}",
++    ].join("\n"),
++  );
+   missingCommand = join(home, "does-not-exist-engram");
+ });
+ 
+@@ -61,7 +82,9 @@ describe("planMemoryInstall", () => {
+     // config write itself is entirely correct.
+     const plan = await planMemoryInstall(registry, { agentId: "claude-code", home, protocolOptions: protocolOptions() });
+ 
+-    expect(plan.writes.length).toBeGreaterThanOrEqual(4);
++    // D5: Claude Code now embeds the manual directly (one CLAUDE.md write, not a satellite-file
++    // write plus a one-line CLAUDE.md reference), so the floor drops by one: mcp + instructions + hook.
++    expect(plan.writes.length).toBeGreaterThanOrEqual(3);
+     const mcpWrite = plan.writes.find((w) => w.path === join(home, ".claude.json"))!;
+     expect(JSON.parse(mcpWrite.afterContent).mcpServers["forge614-engram"]).toEqual({
+       command: resolveEngramMcpServer(home).command,
+@@ -212,7 +235,7 @@ describe("planMemoryInstall", () => {
+     async () => {
+       const canonicalPath = resolveEngramExecutable(home);
+       mkdirSync(dirname(canonicalPath), { recursive: true });
+-      writeFileSync(canonicalPath, `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(PROTOCOL))});\n`);
++      writeFileSync(canonicalPath, `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(PROTOCOL_V4))});\n`);
+       chmodSync(canonicalPath, 0o755);
+ 
+       const plan = await planMemoryInstall(registry, { agentId: "claude-code", home });
+diff --git a/src/app/plan-memory-install.ts b/src/app/plan-memory-install.ts
+index 20cefbe..65d7ae9 100644
+--- a/src/app/plan-memory-install.ts
++++ b/src/app/plan-memory-install.ts
+@@ -21,7 +21,7 @@ export interface PlanMemoryInstallInput {
+ }
+ 
+ function instructionsComponentStatus(decision: InstructionsDecision): MemoryIntegrationComponentStatus {
+-  return decision.kind === "write" ? { kind: "write" } : decision;
++  return decision.kind === "write" ? { kind: "write", ...(decision.notice ? { notice: decision.notice } : {}) } : decision;
+ }
+ 
+ export async function planMemoryInstall(registry: AgentRegistry, input: PlanMemoryInstallInput): Promise<Plan> {
+@@ -29,7 +29,7 @@ export async function planMemoryInstall(registry: AgentRegistry, input: PlanMemo
+   if (!adapter) throw new Error(`Unknown agent: ${input.agentId}`);
+   if (!adapter.capabilities.supportsMcp) throw new Error(`${input.agentId} does not support MCP servers`);
+ 
+-  const { protocol, fingerprint } = await fetchMemoryProtocol(input.home, input.protocolOptions);
++  const { protocol, fingerprint, legacyProtocolNotice } = await fetchMemoryProtocol(input.home, input.protocolOptions);
+   const protocolMarkdown = renderProtocolMarkdown(protocol);
+ 
+   const engramServer = resolveEngramMcpServer(input.home);
+@@ -109,7 +109,13 @@ export async function planMemoryInstall(registry: AgentRegistry, input: PlanMemo
+     noop: writes.length === 0,
+     writes,
+     metadata: {
+-      protocol: { source: "forge614-engram memory-protocol --json", id: protocol.id, version: protocol.version, fingerprint: fingerprint },
++      protocol: {
++        source: "forge614-engram memory-protocol --json",
++        id: protocol.id,
++        version: protocol.version,
++        fingerprint: fingerprint,
++        ...(legacyProtocolNotice ? { legacyNotice: legacyProtocolNotice } : {}),
++      },
+       mcp: { path: mcpDecision.configPath, status: mcpStatus },
+       instructions: { paths: instructionsPaths, status: instructionsStatus },
+       hook: { path: hookDecision.configPath, status: hookStatus, runtimeStatus: hookRuntimeStatus },
+diff --git a/src/app/plan-memory-remove.test.ts b/src/app/plan-memory-remove.test.ts
+index e4a54d4..23922e8 100644
+--- a/src/app/plan-memory-remove.test.ts
++++ b/src/app/plan-memory-remove.test.ts
+@@ -16,16 +16,34 @@ let home: string;
+ let registry: AgentRegistry;
+ let previousForgeHome: string | undefined;
+ 
+-const PROTOCOL_SCRIPT_CONTENT = `console.log(${JSON.stringify(
+-  JSON.stringify({
+-    id: "forge614-engram-memory",
+-    version: 1,
+-    instructions: "Call memory_context.",
+-    lifecycle: { start: ["s"], save: ["s"], compact: ["s"], resume: ["s"], end: ["s"] },
+-    scopes: { shared: "s", project: "p" },
+-    security: { neverSave: ["passwords"] },
+-  }),
+-)});`;
++// Argv-aware, like the real forge614-engram 1.7.0+: answers --protocol-version 4 with a v4
++// payload, and anything else (including no flag at all) with v1 — see memory-protocol-client.ts.
++const PROTOCOL_SCRIPT_CONTENT = [
++  "const args = process.argv.slice(2);",
++  'const idx = args.indexOf("--protocol-version");',
++  'if (idx !== -1 && args[idx + 1] === "4") {',
++  `  console.log(${JSON.stringify(
++    JSON.stringify({
++      id: "forge614-engram-memory",
++      version: 4,
++      instructions: "Call memory_context.",
++      mcpInstructions: "Call memory_context.",
++      startupContext: { command: "x", format: 2, description: "d" },
++    }),
++  )});`,
++  "} else {",
++  `  console.log(${JSON.stringify(
++    JSON.stringify({
++      id: "forge614-engram-memory",
++      version: 1,
++      instructions: "Call memory_context.",
++      lifecycle: { start: ["s"], save: ["s"], compact: ["s"], resume: ["s"], end: ["s"] },
++      scopes: { shared: "s", project: "p" },
++      security: { neverSave: ["passwords"] },
++    }),
++  )});`,
++  "}",
++].join("\n");
+ 
+ beforeEach(() => {
+   previousForgeHome = process.env.FORGE614_HOME;
+@@ -71,8 +89,10 @@ describe("planMemoryRemove", () => {
+     expect(plan.noop).toBe(false);
+     const claudeMdWrite = plan.writes.find((w) => w.path === join(home, ".claude.json"))!;
+     expect(JSON.parse(claudeMdWrite.afterContent).mcpServers?.["forge614-engram"]).toBeUndefined();
+-    const contentWrite = plan.writes.find((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))!;
+-    expect(contentWrite.delete).toBe(true);
++    // D5: Claude Code embeds the manual directly now, so removal is a single CLAUDE.md
++    // block-strip — no satellite file to delete (see instructions-write-decision.test.ts for
++    // the legacy-satellite migration/removal cleanup path).
++    expect(plan.writes.some((w) => w.path === join(home, ".claude", "forge614-engram-memory-protocol.md"))).toBe(false);
+   });
+ 
+   test("blocks the mcp component as data (not a thrown error) when the entry is unrecognized", async () => {
+diff --git a/src/app/plan-memory-remove.ts b/src/app/plan-memory-remove.ts
+index 96f05d6..6c7eba2 100644
+--- a/src/app/plan-memory-remove.ts
++++ b/src/app/plan-memory-remove.ts
+@@ -29,7 +29,7 @@ export interface PlanMemoryRemoveInput {
+ }
+ 
+ function instructionsComponentStatus(decision: InstructionsDecision): MemoryIntegrationComponentStatus {
+-  return decision.kind === "write" ? { kind: "write" } : decision;
++  return decision.kind === "write" ? { kind: "write", ...(decision.notice ? { notice: decision.notice } : {}) } : decision;
+ }
+ 
+ export async function planMemoryRemove(registry: AgentRegistry, input: PlanMemoryRemoveInput): Promise<Plan> {
+diff --git a/src/app/verify-memory-integration.test.ts b/src/app/verify-memory-integration.test.ts
+index 623b11e..70fa281 100644
+--- a/src/app/verify-memory-integration.test.ts
++++ b/src/app/verify-memory-integration.test.ts
+@@ -23,16 +23,63 @@ const STARTUP_CONTEXT_RESULT = {
+   project: { status: "unbound", projectId: null, context: null },
+ };
+ 
+-const PROTOCOL_SCRIPT_CONTENT = `console.log(${JSON.stringify(
+-  JSON.stringify({
++/**
++ * Argv-aware, like the real forge614-engram 1.7.0+: answers --protocol-version 4 with a v4
++ * payload built from `instructions`, and anything else (including no flag at all) with v1 —
++ * see memory-protocol-client.ts. `rejectV4` instead mimics an Engram older than 1.7.0, which
++ * rejects the flag outright with Engram's own `{code:"INVALID_INPUT",...}` stderr envelope.
++ */
++function protocolScript(instructions: string, options?: { rejectV4?: boolean }): string {
++  const v1 = {
+     id: "forge614-engram-memory",
+     version: 1,
+-    instructions: "Call memory_context.",
++    instructions,
+     lifecycle: { start: ["s"], save: ["s"], compact: ["s"], resume: ["s"], end: ["s"] },
+     scopes: { shared: "s", project: "p" },
+     security: { neverSave: ["passwords"] },
+-  }),
+-)});`;
++  };
++  const v4 = {
++    id: "forge614-engram-memory",
++    version: 4,
++    instructions,
++    mcpInstructions: instructions,
++    startupContext: { command: "x", format: 2, description: "d" },
++  };
++  return [
++    "const args = process.argv.slice(2);",
++    'const idx = args.indexOf("--protocol-version");',
++    'const wantsV4 = idx !== -1 && args[idx + 1] === "4";',
++    options?.rejectV4
++      ? [
++          "if (wantsV4) {",
++          `  process.stderr.write(${JSON.stringify(JSON.stringify({ code: "INVALID_INPUT", error: "protocol-version debe ser 1, 2, 3 o 4." }))});`,
++          "  process.exit(1);",
++          "}",
++        ].join("\n")
++      : "",
++    `console.log(wantsV4 ? ${JSON.stringify(JSON.stringify(v4))} : ${JSON.stringify(JSON.stringify(v1))});`,
++  ].join("\n");
++}
++
++const PROTOCOL_SCRIPT_CONTENT = protocolScript("Call memory_context.");
++
++/**
++ * Argv-aware, like the real forge614-engram 1.7.0+: rejects --format 2 with Engram's own
++ * INVALID_INPUT envelope (this fixture always plays a pre-1.7.0 Engram — see startup-context-client.ts's
++ * fetchStartupBlock), so a caller that goes through the hook (fetchStartupBlock) falls back to
++ * format 1, exactly as it did before format 2 existed. A direct format-1 caller (probeEcosystemBlock)
++ * is unaffected either way, since it never requests --format at all.
++ */
++function startupScript(payload: unknown): string {
++  return [
++    "const args = process.argv.slice(2);",
++    'if (args.includes("--format")) {',
++    `  process.stderr.write(${JSON.stringify(JSON.stringify({ code: "INVALID_INPUT", error: "format debe ser 1 o 2." }))});`,
++    "  process.exit(1);",
++    "}",
++    `console.log(${JSON.stringify(JSON.stringify(payload))});`,
++  ].join("\n");
++}
+ 
+ beforeEach(() => {
+   previousForgeHome = process.env.FORGE614_HOME;
+@@ -43,7 +90,7 @@ beforeEach(() => {
+   registry.register(codexAdapter);
+   registry.register(cursorAdapter);
+   startupContextScript = join(home, "startup-context.js");
+-  writeFileSync(startupContextScript, `console.log(${JSON.stringify(JSON.stringify(STARTUP_CONTEXT_RESULT))});`);
++  writeFileSync(startupContextScript, startupScript(STARTUP_CONTEXT_RESULT));
+ });
+ 
+ afterEach(() => {
+@@ -229,15 +276,33 @@ describe("verifyMemoryIntegration", () => {
+     expect(result.overallStatus).toBe("complete");
+   });
+ 
+-  test("reports instructions absent when the satellite content file is missing, even though CLAUDE.md still references it", async () => {
+-    await installFor("claude-code");
++  // D5: Claude Code embeds the manual directly now (no satellite file — see
++  // instructions-write-decision.test.ts for the migration itself). A machine that still has the
++  // pre-D5 "@<file>" reference block is reported present (the block is there) but D3's drift check
++  // must treat that reference shape as an outdated manual, never as up to date.
++  test("treats a pre-D5 '@<file>' reference block as present but outdated, with the exact refresh command", async () => {
++    mkdirSync(join(home, ".claude"), { recursive: true });
++    writeFileSync(
++      join(home, ".claude", "CLAUDE.md"),
++      "<!-- forge614-engines:begin engram-memory-protocol -->\n@forge614-engram-memory-protocol.md\n<!-- forge614-engines:end engram-memory-protocol -->\n",
++    );
++    writeFileSync(
++      join(home, ".claude", "forge614-engram-memory-protocol.md"),
++      "<!-- Managed by Forge614 Engines. Do not edit by hand; changes are overwritten on the next apply. -->\n\nOld manual text.",
++    );
+ 
+-    rmSync(join(home, ".claude", "forge614-engram-memory-protocol.md"));
++    const d5Script = join(home, "d5-drift.js");
++    writeFileSync(d5Script, protocolScript("Call memory_context."));
+ 
+-    const result = await verifyMemoryIntegration(registry, { agentId: "claude-code", home });
++    const result = await verifyMemoryIntegration(registry, {
++      agentId: "claude-code",
++      home,
++      protocolOptions: { command: process.execPath, args: [d5Script] },
++    });
+ 
+-    expect(result.instructions.present).toBe(false);
+-    expect(result.overallStatus).toBe("partial");
++    expect(result.instructions.present).toBe(true);
++    expect(result.instructions.upToDate).toBe(false);
++    expect(result.instructions.driftNotice).toContain("plan memory-install --agent claude-code");
+   });
+ 
+   describe("engram ecosystem block (structural, never by version)", () => {
+@@ -276,4 +341,102 @@ describe("verifyMemoryIntegration", () => {
+       expect(withBlock.overallStatus).toBe(without.overallStatus);
+     });
+   });
++
++  // D3: verify never trusted the installed manual's content before — it only checked block
++  // presence. Now it re-fetches the protocol fresh and warns (never fails) when what's on
++  // disk has drifted from what Engram serves today.
++  describe("instructions drift against Engram's current protocol (never a failure, never overallStatus)", () => {
++    function scriptPath(name: string, content: string): string {
++      const path = join(home, name);
++      writeFileSync(path, content);
++      return path;
++    }
++
++    test("does not compute drift when nothing is installed (behaves as before)", async () => {
++      const result = await verifyMemoryIntegration(registry, {
++        agentId: "claude-code",
++        home,
++        protocolOptions: { command: process.execPath, args: [scriptPath("unused.js", protocolScript("Call memory_context."))] },
++      });
++      expect(result.instructions.present).toBe(false);
++      expect(result.instructions.upToDate).toBeUndefined();
++      expect(result.instructions.driftNotice).toBeUndefined();
++    });
++
++    test("reports upToDate true when the installed manual still matches what Engram serves", async () => {
++      await installFor("claude-code");
++
++      const result = await verifyMemoryIntegration(registry, {
++        agentId: "claude-code",
++        home,
++        protocolOptions: { command: process.execPath, args: [scriptPath("same.js", protocolScript("Call memory_context."))] },
++      });
++
++      expect(result.instructions.present).toBe(true);
++      expect(result.instructions.upToDate).toBe(true);
++      expect(result.instructions.driftNotice).toBeUndefined();
++    });
++
++    test("reports upToDate false with the exact refresh command when Engram's manual changed since install", async () => {
++      await installFor("claude-code");
++
++      const result = await verifyMemoryIntegration(registry, {
++        agentId: "claude-code",
++        home,
++        protocolOptions: { command: process.execPath, args: [scriptPath("changed.js", protocolScript("A brand-new manual text."))] },
++      });
++
++      expect(result.instructions.upToDate).toBe(false);
++      expect(result.instructions.driftNotice).toContain("plan memory-install --agent claude-code");
++      expect(result.overallStatus).not.toBe("absent"); // informational only: never demotes overallStatus
++    });
++
++    test("stays silent (no upToDate, no refresh command) when a refresh would be blocked anyway", async () => {
++      await installFor("codex");
++      writeFileSync(join(home, ".codex", "AGENTS.override.md"), "some override content");
++
++      const result = await verifyMemoryIntegration(registry, {
++        agentId: "codex",
++        home,
++        protocolOptions: { command: process.execPath, args: [scriptPath("blocked.js", protocolScript("A brand-new manual text."))] },
++      });
++
++      expect(result.instructions.present).toBe(true);
++      expect(result.instructions.upToDate).toBeUndefined();
++      expect(result.instructions.driftNotice).toBeUndefined();
++    });
++
++    test("stays silent (no upToDate, no failure) when Engram cannot be reached for the comparison", async () => {
++      await installFor("claude-code");
++
++      const result = await verifyMemoryIntegration(registry, { agentId: "claude-code", home }); // no protocolOptions, no canonical binary either
++
++      expect(result.instructions.present).toBe(true);
++      expect(result.instructions.upToDate).toBeUndefined();
++      expect(result.instructions.driftNotice).toBeUndefined();
++    });
++
++    test("surfaces the bilingual legacy-protocol notice when the drift check itself needs the v1 fallback", async () => {
++      // Installed originally against a v4-serving Engram (installFor's default script succeeds
++      // at --protocol-version 4); now Engram behind it has regressed to pre-1.7.0, so re-fetching
++      // for the drift check itself needs the fallback. The v1 render legitimately differs in shape
++      // from the v4 render (it adds Lifecycle/Scopes/Security sections v4 has none of), so drift is
++      // correctly reported too — the point of this test is the notice, not upToDate's value.
++      await installFor("claude-code");
++
++      const result = await verifyMemoryIntegration(registry, {
++        agentId: "claude-code",
++        home,
++        protocolOptions: {
++          command: process.execPath,
++          args: [scriptPath("legacy.js", protocolScript("Call memory_context.", { rejectV4: true }))],
++        },
++      });
++
++      expect(result.instructions.upToDate).toBe(false);
++      expect(result.engram.protocolNotice).toBeDefined();
++      expect(result.engram.protocolNotice).toContain("actualiza Engram");
++      expect(result.engram.protocolNotice).toContain("upgrade Engram");
++    });
++  });
+ });
+diff --git a/src/app/verify-memory-integration.ts b/src/app/verify-memory-integration.ts
+index 7157e68..d04b6ce 100644
+--- a/src/app/verify-memory-integration.ts
++++ b/src/app/verify-memory-integration.ts
+@@ -1,15 +1,18 @@
+ import { readFile } from "node:fs/promises";
+ import type { AgentRegistry } from "../modules/agents/registry";
+-import type { AgentId } from "../modules/agents/types";
+-import { resolveMemoryHookCommand } from "../modules/agents/hook-command";
++import type { AgentAdapter, AgentId } from "../modules/agents/types";
++import { resolveEnginesExecutable, resolveMemoryHookCommand } from "../modules/agents/hook-command";
+ import { resolveEngramMcpServer } from "../modules/memory-protocol/constants";
+ import { extractBlock } from "../modules/instructions-writer/block";
+ import { MEMORY_PROTOCOL_BLOCK_ID } from "../modules/memory-protocol/constants";
++import { renderProtocolMarkdown } from "../modules/memory-protocol/render";
+ import type { HookRuntimeStatus } from "../modules/config-writer/types";
++import { fetchMemoryProtocol, type MemoryProtocolFetchOptions } from "../infrastructure/engram/memory-protocol-client";
+ import { fetchStartupContext, type StartupContextFetchOptions } from "../infrastructure/engram/startup-context-client";
+ import { readHookEvidence } from "./hook-evidence";
+ import { computeHookRuntimeStatus } from "./hook-runtime-status";
+ import { decideHookRemove } from "./hook-write-decision";
++import { decideInstructionsInstall } from "./instructions-write-decision";
+ import { decideMcpRemove } from "./mcp-write-decision";
+ import { runMemoryHook } from "./run-memory-hook";
+ 
+@@ -20,12 +23,27 @@ export interface VerifyMemoryIntegrationInput {
+   home: string;
+   /** Test seam for the hook's dry-run Engram subprocess invocation; production callers omit this. */
+   startupContextOptions?: StartupContextFetchOptions;
++  /** Test seam for the drift check's Engram memory-protocol subprocess invocation; production callers omit this. */
++  protocolOptions?: MemoryProtocolFetchOptions;
+ }
+ 
+ export interface MemoryIntegrationVerification {
+   agentId: AgentId;
+   mcp: { path: string; present: boolean };
+-  instructions: { supported: boolean; paths: string[]; present: boolean };
++  instructions: {
++    supported: boolean;
++    paths: string[];
++    present: boolean;
++    /**
++     * Present only when `present` is true and Engram could be reached to
++     * compare: whether the installed manual still matches what Engram serves
++     * today. Absent (not false) when there is nothing installed to compare, or
++     * Engram could not be reached — never a failure, see probeInstructionsDrift.
++     */
++    upToDate?: boolean;
++    /** Present only when `upToDate` is false: the exact command to refresh it. */
++    driftNotice?: string;
++  };
+   hook: {
+     supported: boolean;
+     path: string;
+@@ -38,7 +56,11 @@ export interface MemoryIntegrationVerification {
+    * What the installed Engram actually publishes, probed structurally (never by version).
+    * Informational: it never drives overallStatus.
+    */
+-  engram: { ecosystemBlock: EcosystemBlockState };
++  engram: {
++    ecosystemBlock: EcosystemBlockState;
++    /** Present only when the drift check itself needed the v1 fallback (Engram older than 1.7.0). */
++    protocolNotice?: string;
++  };
+   overallStatus: "complete" | "partial" | "absent";
+ }
+ 
+@@ -54,6 +76,50 @@ async function probeEcosystemBlock(home: string, options?: StartupContextFetchOp
+   }
+ }
+ 
++interface InstructionsDrift {
++  upToDate?: boolean;
++  driftNotice?: string;
++  protocolNotice?: string;
++}
++
++/**
++ * D3: re-fetches the protocol fresh (same v4-then-v1 fallback fetchMemoryProtocol
++ * always does) and computes the desired block exactly as `plan memory-install`
++ * would, to warn — never fail — when the manual installed on disk has drifted
++ * from what Engram serves today. Only meaningful when something is already
++ * installed; when Engram cannot be reached at all, this stays silent (absent
++ * fields), the same "degrade without breaking the session" rule as everywhere
++ * else Engines calls Engram.
++ */
++async function probeInstructionsDrift(
++  adapter: AgentAdapter,
++  home: string,
++  agentId: AgentId,
++  instructionsPresent: boolean,
++  options?: MemoryProtocolFetchOptions,
++): Promise<InstructionsDrift> {
++  if (!instructionsPresent) return {};
++  try {
++    const { protocol, legacyProtocolNotice } = await fetchMemoryProtocol(home, options);
++    const decision = await decideInstructionsInstall(adapter, home, renderProtocolMarkdown(protocol));
++    // A blocked or unsupported install could not refresh the manual either, so suggesting the
++    // refresh command would mislead: stay silent on drift, exactly as when Engram is unreachable.
++    if (decision.kind !== "noop" && decision.kind !== "write") return legacyProtocolNotice ? { protocolNotice: legacyProtocolNotice } : {};
++    const upToDate = decision.kind === "noop";
++    return {
++      upToDate,
++      ...(upToDate
++        ? {}
++        : {
++            driftNotice: `The installed memory protocol manual no longer matches what Engram serves today. Run "${resolveEnginesExecutable(home)}" plan memory-install --agent ${agentId} and apply the resulting plan to refresh it.`,
++          }),
++      ...(legacyProtocolNotice ? { protocolNotice: legacyProtocolNotice } : {}),
++    };
++  } catch {
++    return {};
++  }
++}
++
+ async function readOrEmpty(path: string): Promise<{ raw: string; exists: boolean }> {
+   try {
+     return { raw: await readFile(path, "utf8"), exists: true };
+@@ -122,12 +188,23 @@ export async function verifyMemoryIntegration(
+       ? "absent"
+       : "partial";
+ 
++  const drift = await probeInstructionsDrift(adapter, input.home, input.agentId, instructionsPresent, input.protocolOptions);
++
+   return {
+     agentId: input.agentId,
+     mcp: { path: mcpDecision.configPath, present: mcpPresent },
+-    instructions: { supported: instructionsSupported, paths: instructionsPaths, present: instructionsPresent },
++    instructions: {
++      supported: instructionsSupported,
++      paths: instructionsPaths,
++      present: instructionsPresent,
++      ...(drift.upToDate !== undefined ? { upToDate: drift.upToDate } : {}),
++      ...(drift.driftNotice ? { driftNotice: drift.driftNotice } : {}),
++    },
+     hook: { supported: hookSupported, path: hookRemoveDecision.configPath, present: hookPresent, dryRunOk, runtimeStatus },
+-    engram: { ecosystemBlock: await probeEcosystemBlock(input.home, input.startupContextOptions) },
++    engram: {
++      ecosystemBlock: await probeEcosystemBlock(input.home, input.startupContextOptions),
++      ...(drift.protocolNotice ? { protocolNotice: drift.protocolNotice } : {}),
++    },
+     overallStatus,
+   };
+ }
+diff --git a/src/infrastructure/agents/claude-code.ts b/src/infrastructure/agents/claude-code.ts
+index b1f79a2..d15b4a3 100644
+--- a/src/infrastructure/agents/claude-code.ts
++++ b/src/infrastructure/agents/claude-code.ts
+@@ -23,15 +23,16 @@ export const claudeCodeAdapter: AgentAdapter = {
+     return { command: server.command, args: server.args };
+   },
+   instructions: {
++    // D5: the manual embeds directly between the managed-block markers in CLAUDE.md, the same as
++    // Codex — no contentFile. Engines still knows how to migrate a machine that has the old
++    // "@forge614-engram-memory-protocol.md" reference plus that satellite file on disk (see
++    // instructions-write-decision.ts's resolveLegacySatellite); it just never writes that shape again.
+     primaryFile(home) {
+       return join(home, ".claude", "CLAUDE.md");
+     },
+     shadowingFiles() {
+       return [];
+     },
+-    contentFile(home) {
+-      return join(home, ".claude", "forge614-engram-memory-protocol.md");
+-    },
+   },
+   hooks: {
+     configFile(home) {
+diff --git a/src/infrastructure/engram/memory-protocol-client.test.ts b/src/infrastructure/engram/memory-protocol-client.test.ts
+index 7717fa4..5ec26bd 100644
+--- a/src/infrastructure/engram/memory-protocol-client.test.ts
++++ b/src/infrastructure/engram/memory-protocol-client.test.ts
+@@ -41,9 +41,43 @@ const VALID_PROTOCOL = {
+   security: { neverSave: ["passwords"] },
+ };
+ 
++const VALID_PROTOCOL_V4 = {
++  id: "forge614-engram-memory",
++  version: 4,
++  instructions: "Call memory_context at the start of a conversation.",
++  mcpInstructions: "Call memory_context at the start of a conversation.",
++  startupContext: { command: "forge614-engram startup-context --directory <dir> --json --format 2", format: 2, description: "d" },
++};
++
++/**
++ * Builds a fake forge614-engram binary that mimics the real CLI's
++ * `--protocol-version` negotiation: an Engram 1.7.0+ double answers `4` with a
++ * v4 payload and anything else with v1; `rejectV4: true` instead mimics an
++ * Engram older than 1.7.0, which rejects the flag outright with the exact
++ * `{code:"INVALID_INPUT",...}` envelope forge614-engram's own CLI writes to
++ * stderr on a non-zero exit.
++ */
++function versionedFixture(name: string, options?: { rejectV4?: boolean }): string {
++  const lines = [
++    "const args = process.argv.slice(2);",
++    'const idx = args.indexOf("--protocol-version");',
++    'const wantsV4 = idx !== -1 && args[idx + 1] === "4";',
++    options?.rejectV4
++      ? [
++          "if (wantsV4) {",
++          `  process.stderr.write(${JSON.stringify(JSON.stringify({ code: "INVALID_INPUT", error: "protocol-version debe ser 1, 2, 3 o 4." }))});`,
++          "  process.exit(1);",
++          "}",
++        ].join("\n")
++      : "",
++    `console.log(wantsV4 ? ${JSON.stringify(JSON.stringify(VALID_PROTOCOL_V4))} : ${JSON.stringify(JSON.stringify(VALID_PROTOCOL))});`,
++  ].join("\n");
++  return fixture(name, lines);
++}
++
+ describe("fetchMemoryProtocol", () => {
+   test("returns the protocol and a stable fingerprint on success", async () => {
+-    const script = fixture("ok.js", `console.log(${JSON.stringify(JSON.stringify(VALID_PROTOCOL))});`);
++    const script = versionedFixture("ok.js");
+ 
+     const result = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] });
+ 
+@@ -53,6 +87,68 @@ describe("fetchMemoryProtocol", () => {
+     expect(again.fingerprint).toBe(result.fingerprint);
+   });
+ 
++  test("prefers protocol v4 on the first try when Engram supports it, with no legacy notice", async () => {
++    const script = versionedFixture("ok-v4.js");
++
++    const result = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] });
++
++    expect(result.protocol.version).toBe(4);
++    expect(result.legacyProtocolNotice).toBeUndefined();
++  });
++
++  test("falls back to protocol v1 and surfaces a bilingual notice when Engram rejects --protocol-version 4 with INVALID_INPUT", async () => {
++    const script = versionedFixture("legacy-engram.js", { rejectV4: true });
++
++    const result = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] });
++
++    expect(result.protocol.version).toBe(1);
++    expect(result.legacyProtocolNotice).toBeDefined();
++    expect(result.legacyProtocolNotice).toContain("1.7.0");
++    expect(result.legacyProtocolNotice).toContain("actualiza Engram"); // Spanish half
++    expect(result.legacyProtocolNotice).toContain("upgrade Engram"); // English half
++  });
++
++  test("does not fall back to v1 when the v4 attempt fails with an error other than INVALID_INPUT", async () => {
++    const script = fixture(
++      "other-error.js",
++      [
++        "const args = process.argv.slice(2);",
++        'if (args.includes("--protocol-version")) {',
++        `  process.stderr.write(${JSON.stringify(JSON.stringify({ code: "STORAGE_ERROR", error: "boom" }))});`,
++        "  process.exit(1);",
++        "}",
++        // If Engines incorrectly fell back and called again without --protocol-version, this
++        // branch would succeed — proving the fallback firing, not just a generic failure.
++        `console.log(${JSON.stringify(JSON.stringify(VALID_PROTOCOL))});`,
++      ].join("\n"),
++    );
++
++    const error = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] }).catch((e) => e);
++
++    expect(error).toBeInstanceOf(EngramProtocolUnavailableError);
++    expect((error as EngramProtocolUnavailableError).reason).toBe("command-failed");
++  });
++
++  test("accepts a v4 response that carries extra, unknown fields", async () => {
++    const script = fixture(
++      "v4-extra-fields.js",
++      `console.log(${JSON.stringify(JSON.stringify({ ...VALID_PROTOCOL_V4, extra: "future field" }))});`,
++    );
++
++    const result = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] });
++
++    expect(result.protocol.version).toBe(4);
++  });
++
++  test("throws invalid-schema, with no v1 retry, when the v4 call succeeds but the payload is not v4-shaped", async () => {
++    const script = fixture("v4-bad-shape.js", `console.log(${JSON.stringify(JSON.stringify({ id: "forge614-engram-memory", version: 4 }))});`);
++
++    const error = await fetchMemoryProtocol(dir, { command: process.execPath, args: [script] }).catch((e) => e);
++
++    expect(error).toBeInstanceOf(EngramProtocolUnavailableError);
++    expect((error as EngramProtocolUnavailableError).reason).toBe("invalid-schema");
++  });
++
+   test("throws not-installed when the executable does not exist", async () => {
+     const missing = join(dir, "does-not-exist-binary");
+ 
+@@ -112,7 +208,7 @@ describe("fetchMemoryProtocol (canonical path, no PATH dependency)", () => {
+       // not even for the interpreter, let alone for forge614-engram itself.
+       writeFileSync(
+         canonicalPath,
+-        `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(VALID_PROTOCOL))});\n`,
++        `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(VALID_PROTOCOL_V4))});\n`,
+       );
+       chmodSync(canonicalPath, 0o755);
+ 
+diff --git a/src/infrastructure/engram/memory-protocol-client.ts b/src/infrastructure/engram/memory-protocol-client.ts
+index 02cf6b5..1a56979 100644
+--- a/src/infrastructure/engram/memory-protocol-client.ts
++++ b/src/infrastructure/engram/memory-protocol-client.ts
+@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
+ import { createHash } from "node:crypto";
+ import { promisify } from "node:util";
+ import { resolveEngramExecutable } from "../../modules/memory-protocol/constants";
+-import { isMemoryProtocol, type MemoryProtocol } from "../../modules/memory-protocol/types";
++import { isMemoryProtocol, isMemoryProtocolV4, type AnyMemoryProtocol } from "../../modules/memory-protocol/types";
+ 
+ const execFileAsync = promisify(execFile);
+ 
+@@ -22,8 +22,56 @@ export interface MemoryProtocolFetchOptions {
+ }
+ 
+ export interface MemoryProtocolFetchResult {
+-  protocol: MemoryProtocol;
++  protocol: AnyMemoryProtocol;
+   fingerprint: string;
++  /**
++   * Present only when Engram rejected `--protocol-version 4` with INVALID_INPUT
++   * (an Engram older than 1.7.0) and Engines fell back to the plain v1 call it
++   * always used before. Bilingual (Spanish, then English), like this notice's
++   * counterpart on the startup-context side — see LEGACY_PROTOCOL_NOTICE.
++   */
++  legacyProtocolNotice?: string;
++}
++
++export const LEGACY_PROTOCOL_NOTICE =
++  "Engram respondió con el protocolo v1 porque esta versión no admite --protocol-version 4 (INVALID_INPUT); actualiza Engram a 1.7.0 o posterior para instalar el manual nuevo.\n" +
++  "Engram replied with protocol v1 because this version does not support --protocol-version 4 (INVALID_INPUT); upgrade Engram to 1.7.0 or later to install the new manual.";
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null;
++}
++
++/**
++ * True only when the failed call's stderr is Engram's own `{code:"INVALID_INPUT",...}`
++ * error envelope (main.ts of forge614-engram writes exactly that JSON to stderr and
++ * sets a non-zero exit code). Never inspects stdout, and never lets stderr content
++ * leak into a thrown error — only this boolean escapes this function.
++ */
++function isInvalidInputFailure(error: unknown): boolean {
++  const stderr = isRecord(error) && typeof error.stderr === "string" ? error.stderr : "";
++  if (!stderr) return false;
++  try {
++    const parsed: unknown = JSON.parse(stderr);
++    return isRecord(parsed) && parsed.code === "INVALID_INPUT";
++  } catch {
++    return false;
++  }
++}
++
++function classifyExecError(error: unknown): EngramProtocolFailureReason {
++  const code = (error as NodeJS.ErrnoException | undefined)?.code;
++  return code === "ENOENT" ? "not-installed" : "command-failed";
++}
++
++type ExecAttempt = { stdout: string } | { error: unknown };
++
++async function attempt(command: string, args: string[]): Promise<ExecAttempt> {
++  try {
++    const { stdout } = await execFileAsync(command, args);
++    return { stdout };
++  } catch (error) {
++    return { error };
++  }
+ }
+ 
+ /**
+@@ -32,28 +80,49 @@ export interface MemoryProtocolFetchResult {
+  * omitted; production callers always omit `options` and rely on that
+  * resolution instead of PATH. `options` remains a test seam for pointing at a
+  * fixture executable directly.
++ *
++ * Always tries `--protocol-version 4` first (Engram 1.7.0+). Only when that
++ * specific call fails with Engram's own INVALID_INPUT error — the signature of
++ * an Engram older than 1.7.0, which does not recognize the flag — does it
++ * retry with the plain call Engines always used before. Any other failure
++ * (Engram missing, a crash, a different error code) is reported as-is, with no
++ * retry: it is not evidence of an old Engram, only of Engram being unavailable.
+  */
+ export async function fetchMemoryProtocol(
+   home: string,
+   options?: MemoryProtocolFetchOptions,
+ ): Promise<MemoryProtocolFetchResult> {
+   const resolved = options ?? { command: resolveEngramExecutable(home), args: ["memory-protocol", "--json"] };
+-  let stdout: string;
+-  try {
+-    ({ stdout } = await execFileAsync(resolved.command, resolved.args));
+-  } catch (error) {
+-    const code = (error as NodeJS.ErrnoException).code;
+-    throw new EngramProtocolUnavailableError(code === "ENOENT" ? "not-installed" : "command-failed");
++  const v4Args = [...resolved.args, "--protocol-version", "4"];
++
++  const v4Attempt = await attempt(resolved.command, v4Args);
++  if (!("error" in v4Attempt)) {
++    let parsed: unknown;
++    try {
++      parsed = JSON.parse(v4Attempt.stdout);
++    } catch {
++      throw new EngramProtocolUnavailableError("invalid-json");
++    }
++    if (!isMemoryProtocolV4(parsed)) throw new EngramProtocolUnavailableError("invalid-schema");
++    return { protocol: parsed, fingerprint: createHash("sha256").update(v4Attempt.stdout).digest("hex") };
+   }
+ 
++  if (!isInvalidInputFailure(v4Attempt.error)) throw new EngramProtocolUnavailableError(classifyExecError(v4Attempt.error));
++
++  const v1Attempt = await attempt(resolved.command, resolved.args);
++  if ("error" in v1Attempt) throw new EngramProtocolUnavailableError(classifyExecError(v1Attempt.error));
++
+   let parsed: unknown;
+   try {
+-    parsed = JSON.parse(stdout);
++    parsed = JSON.parse(v1Attempt.stdout);
+   } catch {
+     throw new EngramProtocolUnavailableError("invalid-json");
+   }
+-
+   if (!isMemoryProtocol(parsed)) throw new EngramProtocolUnavailableError("invalid-schema");
+ 
+-  return { protocol: parsed, fingerprint: createHash("sha256").update(stdout).digest("hex") };
++  return {
++    protocol: parsed,
++    fingerprint: createHash("sha256").update(v1Attempt.stdout).digest("hex"),
++    legacyProtocolNotice: LEGACY_PROTOCOL_NOTICE,
++  };
+ }
+diff --git a/src/interfaces/cli/cli.test.ts b/src/interfaces/cli/cli.test.ts
+index 19f8cf3..a1cdcf0 100644
+--- a/src/interfaces/cli/cli.test.ts
++++ b/src/interfaces/cli/cli.test.ts
+@@ -27,6 +27,14 @@ const PROTOCOL_JSON = JSON.stringify({
+   security: { neverSave: ["passwords"] },
+ });
+ 
++const PROTOCOL_V4_JSON = JSON.stringify({
++  id: "forge614-engram-memory",
++  version: 4,
++  instructions: "Call memory_context.",
++  mcpInstructions: "Call memory_context.",
++  startupContext: { command: "forge614-engram startup-context --directory <dir> --json --format 2", format: 2, description: "d" },
++});
++
+ const STARTUP_CONTEXT_JSON = JSON.stringify({
+   format: 1,
+   shared: { pinned: [], recent: [], sessions: [], truncated: false },
+@@ -49,7 +57,8 @@ function installEngramFixture(testHome: string): void {
+     [
+       `#!${process.execPath}`,
+       `const args = process.argv.slice(2);`,
+-      `if (args[0] === "memory-protocol") { console.log(${JSON.stringify(PROTOCOL_JSON)}); }`,
++      `if (args[0] === "memory-protocol" && args.includes("--protocol-version")) { console.log(${JSON.stringify(PROTOCOL_V4_JSON)}); }`,
++      `else if (args[0] === "memory-protocol") { console.log(${JSON.stringify(PROTOCOL_JSON)}); }`,
+       `else if (args[0] === "startup-context") { console.log(${JSON.stringify(STARTUP_CONTEXT_JSON)}); }`,
+       `else { process.exit(1); }`,
+       "",
+diff --git a/src/modules/config-writer/types.ts b/src/modules/config-writer/types.ts
+index 49e97e3..48ddffa 100644
+--- a/src/modules/config-writer/types.ts
++++ b/src/modules/config-writer/types.ts
+@@ -31,7 +31,7 @@ export interface Plan {
+ export type MemoryIntegrationComponentStatus =
+   | { kind: "unsupported"; reason: string }
+   | { kind: "noop" }
+-  | { kind: "write" }
++  | { kind: "write"; notice?: string }
+   | { kind: "blocked"; reason: string; details: string };
+ 
+ /**
+@@ -77,7 +77,14 @@ export type HookRuntimeStatus =
+ export type MemoryIntegrationOverallStatus = "complete" | "partial" | "unsupported";
+ 
+ export interface MemoryIntegrationMetadata {
+-  protocol?: { source: string; id: string; version: number; fingerprint: string };
++  protocol?: {
++    source: string;
++    id: string;
++    version: number;
++    fingerprint: string;
++    /** Present only when Engram was too old for --protocol-version 4 and Engines fell back to v1. */
++    legacyNotice?: string;
++  };
+   mcp: { path: string; status: MemoryIntegrationComponentStatus };
+   instructions: { paths: string[]; status: MemoryIntegrationComponentStatus };
+   hook: {
+diff --git a/src/modules/memory-protocol/render.test.ts b/src/modules/memory-protocol/render.test.ts
+index 968eedf..e37da02 100644
+--- a/src/modules/memory-protocol/render.test.ts
++++ b/src/modules/memory-protocol/render.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, test } from "bun:test";
+-import type { MemoryProtocol } from "./types";
++import type { MemoryProtocol, MemoryProtocolV4 } from "./types";
+ import { renderProtocolMarkdown } from "./render";
+ 
+ const protocol: MemoryProtocol = {
+@@ -39,3 +39,44 @@ describe("renderProtocolMarkdown", () => {
+     expect(renderProtocolMarkdown(protocol)).toBe(renderProtocolMarkdown(protocol));
+   });
+ });
++
++const protocolV4: MemoryProtocolV4 = {
++  id: "forge614-engram-memory",
++  version: 4,
++  instructions: "Read the startup block; call memory_context otherwise.\n\nSave durable decisions on your own.",
++  mcpInstructions: "Read the startup block; call memory_context otherwise.",
++  startupContext: {
++    command: "forge614-engram startup-context --directory <absolute-directory> --json --format 2",
++    format: 2,
++    description: "One ready-to-inject text block.",
++  },
++};
++
++describe("renderProtocolMarkdown (version 4)", () => {
++  test("installs `instructions` verbatim — no rewriting, no summarizing", () => {
++    const markdown = renderProtocolMarkdown(protocolV4);
++    expect(markdown).toContain(protocolV4.instructions);
++  });
++
++  test("includes the identifying id/version header line, same as v1", () => {
++    const markdown = renderProtocolMarkdown(protocolV4);
++    expect(markdown).toContain("forge614-engram-memory");
++    expect(markdown).toContain("version 4");
++  });
++
++  test("never synthesizes Lifecycle/Scopes/Security sections v4 does not carry", () => {
++    const markdown = renderProtocolMarkdown(protocolV4);
++    expect(markdown).not.toContain("## Lifecycle");
++    expect(markdown).not.toContain("## Scopes");
++    expect(markdown).not.toContain("## Security");
++  });
++
++  test("never writes mcpInstructions into the rendered markdown", () => {
++    const distinctMcp: MemoryProtocolV4 = { ...protocolV4, mcpInstructions: "UNIQUE_MCP_ONLY_TEXT_never_in_instructions" };
++    expect(renderProtocolMarkdown(distinctMcp)).not.toContain("UNIQUE_MCP_ONLY_TEXT_never_in_instructions");
++  });
++
++  test("is deterministic for the same input", () => {
++    expect(renderProtocolMarkdown(protocolV4)).toBe(renderProtocolMarkdown(protocolV4));
++  });
++});
+diff --git a/src/modules/memory-protocol/render.ts b/src/modules/memory-protocol/render.ts
+index 6519b00..50dd133 100644
+--- a/src/modules/memory-protocol/render.ts
++++ b/src/modules/memory-protocol/render.ts
+@@ -1,10 +1,27 @@
+-import type { MemoryProtocol } from "./types";
++import type { AnyMemoryProtocol, MemoryProtocol, MemoryProtocolV4 } from "./types";
+ 
+ function section(title: string, lines: string[]): string {
+   return [`### ${title}`, "", ...lines.map((line) => `- ${line}`)].join("\n");
+ }
+ 
+-export function renderProtocolMarkdown(protocol: MemoryProtocol): string {
++/** Dispatches on `version`: v1 keeps its existing rendered shape (kept as the fallback render for an old Engram); v4 installs `instructions` as-is. */
++export function renderProtocolMarkdown(protocol: AnyMemoryProtocol): string {
++  return protocol.version === 4 ? renderProtocolMarkdownV4(protocol) : renderProtocolMarkdownV1(protocol);
++}
++
++/**
++ * Version 4 carries no lifecycle/scopes/security: `instructions` is already the
++ * complete manual, so it is installed verbatim — never rewritten or summarized.
++ * Only the identifying header line (id + version) is added, matching v1's own
++ * header, since that line is Engines' own bookkeeping, not part of the manual.
++ */
++function renderProtocolMarkdownV4(protocol: MemoryProtocolV4): string {
++  return ["## Forge614 Engram memory protocol", "", `Protocol: ${protocol.id} (version ${protocol.version})`, "", protocol.instructions].join(
++    "\n",
++  );
++}
++
++function renderProtocolMarkdownV1(protocol: MemoryProtocol): string {
+   return [
+     "## Forge614 Engram memory protocol",
+     "",
+diff --git a/src/modules/memory-protocol/types.test.ts b/src/modules/memory-protocol/types.test.ts
+index 6fefb1d..7938962 100644
+--- a/src/modules/memory-protocol/types.test.ts
++++ b/src/modules/memory-protocol/types.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, test } from "bun:test";
+-import { isMemoryProtocol, type MemoryProtocol } from "./types";
++import { isMemoryProtocol, isMemoryProtocolV4, type MemoryProtocol, type MemoryProtocolV4 } from "./types";
+ 
+ function validProtocol(): MemoryProtocol {
+   return {
+@@ -55,3 +55,49 @@ describe("isMemoryProtocol", () => {
+     expect(isMemoryProtocol({ ...validProtocol(), instructions: "" })).toBe(false);
+   });
+ });
++
++function validProtocolV4(): MemoryProtocolV4 {
++  return {
++    id: "forge614-engram-memory",
++    version: 4,
++    instructions: "Read the startup block; call memory_context otherwise.",
++    mcpInstructions: "Read the startup block; call memory_context otherwise.",
++    startupContext: {
++      command: "forge614-engram startup-context --directory <absolute-directory> --json --format 2",
++      format: 2,
++      description: "One ready-to-inject text block.",
++    },
++  };
++}
++
++describe("isMemoryProtocolV4", () => {
++  test("accepts a well-formed v4 protocol document", () => {
++    expect(isMemoryProtocolV4(validProtocolV4())).toBe(true);
++  });
++
++  test("rejects version 1 (the two shapes are not interchangeable)", () => {
++    expect(isMemoryProtocolV4({ ...validProtocolV4(), version: 1 })).toBe(false);
++  });
++
++  test("rejects a wrong id", () => {
++    expect(isMemoryProtocolV4({ ...validProtocolV4(), id: "something-else" })).toBe(false);
++  });
++
++  test("rejects empty instructions", () => {
++    expect(isMemoryProtocolV4({ ...validProtocolV4(), instructions: "" })).toBe(false);
++  });
++
++  test("rejects a non-string mcpInstructions", () => {
++    expect(isMemoryProtocolV4({ ...validProtocolV4(), mcpInstructions: 42 })).toBe(false);
++  });
++
++  test("accepts extra, unknown fields — a leniency deliberate for a future additive change", () => {
++    expect(isMemoryProtocolV4({ ...validProtocolV4(), futureField: "ignored" })).toBe(true);
++  });
++
++  test("rejects null and non-objects", () => {
++    expect(isMemoryProtocolV4(null)).toBe(false);
++    expect(isMemoryProtocolV4("a string")).toBe(false);
++    expect(isMemoryProtocolV4(42)).toBe(false);
++  });
++});
+diff --git a/src/modules/memory-protocol/types.ts b/src/modules/memory-protocol/types.ts
+index f3b605d..0e69563 100644
+--- a/src/modules/memory-protocol/types.ts
++++ b/src/modules/memory-protocol/types.ts
+@@ -56,3 +56,37 @@ export function isMemoryProtocol(value: unknown): value is MemoryProtocol {
+ 
+   return true;
+ }
++
++/**
++ * Version 4 of the protocol: one master text with two outputs (see Engram's own
++ * design). `instructions` is the complete manual Engines installs verbatim;
++ * `mcpInstructions` is the short text meant for Engram's own MCP server, never
++ * written by Engines into any file. Version 4 carries no lifecycle, scopes or
++ * security lists — the manual is the single source.
++ */
++export interface MemoryProtocolV4 {
++  id: "forge614-engram-memory";
++  version: 4;
++  instructions: string;
++  mcpInstructions: string;
++  startupContext: { command: string; format: 2; description: string };
++}
++
++/** Either shape Engines knows how to fetch and install today. */
++export type AnyMemoryProtocol = MemoryProtocol | MemoryProtocolV4;
++
++// R31-style leniency (see startup-context-client.ts): this reads another node's
++// output, so it is strict only about the fields Engines actually consumes
++// (id, version, instructions) and ignores unknown/additive fields such as a
++// future addition to startupContext.
++export function isMemoryProtocolV4(value: unknown): value is MemoryProtocolV4 {
++  if (typeof value !== "object" || value === null) return false;
++  const candidate = value as Record<string, unknown>;
++
++  if (candidate.id !== "forge614-engram-memory") return false;
++  if (candidate.version !== 4) return false;
++  if (typeof candidate.instructions !== "string" || candidate.instructions.length === 0) return false;
++  if (typeof candidate.mcpInstructions !== "string") return false;
++
++  return true;
++}
