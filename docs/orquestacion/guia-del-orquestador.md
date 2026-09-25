@@ -98,6 +98,7 @@ Bloqueos: <lista o "ninguno">
 |---|---|---|
 | **Documentación tarea por tarea:** al terminar cada tarea, un prompt aparte (etiqueta `· docs`, **sesión nueva**, medido por separado; los textos exactos van en el plan, redactados contra los capítulos reales y simulados en una copia) actualiza en un commit propio los documentos que describen lo que cambió (es/en), el CHANGELOG y el mapa de Notion; el orquestador verifica en cada revisión que código, pruebas y documentación coincidan, porque la documentación es la fuente de verdad después del código | firme (regla del propietario) | decisión del propietario, 2026-09-24; primer caso: Engram 1.7.0 T1 encontró que el capítulo 05 ya decía una versión equivocada de la réplica. Sesión nueva en vez de la misma (provisional): T1 docs misma sesión ≈ $1 por ronda; T3 docs sesión nueva Sonnet low 0,48 M tokens ≈ $0,28, a la primera |
 | En los prompts de documentación, exigir que cada frase se compruebe en el código del commit y que un dato del plan que no coincida no se escriba y se reporte | provisional | Engram T7 docs: el plan decía que las versiones 1 a 3 del protocolo anuncian el formato 1; el agente vio en el código que la 1 no anuncia nada, escribió lo correcto y lo reportó (0 rondas extra) |
+| Una página para que el propietario lea o imprima no la redacta el orquestador de memoria: entrega un prompt de docs para una sesión nueva en el repositorio dueño, con sus preferencias (sin fondos de color ni toggles, solo el tema de la página, cada comando con qué hace, para qué sirve y un ejemplo, cada dato comprobado en el código o en `--help`) | provisional | 2026-09-25: la página «Engram 1.7.0 — Qué cambió» hecha por el orquestador desde el CHANGELOG tuvo 4 correcciones del propietario y terminó delegada |
 | **Checklist de agentes tarea por tarea (acta 0017):** al cerrar cada tarea (código + documentación), el orquestador revisa `standard/procedures/new-agent-checklist.md` (sección del nodo que cambió y las de Engines y Shell si consumen lo cambiado) y decide si hay un requisito nuevo para los asistentes; si lo hay, redacta el punto con su verificación; si no, anota el motivo. Los cambios se acumulan y se publican juntos en la siguiente versión del reglamento, para revalidar la matriz de soporte una sola vez | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
 
 ## 5. Medición
@@ -137,6 +138,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-25 — Las páginas para el propietario van a una sesión de docs en el repositorio dueño (§4b).
 - 2026-09-25 — Lección de Reglamento R1: el laboratorio de `git archive` no ve lo que Git ignora (§4); cuarta corrida de parche en Sonnet medium (§6).
 - 2026-09-25 — Segunda muestra del subagente de borrador y laboratorio: el orquestador rehace y entrega un parche (§5).
 - 2026-09-25 — Lecciones de Engram T10b: el prompt no quita pasos del plan (§2), comandos sobre datos reales probados antes en una copia (§4), segunda muestra del control de procesos (§4) y primera corrida con datos reales (§6).
