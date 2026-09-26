@@ -5,13 +5,22 @@ Writes messages.csv (one row per deduped assistant message) and sessions.csv (pe
 including handoff/boot detection for Q3) into OUT/data/.
 
 Never writes/modifies anything under ~/.claude. Skips any .jsonl modified within the last 10 minutes.
+
+Optional reproducibility cutoff (default: none, i.e. original behavior unchanged): pass an ISO8601
+UTC timestamp ("...Z") as argv[1] or in TRASPASO_CUTOFF_TS to replay the dataset as it looked at
+that instant T0. With a cutoff set: (a) only lines with timestamp <= T0 are counted (later lines in
+a still-growing file are ignored, as if read at T0); (b) a file with zero lines at/before T0 is
+treated as "did not exist yet" and dropped; (c) a file whose latest line at/before T0 falls within
+the last 10 minutes before T0 is dropped too, reproducing the "skip files modified in the last 10
+minutes" rule against T0 instead of against wall-clock NOW.
 """
 import json, os, sys, time, csv, glob
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 HOME = os.path.expanduser("~")
 PROJECTS_ROOT = os.path.join(HOME, ".claude", "projects")
-OUT = "/private/tmp/claude-501/-Users-jorgeetrejoo-Desktop-forge614-ai/ac7d9050-8724-4a7b-9a7d-17038f96474a/scratchpad/traspaso"
+OUT = os.environ.get("TRASPASO_OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "traspaso-data")
 DATA_DIR = os.path.join(OUT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -19,6 +28,22 @@ SKIP_SECONDS = 600
 NOW = time.time()
 
 HANDOFF_KEYWORDS = ["traspaso", "retomar", "orquestador"]
+
+CUTOFF_TS = os.environ.get("TRASPASO_CUTOFF_TS") or (sys.argv[1] if len(sys.argv) > 1 else None)
+
+
+def _parse_ts(ts):
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+CUTOFF_DT = _parse_ts(CUTOFF_TS) if CUTOFF_TS else None
 
 
 def list_target_files():
@@ -29,6 +54,12 @@ def list_target_files():
             if not fn.endswith(".jsonl"):
                 continue
             fp = os.path.join(root, fn)
+            if CUTOFF_DT is not None:
+                # mtime reflects today, not T0 (the file may keep growing after T0) -- the
+                # cutoff-aware skip/keep decision is made inside process_file() from the
+                # timestamps actually inside the file, not from mtime.
+                files.append(fp)
+                continue
             try:
                 mtime = os.path.getmtime(fp)
             except OSError:
@@ -92,6 +123,7 @@ def process_file(fp):
 
     n_lines = 0
     parse_errors = 0
+    last_ts_leq_cutoff = None
 
     try:
         size = os.path.getsize(fp)
@@ -112,6 +144,16 @@ def process_file(fp):
                 except Exception:
                     parse_errors += 1
                     continue
+
+                if CUTOFF_DT is not None:
+                    ts_dt = _parse_ts(obj.get("timestamp"))
+                    if ts_dt is not None:
+                        if ts_dt <= CUTOFF_DT:
+                            last_ts_leq_cutoff = obj.get("timestamp")
+                        else:
+                            # line happened after T0: this file kept growing past the
+                            # instant we're replaying, ignore everything from here on
+                            continue
 
                 t = obj.get("type")
 
@@ -171,6 +213,16 @@ def process_file(fp):
             "error": str(e),
             "fp": fp,
         }
+
+    if CUTOFF_DT is not None:
+        if last_ts_leq_cutoff is None:
+            # no line at or before T0 -> this file did not exist yet at T0
+            return {"excluded_cutoff": "no_data_before_cutoff", "fp": fp}
+        last_dt = _parse_ts(last_ts_leq_cutoff)
+        if last_dt is not None and (CUTOFF_DT - last_dt).total_seconds() < SKIP_SECONDS:
+            # its latest activity at/before T0 is within the last 10 minutes before T0:
+            # reproduces the "skip files modified in the last 10 minutes" rule against T0
+            return {"excluded_cutoff": "recently_modified_at_cutoff", "fp": fp}
 
     # compute boot_context from the dedup record of boot_message_id (usage is identical across dup lines)
     if boot_message_id is not None and boot_message_id in dedup:
@@ -249,6 +301,8 @@ def main():
 
     errors = []
     n_done = 0
+    n_excluded_cutoff_no_data = 0
+    n_excluded_cutoff_recent = 0
     with open(msg_csv_path, "w", newline="") as mf, open(sess_csv_path, "w", newline="") as sf:
         mw = csv.DictWriter(mf, fieldnames=msg_fields)
         mw.writeheader()
@@ -264,8 +318,17 @@ def main():
                 except Exception as e:
                     errors.append((fp, str(e)))
                     continue
-                if res is None or "error" in res:
-                    errors.append((fp, res.get("error") if res else "None result"))
+                if res is None:
+                    errors.append((fp, "None result"))
+                    continue
+                if res.get("excluded_cutoff") == "no_data_before_cutoff":
+                    n_excluded_cutoff_no_data += 1
+                    continue
+                if res.get("excluded_cutoff") == "recently_modified_at_cutoff":
+                    n_excluded_cutoff_recent += 1
+                    continue
+                if "error" in res:
+                    errors.append((fp, res.get("error")))
                     continue
                 for row in res["messages"]:
                     mw.writerow(row)
@@ -275,14 +338,21 @@ def main():
                     print(f"processed {n_done}/{len(files)}", file=sys.stderr)
 
     print(f"Done. Files processed: {n_done}. Errors: {len(errors)}", file=sys.stderr)
+    if CUTOFF_DT is not None:
+        print(f"Cutoff T0={CUTOFF_TS}: excluded (no data before T0)={n_excluded_cutoff_no_data}, "
+              f"excluded (recently modified at T0)={n_excluded_cutoff_recent}, "
+              f"kept={n_done}", file=sys.stderr)
     for fp, e in errors[:20]:
         print("ERROR:", fp, e, file=sys.stderr)
 
     with open(os.path.join(DATA_DIR, "extract_claude_meta.json"), "w") as mfh:
         json.dump({
+            "cutoff_ts": CUTOFF_TS,
             "n_files_target": len(files),
             "n_files_skipped_recent": len(skipped),
             "skipped_files": skipped,
+            "n_files_excluded_cutoff_no_data": n_excluded_cutoff_no_data,
+            "n_files_excluded_cutoff_recent": n_excluded_cutoff_recent,
             "n_files_processed": n_done,
             "n_errors": len(errors),
             "errors": errors[:50],

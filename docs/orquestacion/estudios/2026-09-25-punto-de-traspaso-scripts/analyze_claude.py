@@ -9,9 +9,9 @@ from collections import defaultdict, Counter
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pricing import message_cost, model_family, PRICES
+from pricing import message_cost, model_family, PRICES, cache_write_amounts
 
-OUT = "/private/tmp/claude-501/-Users-jorgeetrejoo-Desktop-forge614-ai/ac7d9050-8724-4a7b-9a7d-17038f96474a/scratchpad/traspaso"
+OUT = os.environ.get("TRASPASO_OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "traspaso-data")
 DATA_DIR = os.path.join(OUT, "data")
 
 
@@ -107,10 +107,15 @@ def main():
         total_cost = sum(e["cost"] for e in enriched if e["cost"] is not None)
         cost_input = sum(e["input"] * PRICES[e["fam"]]["input"] / 1e6 for e in enriched if e["fam"])
         cost_cache_read = sum(e["cache_read"] * PRICES[e["fam"]]["cache_read"] / 1e6 for e in enriched if e["fam"])
-        cost_cache_write = sum(
-            (e["eph5m"] * PRICES[e["fam"]]["cache_write_5m"] + e["eph1h"] * PRICES[e["fam"]]["cache_write_1h"]) / 1e6
-            for e in enriched if e["fam"]
-        )
+        # H2 fix (PR #14 CodeRabbit review): apply the same "no eph5m/eph1h breakdown ->
+        # assume 5m TTL" fallback that message_cost() already applies, via the shared
+        # cache_write_amounts() helper, so this breakdown sums back to total_cost.
+        cost_cache_write = 0.0
+        for e in enriched:
+            if not e["fam"]:
+                continue
+            e5, e1h = cache_write_amounts(e["eph5m"], e["eph1h"], e["cache_creation"])
+            cost_cache_write += (e5 * PRICES[e["fam"]]["cache_write_5m"] + e1h * PRICES[e["fam"]]["cache_write_1h"]) / 1e6
         cost_output = sum(e["output"] * PRICES[e["fam"]]["output"] / 1e6 for e in enriched if e["fam"])
         max_context = max((e["context"] for e in enriched), default=0)
         all_sessions[sk] = {
@@ -187,7 +192,11 @@ def main():
                 continue
             if e["cache_creation"] > 0.5 * e["context"] and e["fam"]:
                 ttl = "1h" if e["eph1h"] > e["eph5m"] else "5m"
-                write_cost = (e["eph5m"] * PRICES[e["fam"]]["cache_write_5m"] + e["eph1h"] * PRICES[e["fam"]]["cache_write_1h"]) / 1e6
+                # H2 fix: same fallback as message_cost()/cost_cache_write above, via
+                # cache_write_amounts(), so write_cost is never $0 for a rebuild that
+                # message_cost already charged for.
+                e5, e1h = cache_write_amounts(e["eph5m"], e["eph1h"], e["cache_creation"])
+                write_cost = (e5 * PRICES[e["fam"]]["cache_write_5m"] + e1h * PRICES[e["fam"]]["cache_write_1h"]) / 1e6
                 rebuild_rows.append({
                     "session_key": sk, "fam": e["fam"], "is_orchestrator": is_orchestrator(s),
                     "project_dir": s["project_dir"],

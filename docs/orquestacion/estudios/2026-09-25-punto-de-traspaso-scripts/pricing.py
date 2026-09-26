@@ -39,15 +39,27 @@ def model_family(model_str):
     return None  # <synthetic> or unknown -> excluded from cost calc
 
 
+def cache_write_amounts(eph5m, eph1h, cache_creation_fallback):
+    """Split a message's cache-write tokens into (5m-TTL, 1h-TTL) amounts, applying the
+    same "no breakdown -> assume default TTL (5m)" fallback used by message_cost. Shared
+    helper so every place that reports a cache-write cost breakdown (message_cost itself,
+    and the Q1/Q2 per-session cost_cache_write / write_cost aggregates in analyze_claude.py)
+    uses the identical rule and the breakdown always sums back to the total (H2, PR #14
+    CodeRabbit review: analyze_claude.py used to apply the fallback only inside
+    message_cost, so cost_cache_write/write_cost showed $0 for messages that message_cost
+    itself charged for)."""
+    e5, e1h = eph5m or 0, eph1h or 0
+    if e5 == 0 and e1h == 0 and (cache_creation_fallback or 0) > 0:
+        e5 = cache_creation_fallback
+    return e5, e1h
+
+
 def message_cost(model, input_tok, cache_read, eph5m, eph1h, cache_creation_fallback, output_tok):
     fam = model_family(model)
     if fam is None:
         return None
     p = PRICES[fam]
-    e5, e1h = eph5m or 0, eph1h or 0
-    if e5 == 0 and e1h == 0 and (cache_creation_fallback or 0) > 0:
-        # no cache_creation detail breakdown available -> assume default TTL (5m)
-        e5 = cache_creation_fallback
+    e5, e1h = cache_write_amounts(eph5m, eph1h, cache_creation_fallback)
     cost = (
         (input_tok or 0) * p["input"]
         + (cache_read or 0) * p["cache_read"]
@@ -59,10 +71,17 @@ def message_cost(model, input_tok, cache_read, eph5m, eph1h, cache_creation_fall
 
 
 def codex_turn_cost(input_tok, cached_tok, cache_write_tok, output_tok, context_at_turn):
+    """context_at_turn and input_tok are both last_token_usage.input_tokens (which already
+    INCLUDES cached_tok as a subset -- see extract_codex.py). Charge the non-cached part of
+    input_tok at the full input price and the cached part at the (cheaper) cache-read price;
+    charging input_tok in full AND cached_tok again on top double-counts the cached tokens
+    (H3, PR #14 CodeRabbit review, fixed 2026-09-26)."""
     tier = CODEX_PRICES_HIGH_TIER if (context_at_turn or 0) > CODEX_TIER_THRESHOLD else CODEX_PRICES_BASE
+    cached_tok = cached_tok or 0
+    non_cached_input = max((input_tok or 0) - cached_tok, 0)
     cost = (
-        (input_tok or 0) * tier["input"]
-        + (cached_tok or 0) * tier["cache_read"]
+        non_cached_input * tier["input"]
+        + cached_tok * tier["cache_read"]
         + (cache_write_tok or 0) * tier["cache_write"]
         + (output_tok or 0) * tier["output"]
     ) / 1_000_000.0

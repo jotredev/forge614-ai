@@ -7,18 +7,40 @@ rate_limits used_percent samples) into OUT/data/.
 
 Never writes/modifies anything under ~/.codex. Skips any rollout-*.jsonl modified within
 the last 10 minutes.
+
+Optional reproducibility cutoff (default: none, original behavior unchanged): pass an ISO8601
+UTC timestamp ("...Z") as argv[1] or in TRASPASO_CUTOFF_TS to replay the dataset as it looked at
+that instant T0 -- see extract_claude.py's docstring for the exact semantics (same rule here,
+applied to token_count/compacted/turn_context events instead of assistant messages).
 """
 import json, os, sys, time, csv, glob
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 HOME = os.path.expanduser("~")
 SESS_ROOT = os.path.join(HOME, ".codex", "sessions")
-OUT = "/private/tmp/claude-501/-Users-jorgeetrejoo-Desktop-forge614-ai/ac7d9050-8724-4a7b-9a7d-17038f96474a/scratchpad/traspaso"
+OUT = os.environ.get("TRASPASO_OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "traspaso-data")
 DATA_DIR = os.path.join(OUT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 SKIP_SECONDS = 600
 NOW = time.time()
+
+CUTOFF_TS = os.environ.get("TRASPASO_CUTOFF_TS") or (sys.argv[1] if len(sys.argv) > 1 else None)
+
+
+def _parse_ts(ts):
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+CUTOFF_DT = _parse_ts(CUTOFF_TS) if CUTOFF_TS else None
 
 
 def list_target_files():
@@ -29,6 +51,9 @@ def list_target_files():
             if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
                 continue
             fp = os.path.join(root, fn)
+            if CUTOFF_DT is not None:
+                files.append(fp)
+                continue
             try:
                 mtime = os.path.getmtime(fp)
             except OSError:
@@ -58,6 +83,7 @@ def process_file(fp):
     n_event_lines = 0
     n_lines = 0
     parse_errors = 0
+    last_ts_leq_cutoff = None
 
     current_model = ""
 
@@ -76,6 +102,16 @@ def process_file(fp):
 
                 t = obj.get("type")
                 ts = obj.get("timestamp")
+
+                if CUTOFF_DT is not None:
+                    ts_dt = _parse_ts(ts)
+                    if ts_dt is not None:
+                        if ts_dt <= CUTOFF_DT:
+                            last_ts_leq_cutoff = ts
+                        else:
+                            # event happened after T0: ignore, this rollout kept growing
+                            continue
+
                 if ts:
                     if first_ts is None:
                         first_ts = ts
@@ -119,10 +155,14 @@ def process_file(fp):
                         # NOTE: total_token_usage is a LIFETIME cumulative counter across all
                         # turns of the session (billed-tokens-to-date), not the size of the
                         # context window at any point in time. The per-turn context size is
-                        # last_token_usage.input_tokens + last_token_usage.cached_input_tokens
-                        # (the size of the most recent API call's input), which is what we use
-                        # here as "tokens in context" for Q6.
-                        turn_ctx = (last.get("input_tokens", 0) or 0) + (last.get("cached_input_tokens", 0) or 0)
+                        # last_token_usage.input_tokens (this already INCLUDES
+                        # cached_input_tokens as a subset -- verified against a real rollout:
+                        # total_tokens == input_tokens + output_tokens, with no separate
+                        # addition for cached_input_tokens or for reasoning_output_tokens,
+                        # which is itself already included inside output_tokens). Adding
+                        # cached_input_tokens on top double-counts the cached portion; fixed
+                        # 2026-09-26 (H3, PR #14 CodeRabbit review).
+                        turn_ctx = last.get("input_tokens", 0) or 0
                         if turn_ctx > max_context_seen:
                             max_context_seen = turn_ctx
                         rl = p.get("rate_limits")
@@ -153,6 +193,13 @@ def process_file(fp):
                         })
     except Exception as e:
         return {"error": str(e), "fp": fp}
+
+    if CUTOFF_DT is not None:
+        if last_ts_leq_cutoff is None:
+            return {"excluded_cutoff": "no_data_before_cutoff", "fp": fp}
+        last_dt = _parse_ts(last_ts_leq_cutoff)
+        if last_dt is not None and (CUTOFF_DT - last_dt).total_seconds() < SKIP_SECONDS:
+            return {"excluded_cutoff": "recently_modified_at_cutoff", "fp": fp}
 
     rel = os.path.relpath(fp, SESS_ROOT)
     dominant_model = max(models_seen.items(), key=lambda kv: kv[1])[0] if models_seen else ""
@@ -213,6 +260,8 @@ def main():
 
     errors = []
     n_done = 0
+    n_excluded_cutoff_no_data = 0
+    n_excluded_cutoff_recent = 0
     with open(turns_csv, "w", newline="") as tf, open(sess_csv, "w", newline="") as sf:
         tw = csv.DictWriter(tf, fieldnames=turn_fields)
         tw.writeheader()
@@ -228,8 +277,17 @@ def main():
                 except Exception as e:
                     errors.append((fp, str(e)))
                     continue
-                if res is None or "error" in res:
-                    errors.append((fp, res.get("error") if res else "None"))
+                if res is None:
+                    errors.append((fp, "None"))
+                    continue
+                if res.get("excluded_cutoff") == "no_data_before_cutoff":
+                    n_excluded_cutoff_no_data += 1
+                    continue
+                if res.get("excluded_cutoff") == "recently_modified_at_cutoff":
+                    n_excluded_cutoff_recent += 1
+                    continue
+                if "error" in res:
+                    errors.append((fp, res.get("error")))
                     continue
                 sess_key = res["rel"]
                 for row in res["turns"]:
@@ -241,14 +299,21 @@ def main():
                 n_done += 1
 
     print(f"Done. Files processed: {n_done}. Errors: {len(errors)}", file=sys.stderr)
+    if CUTOFF_DT is not None:
+        print(f"Cutoff T0={CUTOFF_TS}: excluded (no data before T0)={n_excluded_cutoff_no_data}, "
+              f"excluded (recently modified at T0)={n_excluded_cutoff_recent}, "
+              f"kept={n_done}", file=sys.stderr)
     for fp, e in errors[:20]:
         print("ERROR:", fp, e, file=sys.stderr)
 
     with open(os.path.join(DATA_DIR, "extract_codex_meta.json"), "w") as mfh:
         json.dump({
+            "cutoff_ts": CUTOFF_TS,
             "n_files_target": len(files),
             "n_files_skipped_recent": len(skipped),
             "skipped_files": skipped,
+            "n_files_excluded_cutoff_no_data": n_excluded_cutoff_no_data,
+            "n_files_excluded_cutoff_recent": n_excluded_cutoff_recent,
             "n_files_processed": n_done,
             "n_errors": len(errors),
             "errors": errors[:50],
