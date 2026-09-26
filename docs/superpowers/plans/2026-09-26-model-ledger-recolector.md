@@ -1304,7 +1304,7 @@ rtk bun run typecheck && rtk git add -A && rtk git commit -m "feat: lector de Op
 **Interfaces:**
 - Consume: `SesionLeida`, `limpiarTexto`, `precioVigente`, `maquina`, `configNotion`
 - Produce:
-  - `yaGuardada(sql, id, tamano, mtime): Promise<boolean>`
+  - `yaGuardada(sql, ruta, tamano, mtime): Promise<boolean>`
   - `guardarSesion(sql, s: SesionLeida): Promise<"nueva" | "actualizada">`
   - `leerNotion(dsId: string, desde: string | null): Promise<PaginaNotion[]>`
   - `guardarCorridas(sql, paginas, c)`
