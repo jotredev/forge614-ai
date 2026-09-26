@@ -136,6 +136,7 @@ Bloqueos: <lista o "ninguno">
 - **Fuente única: el registro de la herramienta**, nunca el reporte de la IA.
   - Claude Code: `~/.claude/projects/<carpeta>/<sesión>.jsonl` — por mensaje: `message.model`, `usage` (`input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `output_tokens`, `output_tokens_details.thinking_tokens`), `effort`, `tool_use` con nombre (incluye `mcp__*` y `Skill`).
   - Codex: `~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl` — `session_meta` (cwd, versión), `turn_context` (`model`, `reasoning_effort`), `event_msg`/`token_count` acumulado (entrada, caché, salida, razonamiento, total) y `rate_limits.primary.used_percent` (límite semanal).
+  - OpenCode: `~/.local/share/opencode/opencode.db` (SQLite) — `session_v2` (una fila por sesión: `title`, `model` con `providerID`/`id`/`variant`, `cost`, `tokens_input`, `tokens_cache_read`, `tokens_cache_write`, `tokens_output`, `tokens_reasoning`) y `session_message` (por mensaje, `type` = `assistant`: `data.model`, `data.tokens` con `input`, `output`, `reasoning`, `cache.read`, `cache.write`, y `data.cost`). Se lee con el apéndice C.
 - **Exacto:** tokens, modelo, razonamiento, horas, mensajes, herramientas y tamaño de sus resultados. **Estimado (marcado):** tokens atribuidos a una herramienta concreta. **Sin registro:** "no medido".
 - **Comportamiento medido en cada corrida:** archivos que tocó fuera del plan y acciones no pedidas (comparando el commit con la lista del plan, en solo lectura, y las ediciones del registro), paradas correctas ante fallos, si respetó el formato del reporte y su largo en caracteres. Con esto se decide, por modelo y razonamiento, qué hay que pedir o prohibir explícitamente (por ejemplo "no documentes todavía").
 - **Métrica principal:** tokens por tarea aprobada, sumando las rondas de corrección. Una conclusión del tipo "X es mejor para Y" exige ≥ 3 tareas comparables del mismo tipo; se cambia una sola variable a la vez.
@@ -178,6 +179,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-26 — Apéndice C: costo y contexto de una sesión de OpenCode, leídos de su base (§5).
 - 2026-09-26 — Reglamento 1.1.2 publicado (R2 en 4 rondas): «Review rate limited» de CodeRabbit cuenta como pendiente, se pide con `@coderabbitai review` y fusionar sin su revisión es una excepción que el propietario autoriza de forma explícita (§4); octava corrida de publicación en Sonnet low (§6).
 - 2026-09-26 — Revisión de PR #14 (CodeRabbit): apéndice B agrega la familia `fable` (Claude Fable 5.1: $10 entrada y $50 salida por millón, tabla de precios de Anthropic) y ya no cobra a los modelos desconocidos como si fueran `sonnet` — se cuentan aparte («sin precio»); la fila de §5 sobre el punto de traspaso de Codex se corrige por el doble conteo de tokens de caché en `last_token_usage` (H3, ver el estudio del punto de traspaso); regla nueva en §2 sobre pedir `rtk proxy` cuando un paso cuenta líneas de una salida filtrada.
 - 2026-09-26 — Engram 1.7.2 T3: el propietario confirma con sus palabras una tarea sobre sus archivos cuando el prompt llega pegado, y ejecuta él con `!` los comandos de instalación que el filtro bloquea (§2).
@@ -285,4 +287,32 @@ for line in open(path):
 print(dict(models),"mensajes",msgs,"inicio",t0,"fin",t1)
 print("tokens",dict(u),"total",sum(u.values()),"contexto max",maxctx,"costo $%.2f"%cost)
 if unpriced: print("sin precio:",dict(unpriced))
+```
+
+## Apéndice C. Costo y contexto de una sesión (OpenCode)
+
+Uso: `python3 costo_opencode.py "<inicio del título>" [ruta de opencode.db]` (por defecto `~/.local/share/opencode/opencode.db`); abre la base en modo solo lectura, busca las sesiones cuyo título empieza con ese texto y da dos líneas por sesión. OpenCode guarda el costo ya calculado a precio publicado (equivalente por API; con OpenCode Go no se cobra aparte, se descuenta de los topes del plan), así que el script no lleva tabla de precios. «contexto max» es lo que relee el mensaje más grande (entrada + lectura de caché + escritura de caché), igual que en el apéndice B.
+
+```python
+import sqlite3,json,sys,os,datetime
+texto=sys.argv[1]
+ruta=sys.argv[2] if len(sys.argv)>2 else os.path.expanduser("~/.local/share/opencode/opencode.db")
+def iso(ms):
+    return datetime.datetime.fromtimestamp(ms/1000,datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00","Z")
+con=sqlite3.connect(f"file:{ruta}?mode=ro",uri=True)
+sesiones=con.execute("SELECT id,title,model,cost,tokens_input,tokens_cache_read,tokens_cache_write,tokens_output,tokens_reasoning FROM session_v2 WHERE title LIKE ?||'%' ORDER BY time_created",(texto,)).fetchall()
+if not sesiones:
+    print("sin sesiones para:",texto); sys.exit(1)
+for sid,titulo,modelo,cost,i,r,w,o,rea in sesiones:
+    m=json.loads(modelo) if isinstance(modelo,str) else (modelo or {})
+    mod=(m.get("providerID") or "")+"/"+(m.get("id") or "")
+    if m.get("variant"): mod+="#"+m["variant"]
+    msgs=con.execute("SELECT time_created,time_updated,data FROM session_message WHERE session_id=? AND type='assistant'",(sid,)).fetchall()
+    maxctx=0
+    for _,_,d in msgs:
+        tk=json.loads(d).get("tokens") or {}; ca=tk.get("cache") or {}
+        maxctx=max(maxctx,(tk.get("input") or 0)+(ca.get("read") or 0)+(ca.get("write") or 0))
+    t0,t1=(iso(min(x[0] for x in msgs)),iso(max(x[1] for x in msgs))) if msgs else ("sin mensajes","sin mensajes")
+    print(f"{titulo} modelo {mod} mensajes {len(msgs)} inicio {t0} fin {t1}")
+    print(f"tokens entrada {i}, lectura {r}, escritura {w}, salida {o}, razonamiento {rea}, total {i+r+w+o+rea}; contexto max {maxctx}; costo ${cost:.2f}")
 ```
