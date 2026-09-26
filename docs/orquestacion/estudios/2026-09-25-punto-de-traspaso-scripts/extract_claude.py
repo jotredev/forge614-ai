@@ -44,6 +44,8 @@ def _parse_ts(ts):
 
 
 CUTOFF_DT = _parse_ts(CUTOFF_TS) if CUTOFF_TS else None
+if CUTOFF_TS and CUTOFF_DT is None:
+    sys.exit(f"TRASPASO_CUTOFF_TS inválido: {CUTOFF_TS!r} (se espera una fecha UTC como 2026-09-26T00:32:35Z)")
 
 
 def list_target_files():
