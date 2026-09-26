@@ -1,7 +1,7 @@
 # model-ledger · etapa 1: recolector de datos de modelos — diseño
 
 - **Fecha:** 2026-09-26
-- **Estado:** borrador para revisión del propietario
+- **Estado:** aprobado por el propietario el 2026-09-26
 - **Memoria relacionada en Engram:** `84b3c010` (decisiones), `83f14077` (columnas de Notion), `1d00881a` (fuentes públicas)
 
 ## 1. Para qué existe
@@ -46,7 +46,7 @@ Esta **etapa 1 solo recolecta**. Junta datos buenos en una base de datos desde h
 - Las **sesiones normales**, donde el propietario trabaja sin orquestador, van **solo a Neon**. Serían miles al mes y llenarían Notion de ruido.
 - **Neon no escribe en Notion** en esta etapa. Si más adelante se quiere que Neon complete en Notion los números exactos, se agrega como mejora.
 
-*Punto a confirmar por el propietario en la revisión:* ¿basta con que Notion reciba lo que anotan los orquestadores, o también quiere ver ahí las sesiones normales?
+*Confirmado por el propietario el 2026-09-26:* a Notion le basta con lo que anotan los orquestadores; las sesiones normales van solo a Neon.
 
 ## 5. Tablas en Neon
 
@@ -103,8 +103,8 @@ El archivo vive en la carpeta del proyecto, está en `.gitignore` y tiene permis
 ```
 NEON_DATABASE_URL=...            # cadena de conexión de Neon
 NOTION_TOKEN=...                 # llave de una integración de Notion con acceso al Laboratorio
-NOTION_CORRIDAS_ID=3c6f115453ec4be78eab66181c8294bc
-NOTION_LECCIONES_ID=138234c3de244878b00cd5ec91021a91
+NOTION_CORRIDAS_DS=3a02e73e-002b-4c30-8dd0-fe5dbe0d817f   # fuente de datos «Corridas de agentes»
+NOTION_LECCIONES_DS=25836d1f-7a24-4ed3-8c6c-a6decef60f77  # fuente de datos «Lecciones de orquestación»
 ARTIFICIAL_ANALYSIS_API_KEY=...  # llave gratis de artificialanalysis.ai
 MAQUINA=mac-mini                 # nombre de esta computadora en los datos
 ```
