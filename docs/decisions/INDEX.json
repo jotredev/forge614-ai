@@ -252,6 +252,15 @@
       "date": "2026-09-25",
       "session": "forge614-ai-orquestador-2026-09-25-r3-e4ec550",
       "file": "0028-revalidacion-de-claude-code-y-codex-y-aclaraciones-del-checklist.md"
+    },
+    {
+      "number": "0029",
+      "slug": "revalidacion-de-engram-en-claude-code-y-codex-con-1-7-2",
+      "title": "Revalidación de Engram en Claude Code y Codex con 1.7.2, y checklist de sesiones alineado",
+      "status": "aceptada",
+      "date": "2026-09-26",
+      "session": "forge614-ai-orquestador-2026-09-26-e172b",
+      "file": "0029-revalidacion-de-engram-en-claude-code-y-codex-con-1-7-2.md"
     }
   ]
 }
