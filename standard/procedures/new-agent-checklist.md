@@ -289,11 +289,11 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       inyecta `text` tal cual y como dato recuperado, sin reescribirlo; que el bloque mide ≤ 5 000
       caracteres y empieza con el encabezado de ocupación; y que con el bloque presente el agente no vuelve
       a llamar `memory_context` al arrancar (regla 2 del manual v4). La sección «Previous session
-      (interrupted)» del bloque aparece cuando otra sesión ya marcó la cortada como interrumpida, o tras un
-      período de inactividad — por el orden de Engram, en un proyecto limpio no sale ya en la segunda
-      conversación, sino después; el aviso inmediato de que la sesión anterior quedó interrumpida lo da el
-      campo `previous` de `memory_session_start` (ver el punto de sesión interrumpida, más abajo).
-      Verificación: el texto inyectado se lee en la transcripción del asistente (Claude Code: evento
+      (interrupted)» del bloque aparece cuando una sesión abierta del proyecto lleva más de 30 minutos sin
+      actividad en Engram; el texto dice «was left open; its last activity was at» — el aviso inmediato lo
+      da igual el campo `previous` de `memory_session_start`, con `sessionNotice` trayendo la misma frase
+      desde Engram 1.7.2 (ver el punto de sesión que quedó abierta, más abajo). Verificación: el texto
+      inyectado se lee en la transcripción del asistente (Claude Code: evento
       `system/hook_response` con `--verbose --output-format stream-json`; Codex: su registro
       `~/.codex/sessions/…/rollout-*.jsonl`) y se compara con `text` de `startup-context --format 2`; la
       evidencia del gancho (`~/.forge614/engines/hook-evidence/<agente>.json`) solo guarda
@@ -311,13 +311,21 @@ inyectarse igual. Antes de esta corrección, Shell abierto desde `~` arrancaba s
       “recuerda/guarda” explícito usa `memory_save`; antes de compactar guarda resumen; al terminar guarda
       el resumen útil y cierra la sesión. Con la versión 4, el cierre deja de ser obligatorio: el resumen
       vivo (ver el punto de las instrucciones del servidor MCP, más abajo) reemplaza al resumen final, porque ninguna conducta depende de que la sesión se cierre.
-- [ ] Con esquema 11, abrir una sesión del agente nuevo en un repositorio, cortarla sin cerrarla y abrir
-      otra en el mismo repositorio; verificar que la segunda recibe `previous` de `memory_session_start` y
-      que el agente se lo dice a la persona y ofrece continuar desde el resumen, sin inventar lo que hizo
-      la primera (si no hay resumen, dice que no dejó ninguno). Verificación: comparar lo que dice con el
-      resumen real (`memory_get` del id que trae `previous`). La prueba necesita un proyecto sin otras
-      sesiones abiertas: `memory_session_start` marca como interrumpida toda otra sesión abierta del mismo
-      proyecto (Engram 1.7.0), así que una sesión en paralelo contamina el resultado.
+- [ ] Con esquema 11, abrir una sesión del agente nuevo en un repositorio, dejarla sin cerrar y, cuando
+      lleve más de 30 minutos sin actividad en Engram (en laboratorio: esperar o adelantar su última
+      actividad en la copia), abrir otra en el mismo repositorio; verificar que la segunda recibe
+      `previous` de `memory_session_start` (con `sessionNotice` trayendo «was left open; its last activity
+      was at») y que el agente dice que la sesión anterior quedó abierta y cuándo, sin inventar lo que
+      hizo (si no hay resumen, dice que no dejó ninguno). Ofrecer continuar desde el resumen es lo
+      esperado; si el agente nuevo no lo hace, se anota como límite conocido en su celda de la matriz, sin
+      que eso bloquee la certificación. Verificación: comparar lo que dice con el resumen real
+      (`memory_get` del id que trae `previous`).
+- [ ] Con esquema 11, abrir dos sesiones seguidas del agente nuevo en el mismo repositorio, sin dejar pasar
+      30 minutos entre ellas; verificar que la segunda recibe `parallel` de `memory_session_start` (con
+      `sessionNotice` trayendo «Another session is open now: `<id>`.») y que el agente dice que hay otra
+      sesión abierta ahora, sin llamarla interrumpida ni abandonada y sin retomar su trabajo por su
+      cuenta; preguntarle a la persona antes de tocar ese trabajo no es falla. Ninguna de las dos pruebas
+      de este punto limita el largo de la respuesta que se le pide al agente.
 - [ ] Si la integración pide la versión 4 (`memory-protocol --json --protocol-version 4`), verificar que
       instala `instructions` completo y sin recortar (≤ 2 500 caracteres) en el archivo de instrucciones
       del agente, sin agregarle reglas de memoria propias, y que no copia allí `mcpInstructions` (llegan
@@ -622,12 +630,13 @@ hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez 
 
 | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
 |---|---|---|---|---|---|---|
-| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; se cierra tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
-| Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ⚠️ revalidar (memoria inteligente, 2026-09-25; falta explicar por qué deja aparte un parecido, se repite tras Engram 1.7.1, plazo 2026-10-25) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
+| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
+| Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`; límite: dice que la sesión quedó abierta y cuándo y cuenta su resumen, pero no ofrece continuar desde él (0 de 6) — si quieres seguir, pídeselo) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
 | Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
 
 **Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
 persona ejecuta la prueba indicada, con fecha. Las de Engines y Shell de Claude Code y Codex se abrieron el
 2026-09-22 (corrección de `startup-context`) y se cerraron el 2026-09-25 (ver el informe
-`docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` y el acta 0028). Siguen abiertas las de
-Engram de Claude Code y Codex, desde el 2026-09-25 (acta 0027), con plazo máximo el 2026-10-25.
+`docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md` y el acta 0028). Las de Engram de Claude
+Code y Codex se abrieron el 2026-09-25 (acta 0027) y se cerraron el 2026-09-26 con Engram 1.7.2 (secciones
+«T4» y «T4b» del mismo informe, y el acta 0029). No quedan celdas abiertas.
