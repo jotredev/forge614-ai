@@ -30,13 +30,10 @@
     {
       "node": "engram",
       "agent": "claude-code",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-25",
-      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
-      "deadline": "2026-10-25",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-26",
       "verifiedBy": "owner",
-      "notes": "No requiere cambios en Engram (protocolo v1). Revalidación 2026-09-25: todo aprobado; se cierra tras Engram 1.7.1."
+      "notes": "No requiere cambios en Engram (protocolo v1). Revalidado el 2026-09-26 con Engram 1.7.2 (manual v4 con la regla 3 nueva y sessionNotice; ver T4 y T4b en docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
     },
     {
       "node": "shell",
@@ -73,13 +70,10 @@
     {
       "node": "engram",
       "agent": "codex",
-      "status": "revalidate",
-      "revalidateSince": "2026-09-25",
-      "reason": "checklist forge614-engram con la memoria inteligente de Engram 1.7.0 (acta 0027)",
-      "deadline": "2026-10-25",
-      "verifiedAt": "2026-09-22",
+      "status": "supported",
+      "verifiedAt": "2026-09-26",
       "verifiedBy": "owner",
-      "notes": "Revalidación 2026-09-25: todo aprobado salvo explicar por qué deja aparte un parecido (P8′); se repite tras Engram 1.7.1. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
+      "notes": "Revalidado el 2026-09-26 con Engram 1.7.2 (manual v4 con la regla 3 nueva y sessionNotice; P8′ aprobada en T4, ver T4 y T4b en docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md). Límite: dice que la sesión quedó abierta y cuándo y cuenta su resumen, pero no ofrece continuar desde él (0 de 6); si quieres seguir, pídeselo. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
     },
     {
       "node": "shell",
