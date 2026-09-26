@@ -45,13 +45,17 @@ Codex o queda como límite documentado.
    `revalidate` a `supported`, con `verifiedAt: "2026-09-26"` y `verifiedBy: "owner"`; se les agrega una
    frase de evidencia a `notes` (Engram 1.7.2, manual v4 con la regla 3 nueva, `sessionNotice`, T4 y T4b) y
    se les quitan `revalidateSince`, `reason` y `deadline`. En la celda de Codex, la frase de evidencia
-   incluye el límite: «dice que la sesión quedó abierta y cuándo y cuenta su resumen, pero no ofrece
-   continuar desde él (0 de 6); si quieres seguir, pídeselo». Ningún otro campo de esas celdas cambia.
+   incluye el límite: «dice que la sesión quedó abierta, casi siempre cuándo (5 de 6) y cuenta su resumen,
+   pero no ofrece continuar desde él (0 de 6); si quieres seguir o saber la hora, pídeselo». Ningún otro
+   campo de esas celdas cambia.
 2. **«Ofrecer continuar desde su resumen» no es obligatorio para certificar la celda de un asistente**:
    es la conducta esperada y se prueba, pero si un asistente no la hace queda anotada como límite conocido
    en su celda y en la tabla «Agentes ya evaluados», sin bloquear `supported`. Lo que sí es obligatorio y
-   bloquea: decir que la sesión anterior quedó abierta, decir cuándo, no inventar su contenido, y no
-   llamarla interrumpida o abandonada a una sesión que solo está en paralelo.
+   bloquea: decir que la sesión anterior quedó abierta, decir cuándo en la mayoría de las corridas (una
+   omisión aislada de la hora, cuando el dato le llegó completo en `sessionNotice` y en el bloque de
+   arranque, se anota como límite en su celda: Codex lo dijo en 5 de 6, la corrida cx1 dijo que la sesión
+   quedó abierta sin la hora), no inventar su contenido, y no llamarla interrumpida o abandonada a una
+   sesión que solo está en paralelo.
 3. **Una pregunta de coordinación en la prueba de sesión en paralelo no es falla.** Si el asistente dice
    que hay otra sesión abierta ahora, sin llamarla interrumpida ni abandonada, y le pregunta a la persona
    antes de tocar ese trabajo (en vez de retomarlo por su cuenta o de ofrecerse a continuarlo sin
@@ -110,6 +114,10 @@ Codex o queda como límite documentado.
 - **Subir la versión a 1.2.0:** este cambio no agrega ninguna validación nueva al checklist ni cambia
   esquemas o contratos; cierra revalidaciones ya ejecutadas y corrige el texto para que documente la
   conducta ya verificada, lo que corresponde a un parche (1.1.2).
+- **Dejar `engram/codex` en `revalidate` por la omisión de la hora en cx1, o repetir S2 de Codex:** la
+  hora le llegó completa en las 6 corridas y la dijo en 5; la persona la tiene en el arranque. El
+  propietario eligió anotarlo como límite (2026-09-26, tras la revisión del PR #14) en vez de dejar la
+  celda abierta hasta el 2026-10-25 o gastar otra ronda de corridas.
 
 ## Consecuencias
 
@@ -119,7 +127,8 @@ Codex o queda como límite documentado.
   sin actividad, la prueba de dos sesiones seguidas y la nota de que las pruebas de conducta no limitan el
   largo de la respuesta.
 - Queda anotado en la matriz y en la tabla, no como bloqueo, que Codex no ofrece por su cuenta continuar
-  desde el resumen de una sesión que quedó abierta; quien lo necesite debe pedírselo explícitamente.
+  desde el resumen de una sesión que quedó abierta; quien lo necesite debe pedírselo explícitamente; y que
+  Codex, en una de 6 corridas, no dijo la hora en que quedó abierta la sesión (se le puede pedir).
 - El reglamento 1.1.2 se publica con esta acta y los archivos corregidos; la publicación es un paso
   separado, con aprobación del propietario.
 
