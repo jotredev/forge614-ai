@@ -152,6 +152,8 @@ El programa de medición (Claude Code) está en el apéndice A; uso: `python3 me
 
 Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
+**Variar los modelos** (regla del propietario, 2026-09-26): la tabla es un punto de partida, no una receta. Al elegir modelo, el orquestador rota entre herramientas (Claude Code, Codex, OpenCode), modelos y razonamientos, cambiando **una sola cosa** respecto a la corrida comparable y anotándola en «Variable de experimento». Un modelo sin datos empieza por tareas de bajo riesgo (aplicar un parche probado, publicar, borrador de laboratorio en el scratchpad), siempre con la verificación completa; nunca con datos reales del propietario ni en pruebas de conducta hasta tener corridas limpias. Cada modelo nuevo se agrega como opción de «Modelo» en Notion.
+
 | Tipo de tarea | Recomendado | Estado |
 |---|---|---|
 | Migración de datos o cambios con riesgo sobre datos reales | Opus · high, en dos fases con parada para que el propietario apruebe entre plan y aplicación | **firme** (3 corridas; tercera: Engram 1.7.1 T3, instalación de 1.7.1 y manual v4 nuevo en Claude Code y Codex, ensayada en laboratorio con HOME falso, 1,45 M ≈ $1,15 en 9 min, a la primera, parada correcta hasta «aplica», huellas finales = laboratorio; Engram T10b, activación del esquema 11 en la base real, 1,14 M tokens ≈ $0,84 en 8,4 min, a la primera, 1 parada correcta ante procesos viejos, 0 filas cambiadas; Engines E4b, instalación de 1.13.0 y migración del manual en Claude Code y Codex, ensayada antes en laboratorio con HOME falso, 0,54 M ≈ $0,67 en 4 min, a la primera, parada correcta hasta «aplica») |
@@ -167,6 +169,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-26 — Regla del propietario: variar herramientas, modelos y razonamientos de los workers, una variable a la vez (§6).
 - 2026-09-26 — Engram 1.7.1 publicado: séptima corrida de parche en Sonnet medium, sexta y séptima de documentación y publicación en Sonnet low (§6).
 - 2026-09-25 — Engram 1.7.1 T1 y T1 docs: el traspaso dice si cada prompt entregado se pegó y corrió (§1.6); sexta muestra del subagente de borrador, esta vez de documentación (Notion «Lecciones»).
 - 2026-09-25 — Plan de Engram 1.7.1: reloj congelado solo desde donde hace falta (§4), quinta muestra del subagente de borrador (§5), estudio del punto de traspaso por tipo de sesión y medir el propio contexto en el registro (§1.6, §5, apéndice B).
