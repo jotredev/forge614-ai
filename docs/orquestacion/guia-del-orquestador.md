@@ -122,6 +122,8 @@ Bloqueos: <lista o "ninguno">
 
 ## 5. Medición
 
+**Rondas en «Corridas de agentes»** (regla del propietario, 2026-09-26): una fila por ronda con la misma Etiqueta (Ronda 1 = primer prompt, 2 = primera corrección…). En la ronda 1, «Origen de la corrección» = «ninguna». Desde la ronda 2 se llenan «Origen de la corrección» (plan o prompt del orquestador · revisión del orquestador · worker o agente · entorno o herramienta · otro nodo de Forge614 · cambio de pedido del propietario) y «Detectado por» (orquestador · pruebas · Sentinel · propietario; si lo encontró el propietario, «propietario»). «Rondas de corrección» = total de la tarea, igual en todas sus filas; «Aprobada a la primera» solo si hubo una única ronda; «Causa de corrección» se sigue llenando.
+
 - **Fuente única: el registro de la herramienta**, nunca el reporte de la IA.
   - Claude Code: `~/.claude/projects/<carpeta>/<sesión>.jsonl` — por mensaje: `message.model`, `usage` (`input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `output_tokens`, `output_tokens_details.thinking_tokens`), `effort`, `tool_use` con nombre (incluye `mcp__*` y `Skill`).
   - Codex: `~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl` — `session_meta` (cwd, versión), `turn_context` (`model`, `reasoning_effort`), `event_msg`/`token_count` acumulado (entrada, caché, salida, razonamiento, total) y `rate_limits.primary.used_percent` (límite semanal).
