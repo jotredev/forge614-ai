@@ -54,6 +54,7 @@ Reglas del prompt:
 | Si la tarea toca archivos reales del propietario o su configuración y la sesión corre en modo automático, la línea antes del prompt pide al propietario escribir él mismo, en el mismo mensaje y fuera del texto pegado, una frase corta que confirme la tarea (p. ej. «Confirmo T3: sigue el prompt pegado»); el filtro de permisos no acepta como autorización un texto solo pegado | provisional | Engram 1.7.2 T3 r1 (Claude Code · Opus 5.5 · high): el filtro bloqueó el respaldo del paso 2 por posible instrucción inyectada; la sesión se detuvo bien sin tocar nada (1 ronda extra ≈ $0,68) |
 | En modo automático, un worker no puede instalar ni reinstalar el manual de los asistentes: el filtro bloquea actualizar el binario, arrancar un servidor MCP de prueba y escribir `~/.claude/CLAUDE.md` (automodificación). En tareas de instalación sobre archivos reales, el worker prepara y verifica, y los comandos que escriben los ejecuta el propietario con `!` en la sesión del orquestador, que los revisa antes y verifica después | provisional | Engram 1.7.2 T3 r2–r3: bloqueados `update`, `t3_mcp.py` y los dos `apply`, también al orquestador en el caso de `t3_mcp.py`; con `!` del propietario todo salió igual que en el laboratorio (3 rondas, $1,65 en total) |
 | **El prompt dice explícitamente que la lectura del plan está autorizada** ("solo lectura, mismo ecosistema"): la regla compartida `sesion-solo-repo-propio` v2 permite leer (nunca escribir ni ejecutar) otro repositorio del mismo ecosistema Forge614 cuando el prompt lo indica | firme (regla del propietario) | decisión del propietario, 2026-09-24, tras Engram T2 docs r1: Codex medium se detuvo con razón al pedirle leer el plan, aunque el mismo modelo con la misma regla lo había leído en T2 r1 (y Opus en T1): la regla v1 era ambigua sobre leer |
+| Cuando un paso cuenta líneas de una salida (p. ej. `git status --short \| wc -l`), el prompt pide `rtk proxy`: el filtro de rtk cambia el formato y el conteo sale distinto | provisional | Reglamento 1.1.2 R1 (Claude Code · Sonnet 5 · medium): `rtk git status --short \| wc -l` dio 12 en vez de 13; el agente lo detectó y lo repitió con `rtk proxy` (0 rondas extra) |
 
 ## 3. Forma del reporte
 
@@ -150,7 +151,7 @@ Bloqueos: <lista o "ninguno">
 | Todo parche que va a un archivo se genera con `rtk proxy git diff` (`rtk git diff` guarda un resumen) y se prueba con `git apply --check` en una copia nueva | provisional | Engines 1.13.0: el primer `e1.patch` salió como resumen y no aplicaba; el subagente lo notó solo |
 | Plan con solo pruebas y contratos, sin laboratorio (el worker implementa) | provisional (1 muestra) | Engram T4 (Codex medium): 2 rondas (1 por error del agente, 2 fallos del plan atrapados en la revisión), 3,77 M tokens, 2 % del límite semanal; T2 con código completo: 4,58 M, 1 ronda. Costo del orquestador sin laboratorio claramente menor que en T3 y T5 |
 | Costo = precios de Notion "Precios de modelos" (por fecha); en Codex con suscripción, el costo se mide como % del límite semanal | firme (regla del propietario) | decisión del propietario, 2026-09-24 |
-| **Punto de traspaso por tipo de sesión:** orquestador Opus en ~300K (el costo por mensaje útil es casi igual entre 300K y 500K: $0,143 a 300K, $0,134 a 400K, $0,138 a 500K; subir el umbral casi no ahorra y alarga el contexto); sesiones de trabajo largas, la misma regla; Codex en ~200K (su ventana real es 258 400 tokens y por encima de 272 000 su precio se duplica, según models.dev) | provisional (1 estudio) | Estudio del 2026-09-25 sobre 1 116 registros de Claude Code y 206 de Codex (solo lectura, subagente Sonnet 49 mensajes ≈ $1,27; informe y scripts en el scratchpad de esa sesión): 12 sesiones de orquestador; 53 de 206 sesiones de Codex pasaron del 80 % de su ventana |
+| **Punto de traspaso por tipo de sesión:** orquestador Opus en ~300K (el costo por mensaje útil es casi igual entre 300K y 500K: $0,143 a 300K, $0,134 a 400K, $0,138 a 500K; subir el umbral casi no ahorra y alarga el contexto); sesiones de trabajo largas, la misma regla; Codex en ~200K, por acercarse a su ventana real de 258 400 tokens (no por el escalón de precio de 272 000: corregido el 2026-09-26, bajo el cálculo correcto ninguna sesión del estudio lo cruza) | provisional (1 estudio) | Estudio del 2026-09-25 sobre 1 116 registros de Claude Code y 206 de Codex (solo lectura, subagente Sonnet 49 mensajes ≈ $1,27; informe y scripts en el scratchpad de esa sesión): 12 sesiones de orquestador; 22 de 208 sesiones de Codex pasaron del 80 % de su ventana — corregido el 2026-09-26 (CodeRabbit, PR #14): la cifra de Codex decía 53 de 206 (26 %) por un doble conteo de tokens de caché en `last_token_usage`; ver «Corrección del 2026-09-26» en `docs/orquestacion/estudios/2026-09-25-punto-de-traspaso.md` |
 | El traspaso cuesta ≈ $2,8 y deja al orquestador nuevo en ≈ 169K tokens antes de su primer prompt: el prompt de traspaso manda leer solo lo necesario (secciones, no archivos enteros; nada que ya esté en el resumen de Engram) | provisional (1 estudio, 4 traspasos) | mismo estudio: arranque promedio H ≈ $2,77, C0 ≈ 169K |
 | Las recargas de caché por ausencia pesan poco en el orquestador (≈ 6 % de su costo; 74 % de los mensajes ya usan la caché de 1 h); lo que más gasta son sesiones muy largas nunca traspasadas | provisional (1 estudio) | mismo estudio: recargas por ausencia $428 de $5 455 en total; las 5 sesiones más largas sin traspaso (682–1 487 mensajes, 440–533K sostenidos) suman $637 (11,7 % de todo el gasto) |
 
@@ -177,6 +178,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
+- 2026-09-26 — Revisión de PR #14 (CodeRabbit): apéndice B agrega la familia `fable` (Claude Fable 5.1: $10 entrada y $50 salida por millón, tabla de precios de Anthropic) y ya no cobra a los modelos desconocidos como si fueran `sonnet` — se cuentan aparte («sin precio»); la fila de §5 sobre el punto de traspaso de Codex se corrige por el doble conteo de tokens de caché en `last_token_usage` (H3, ver el estudio del punto de traspaso); regla nueva en §2 sobre pedir `rtk proxy` cuando un paso cuenta líneas de una salida filtrada.
 - 2026-09-26 — Engram 1.7.2 T3: el propietario confirma con sus palabras una tarea sobre sus archivos cuando el prompt llega pegado, y ejecuta él con `!` los comandos de instalación que el filtro bloquea (§2).
 - 2026-09-26 — Experimento de Engram 1.7.2: preparación neutra y control en la misma tanda en pruebas de sesiones (§4); cuarta batería (§6).
 - 2026-09-26 — Ensayar una frase nueva del manual con archivos de instrucciones del proyecto antes de publicar (§4).
@@ -251,25 +253,35 @@ print("herramientas",dict(tools)); print("largo último texto",len(last_text))
 
 ## Apéndice B. Costo y contexto de una sesión (Claude Code)
 
-Uso: `python3 costo.py <registro .jsonl>`. Precios del 2026-09-25 (models.dev y Notion «Precios de modelos»); la escritura de caché distingue 5 min y 1 h. «contexto max» es lo que relee el mensaje más grande: es el número del traspaso (§1.6).
+Uso: `python3 costo.py <registro .jsonl>`. Precios del 2026-09-26 (models.dev y Notion «Precios de modelos»; familia `fable` agregada con la tabla de precios de Anthropic del 2026-09-26, porque models.dev aún no lista `claude-fable-5-1`: entrada 10, lectura de caché 0,25, salida 50; escritura 5 min y 1 h = 1,25× y 2× la entrada, como las demás familias); la escritura de caché distingue 5 min y 1 h. Un modelo que no calza con ninguna familia conocida (p. ej. `<synthetic>`) no se cobra: se cuenta aparte y se imprime «sin precio: {modelo: mensajes}». «contexto max» es lo que relee el mensaje más grande: es el número del traspaso (§1.6).
 
 ```python
 import json,sys,collections
 # precios USD/M: entrada, lectura caché, escritura 5m, escritura 1h, salida
-P={"opus":(4,0.2,5,8,20),"sonnet":(2,0.2,2.5,4,10),"haiku":(1,0.1,1.25,2,5)}
+P={"opus":(4,0.2,5,8,20),"sonnet":(2,0.2,2.5,4,10),"haiku":(1,0.1,1.25,2,5),"fable":(10,0.25,12.5,20,50)}
+def family(mod):
+    mod=(mod or "").lower()
+    for fam in ("opus","haiku","fable","sonnet"):
+        if fam in mod: return fam
+    return None
 path=sys.argv[1]; seen=set(); u=collections.Counter(); msgs=0; t0=t1=None; cost=0; models=collections.Counter(); maxctx=0
+unpriced=collections.Counter()
 for line in open(path):
     o=json.loads(line)
     if o.get("type")!="assistant": continue
     m=o["message"]; mid=m.get("id")
     if mid in seen: continue
     seen.add(mid); msgs+=1; t=o.get("timestamp"); t0=t0 or t; t1=t
-    mod=m.get("model",""); models[mod]+=1; p=P["opus" if "opus" in mod else "haiku" if "haiku" in mod else "sonnet"]
+    mod=m.get("model",""); models[mod]+=1; fam=family(mod)
     us=m.get("usage",{}); cc=us.get("cache_creation") or {}
     i=us.get("input_tokens",0) or 0; r=us.get("cache_read_input_tokens",0) or 0; w=us.get("cache_creation_input_tokens",0) or 0; out=us.get("output_tokens",0) or 0
     w1=cc.get("ephemeral_1h_input_tokens",0) or 0; w5=w-w1
+    if fam is None:
+        unpriced[mod]+=1; continue
+    p=P[fam]
     cost+=(i*p[0]+r*p[1]+w5*p[2]+w1*p[3]+out*p[4])/1e6
     u["in"]+=i;u["read"]+=r;u["write"]+=w;u["out"]+=out; maxctx=max(maxctx,i+r+w)
 print(dict(models),"mensajes",msgs,"inicio",t0,"fin",t1)
 print("tokens",dict(u),"total",sum(u.values()),"contexto max",maxctx,"costo $%.2f"%cost)
+if unpriced: print("sin precio:",dict(unpriced))
 ```

@@ -6,7 +6,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(__file__))
 from pricing import codex_turn_cost, CODEX_TIER_THRESHOLD
 
-OUT = "/private/tmp/claude-501/-Users-jorgeetrejoo-Desktop-forge614-ai/ac7d9050-8724-4a7b-9a7d-17038f96474a/scratchpad/traspaso"
+OUT = os.environ.get("TRASPASO_OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "traspaso-data")
 DATA_DIR = os.path.join(OUT, "data")
 
 
@@ -41,8 +41,10 @@ def main():
         n_high_tier_turns = 0
         n_turns = len(turns)
         for t in turns:
-            # current-turn context size (NOT the lifetime cumulative total_* counters)
-            ctx_at_turn = int(t["last_input"] or 0) + int(t["last_cached"] or 0)
+            # current-turn context size (NOT the lifetime cumulative total_* counters).
+            # last_input already includes last_cached as a subset (H3, PR #14 CodeRabbit
+            # review) -- adding them double-counts the cached portion.
+            ctx_at_turn = int(t["last_input"] or 0)
             cost, is_high = codex_turn_cost(
                 int(t["last_input"] or 0), int(t["last_cached"] or 0),
                 int(t["last_cache_write"] or 0), int(t["last_output"] or 0), ctx_at_turn)
@@ -62,8 +64,10 @@ def main():
         total_tokens_session = 0
         if turns:
             last_turn = turns[-1]
-            total_tokens_session = (int(last_turn["total_input"] or 0) + int(last_turn["total_cached"] or 0)
-                                     + int(last_turn["total_output"] or 0))
+            # total_input already includes total_cached as a subset (H3): the lifetime
+            # counter total_tokens = total_input + total_output, verified against a real
+            # rollout's token_count event.
+            total_tokens_session = int(last_turn["total_input"] or 0) + int(last_turn["total_output"] or 0)
 
         pct_per_million = None
         if rl_delta is not None and rl_delta > 0 and total_tokens_session > 0:
