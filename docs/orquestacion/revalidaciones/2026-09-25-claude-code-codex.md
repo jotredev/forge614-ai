@@ -199,3 +199,122 @@ Identificadas porque su carpeta de trabajo es el laboratorio (`/tmp/r1b.<id>/pro
 4. **Claude Code fusiona pedidos casi iguales por su cuenta** («para no duplicar»): es un resultado aceptado por el checklist («un solo recuerdo activo»), pero deja sin probar el aviso; la prueba de `similar` debería forzar dos guardados.
 5. **P6′ funciona por dos caminos válidos** (Engram rechaza, o el asistente quita el valor antes): el plan ya lo permite; conviene que R3 lo diga igual, y que en Codex `SECRET_REJECTED` solo se ejercita si se le pide guardar el valor sin darle ocasión de quitarlo (decisión del propietario).
 6. **Copia limpia por asistente:** confirmado útil; con una sola copia, la nota de conexión de P6′ aparece como «parecido» en P8′.
+
+---
+
+# T4 · Engram 1.7.1: P8′ de Codex y sesiones en paralelo y sin cerrar
+
+## En palabras llanas
+
+Como probar un letrero de sala de juntas: además de que el letrero diga lo correcto, hay que ver si la persona que entra lo lee en voz alta. Engram 1.7.1 entrega bien los dos avisos nuevos en los dos asistentes: «hay otra sesión abierta ahora» (`parallel`) y «una sesión quedó abierta, su última actividad fue a tal hora» (`previous`). Los asistentes todavía no los cuentan como pide el manual:
+- **Claude Code** avisa bien de la sesión que quedó abierta (3 de 3), pero en 2 de 3 corridas **ofrece continuar la sesión que sigue abierta en paralelo**, y el checklist lo prohíbe.
+- **Codex**, con el prompt de la prueba («dime **en una línea**…»), **no menciona la sesión que quedó abierta** (0 de 5, con o sin otra en paralelo). Sin la frase «en una línea» sí la menciona (2 de 2), pero no ofrece continuar desde su resumen (0 de 2) y una vez no dice cuándo.
+- **P8′ de Codex aprobada:** ante el parecido (`similar` 0,53) usó `supersedes` y dijo «Reemplacé el registro anterior».
+
+Conclusión: las celdas `engram/claude-code` y `engram/codex` no pasan todavía las pruebas de sesiones. El problema está en cómo el manual pide contarlo, no en Engram.
+
+## Entorno medido
+
+- Binario: `~/.forge614/engram/bin/forge614-engram --version` → **1.7.1** (confirmado antes de empezar).
+- `rtk 0.45.0`, `claude` (opus, `--effort high`, `--no-session-persistence`), `codex-cli 0.157.0` (`-m gpt-5.6-terra -c model_reasoning_effort=medium`).
+- Laboratorio: `/private/tmp/claude-501/.../scratchpad/t4/` con `labCC` y `labCX` (copias `sqlite3 backup` de `~/.forge614/engram/engram.db`, `.env` copiado, carpeta 700, archivos 600, `pragma journal_mode` ejecutado), `roto` (config igual pero `engram.db` es una carpeta), y `proyectos/labCC|labCX/proyecto-ses|proyecto-p8` (creados con `project-create` + `project-bind`, sin Git).
+- Horario de la ronda (UTC): inicio 2026-09-26T01:06:07Z, fin 2026-09-26T01:17:37Z (≈ 11.5 minutos; ninguna prueba de sesiones quedó separada de la siguiente por más de un minuto, muy por debajo del umbral de 30 min salvo el atraso deliberado de `-a`).
+
+## Aislamiento
+
+- **Guarda con base rota**, antes de cualquier prueba, en los dos asistentes: ambos respondieron `DATABASE_PATH_UNSAFE` (nada de recuerdos reales).
+  - Claude Code: `{"code":"DATABASE_PATH_UNSAFE","error":"La base o un archivo auxiliar tiene un enlace, propietario o tipo no permitido. No se abrió SQLite."}`
+  - Codex: mismo código y mensaje, literal en su respuesta.
+- Línea base de la base real, antes y después — **sin cambios**:
+  - Recuerdos con "REVAL-LAB": 2 antes y 2 después (ambos preexistentes: el resultado y el resumen de la propia sesión orquestadora R1b del 2026-09-25, sin la clave de prueba de esta ronda).
+  - Sesiones con "reval-lab": 0 antes y 0 después.
+  - Evidencia del gancho (`~/.forge614/engines/hook-evidence/*.json`): sin cambios (192 B / 186 B, mismo contenido).
+  - `~/.codex/memories/`: 0 antes y después.
+  - `git status --short` de `forge614-ai`: limpio antes y después.
+- **Hallazgo de aislamiento (no bloquea, se anota):** invocar el binario real `claude -p` en las carpetas del laboratorio creó dos carpetas **vacías** (sin archivos dentro) en `~/.claude/projects/` — el registro propio de proyectos de Claude Code, no de Forge614 Engram. Es un efecto inherente de usar el binario real (ya ocurría en R1/R1b con el mismo patrón de comando) y no contenía datos; no se tocó para no escribir de nuevo en `~/.claude` real. Con la repetición del orquestador son cuatro carpetas vacías de esta ronda (`…scratchpad-t4-proyectos-labCC-proyecto-ses`, `…scratchpad-t4-proyectos-proyecto-ses`, `…scratchpad-t4rep-proy-cc-2-proyecto-ses`, `…scratchpad-t4rep-proy-cc-3-proyecto-ses`), más una de R1. Se borran con visto bueno del propietario.
+
+## Resultados · Claude Code
+
+| Prueba | Resultado | Cita corta |
+|---|---|---|
+| S1-a | **Aprobado** | `memory_session_start` sin `previous` ni `parallel`; el asistente: "No hay otra sesión abierta al mismo tiempo ni una anterior sin cerrar." Resumen guardado con goal "REVAL-LAB prueba de sesiones". |
+| S1-b | **Falla (una cláusula)** | `memory_session_start` devolvió `"parallel":[{"sessionId":"reval-lab-cc-a","lastActivityAt":"2026-09-26T01:10:04.391Z"}]` y sin `previous` (correcto). El asistente dijo: "ahora mismo hay otra sesión abierta en paralelo, `reval-lab-cc-a`... Es como si hubiera dos personas escribiendo en el mismo cuaderno a la vez" (no la llamó interrumpida, correcto), **pero** en "Siguiente" añadió: "Puedo retomar la prueba de sesiones desde donde la dejó `reval-lab-cc-a`" — sí ofreció continuarla, contra la regla. |
+| atrasar -a | **Aprobado** | `UPDATE session_activity` aplicado en `labCC`; verificado: `reval-lab-cc-a` → `2026-09-26T00:26:01.331Z` (~45 min atrás); `reval-lab-cc-b` siguió con actividad de hace segundos. |
+| S2 | **Aprobado** | `memory_session_start` devolvió `"previous":{"sessionId":"reval-lab-cc-a","interruptedAt":"2026-09-26T00:26:01.331Z", "summary":{...goal "REVAL-LAB prueba de sesiones"...}}` y `"parallel":[{"sessionId":"reval-lab-cc-b",...}]`. El asistente: "Una sesión anterior quedó sin cerrar: `reval-lab-cc-a`... ¿Quieres que siga desde ese resumen?" (ofrece continuar, correcto) y sobre `-b`: "Hay otra sesión abierta ahora mismo... solo se inició y quedó esperando instrucciones" (sin ofrecer continuarla, correcto). **Bloque de arranque inyectado** (evento `hook_response` de `SessionStart:startup`): trae literalmente "Previous session (interrupted)\nSession reval-lab-cc-a was left open; its last activity was at 2026-09-26T00:26:01.331Z; its last summary (7a7bd745... v1): Goal: REVAL-LAB prueba de sesiones...". |
+
+## Resultados · Codex
+
+| Prueba | Resultado | Cita corta |
+|---|---|---|
+| S1-a | **Aprobado** | `memory_session_start` sin `previous` ni `parallel`. Mensaje: "Sesión `reval-lab-cx-a` iniciada y resumen guardado con el objetivo indicado. Permanece abierta." |
+| S1-b | **Aprobado con reserva** | `memory_session_start` devolvió `"parallel":[{"sessionId":"reval-lab-cx-a","lastActivityAt":"2026-09-26T01:12:25.097Z"}]` sin `previous` (correcto). Mensaje: "Hay otra sesión abierta (`reval-lab-cx-a`); continuaré desde este estado." — no la llamó interrumpida, pero la frase es ambigua y puede leerse como que sigue el trabajo de `-a` en vez de solo continuar con lo suyo. |
+| atrasar -a | **Aprobado** | `UPDATE session_activity` en `labCX`: `reval-lab-cx-a` → `2026-09-26T00:28:20.223Z`; `reval-lab-cx-b` con actividad reciente antes de S2. |
+| S2 | **Falla** | `memory_session_start` sí devolvió `"previous":{"sessionId":"reval-lab-cx-a","interruptedAt":"2026-09-26T00:28:20.223Z", summary con goal "REVAL-LAB prueba de sesiones"}` y `"parallel":[{"sessionId":"reval-lab-cx-b",...}]`, y el bloque inyectado (visto en el rollout) también traía "left open; its last activity was at 2026-09-26T00:28:20.223Z". **Pero la respuesta de Codex a la persona no menciona en absoluto a `reval-lab-cx-a`**: "Sesión `reval-lab-cx-c` iniciada; el proyecto quedó como una prueba de sesiones, sin cambios ni decisiones pendientes, aunque `reval-lab-cx-b` sigue abierta en paralelo." Ni dice que `-a` quedó abierta, ni cuándo, ni ofrece continuar su resumen. El dato llegó completo; Codex no lo comunicó. |
+| P8′ | **Aprobado** | 1ª `memory_save` (sin `topicKey`): guardó `78009003…` sin aviso de `similar`. 2ª `memory_save` (mismo hilo, `codex exec resume`) trajo `"similar":[{"id":"78009003-...","score":0.53}]`; Codex llamó `memory_save` con `"supersedes":"78009003-a2bb-45f2-b8e2-3755a6c1ae36"` y dijo: "Reemplacé el registro anterior por esta versión más explícita." Verificado en `labCX` con `sqlite3 -readonly`: `memory_meta` de `78009003…` tiene `superseded_by = 94a8da9d…`; ambos recuerdos siguen existiendo (`state='active'`), nada borrado. |
+
+## Repetición del orquestador (2026-09-26, 01:21–01:32 UTC)
+
+Revisión de las transcripciones de arriba y repetición con un script propio: el mismo método, copias nuevas por corrida, los mismos prompts y los mismos modelos. En Codex, además, sin la frase «en una línea» (`r6`, `r7`) y solo con la sesión vieja, sin otra en paralelo (`r4`, `r5`). Base real: 0 sesiones `reval-lab` antes y después.
+
+| Prueba | Claude Code (r1 subagente, r2, r3) | Codex «en una línea» (r1, r2, r3) | Codex solo `previous` (r4, r5) | Codex sin «en una línea» (r6, r7) |
+|---|---|---|---|---|
+| S1-b: dice que hay otra abierta | 3/3 | 3/3 | — | 2/2 |
+| S1-b: no ofrece continuarla | **1/3** (r1 «Puedo retomar la prueba de sesiones desde donde la dejó `reval-lab-cc-a`»; r3 «Si quieres, puedo seguir desde lo que dice su resumen») | 3/3 (r1 ambigua: «continuaré desde este estado») | — | 2/2 |
+| S2: dice que la vieja quedó abierta | 3/3 | **0/3** (r3 la llama «paralela»: «hay dos sesiones paralelas abiertas (`a` y `b`)») | **0/2** | 2/2 («fue interrumpida el 26 de septiembre a las 00:45»; «quedó interrumpida») |
+| S2: dice cuándo | 3/3 | 0/3 | 0/2 | 1/2 |
+| S2: ofrece continuar desde su resumen | 3/3 | 0/3 | 0/2 | **0/2** |
+| S2: nombra la paralela sin ofrecer continuarla | 3/3 | 3/3 | — | 2/2 |
+
+En todas las corridas, `memory_session_start` devolvió lo esperado: `parallel` con `-a` en S1-b; `previous` = `-a` con la hora atrasada y `parallel` con `-b` en S2. En Codex `r2` y `r3`, el primer `memory_session_start` de S2 falló con `PROJECT_DIRECTORY_REQUIRED` (lo llamó sin `directory`) y lo repitió bien.
+
+**Aislamiento:** la evidencia real del gancho cambió dos veces durante la repetición, pero no fue el laboratorio. `claude-code.json` cambió a las 01:24:10, cuando se abrió una sesión interactiva del propietario (proceso de las 01:24:09), y `codex.json` a las 01:29:04, cuando otra sesión lanzó un `codex exec` con razonamiento high y permiso de escritura (proceso de las 01:29:01). Las corridas del laboratorio usan `medium` y `read-only`. En la ronda del subagente, la evidencia no cambió.
+
+**Costo de la repetición:** Claude Code, 6 corridas, $1,93. Codex, 16 turnos: 1 974 682 tokens de entrada (1 736 960 en caché), 15 627 de salida (2 671 de razonamiento). Hay 16 transcripciones más en `~/.codex/sessions/2026/09/25/`, identificadas por `t4rep` en su carpeta de trabajo; se borran con visto bueno del propietario.
+
+## Costo de las corridas sin pantalla
+
+**Claude Code** (`total_cost_usd` de cada evento `result`, modelo opus·high):
+
+| Prueba | Costo USD | Duración |
+|---|---|---|
+| guarda | 0.2216 | 13.0 s |
+| S1-a | 0.2844 | 16.6 s |
+| S1-b | 0.3773 | 23.2 s |
+| S2 | 0.3118 | 18.8 s |
+| **Total** | **≈ $1.20** | **≈ 71.5 s** |
+
+**Codex** (tokens por turno; entrada/caché son acumulados de la conversación, `gpt-5.6-terra`·medium):
+
+| Prueba | Entrada | Caché | Salida | Razonamiento |
+|---|---|---|---|---|
+| guarda | 83 413 | 68 608 | 457 | 103 |
+| S1-a | 89 598 | 74 752 | 812 | 208 |
+| S1-b | 128 641 | 108 288 | 916 | 164 |
+| S2 | 199 756 | 172 544 | 1 141 | 199 |
+| P8′ turno 1 | 143 001 | 130 304 | 1 048 | 125 |
+| P8′ turno 2 | 322 967 | 283 136 | 2 456 | 358 |
+| **Suma** | **967 376** | **837 632** | **6 830** | **1 157** |
+
+## Transcripciones de Codex de esta ronda (sin borrar)
+
+En `~/.codex/sessions/2026/09/25/` (hora local; UTC en la tabla de arriba):
+- `rollout-2026-09-25T19-08-18-01a0db41-8020-7ce1-9050-e5c032d9c4ef.jsonl` (guarda)
+- `rollout-2026-09-25T19-12-05-01a0db44-f997-7410-a630-e03b14b13403.jsonl` (S1-a)
+- `rollout-2026-09-25T19-12-40-01a0db45-8237-7e02-b417-5c9a83bd7ec5.jsonl` (S1-b)
+- `rollout-2026-09-25T19-13-29-01a0db46-421c-7522-8a48-8374b7942b94.jsonl` (S2)
+- P8′ (dos turnos, mismo hilo `01a0db47-a2be-7051-b88e-e0ca78fa4d23`): buscar por ese id en `~/.codex/sessions/2026/09/25/`.
+
+## Desviaciones del plan
+
+1. **`roto` inicial mal preparado.** La primera vez que se armó la copia rota le faltaron `.env` y `chmod 700`; Claude Code respondió `CONFIG_INVALID` en vez de `DATABASE_PATH_UNSAFE`. Se corrigió copiando `.env` y aplicando los permisos exactos del punto 1 de la preparación, y se repitió la prueba con éxito. No se tocó nada real; el arreglo quedó dentro del scratchpad.
+2. **`project-create`/`project-bind` no llevan `--json`** (esa bandera no existe en esos comandos; el CLI ya devuelve JSON por defecto). Se usó sin `--json`.
+3. **Una sola carpeta de proyecto no sirve para dos copias.** El primer intento vinculó `proyectos/proyecto-ses` a `labCC` y luego a `labCX`; Engram escribe `.forge614/project.json` en la carpeta real y la segunda vinculación falló con `PROJECT_FILE_CONFLICT`. Se corrigió usando carpetas separadas por copia (`proyectos/labCC/proyecto-ses`, `proyectos/labCX/proyecto-ses`, etc.), todo dentro del scratchpad; no afectó ninguna base real.
+4. **`codex exec resume` no acepta `--sandbox`** (solo `-c sandbox_mode="read-only"`, tal como decía el encargo). El primer intento con `--sandbox read-only` falló (`unexpected argument`); se repitió solo con `-c sandbox_mode="read-only"` y funcionó.
+5. Aparte del punto de aislamiento ya descrito (carpetas vacías en `~/.claude/projects/`), no hubo más desviaciones.
+
+## Hallazgos (no bloquean)
+
+0. **La frase «en una línea» del prompt de S1-b y S2 es un sesgo de la prueba** (error del plan): Codex obedece ese límite de largo y deja fuera avisos que el manual pide dar, y Claude Code lo ignora. Las pruebas de conducta no deben limitar el largo de la respuesta; R1 (P4) no lo limitaba.
+1. **Codex omite el aviso de sesión interrumpida en S2**, pese a recibir el dato completo (bloque de arranque y `memory_session_start` con `previous`). Esto contradice el manual v4 ("si vuelve `previous`, decir que quedó abierta y cuándo, y ofrecer continuar"). Falla de comportamiento del asistente, no de Engram ni del gancho — Codex sí recibió y pudo leer la información (se ve en su propio rollout), simplemente no la mencionó al responder. Candidato a repetirse o a anotarse en el checklist como riesgo conocido de Codex.
+2. **Continuidad ofrecida en S1-b** (confirmado en la repetición para Claude Code, 2 de 3). Redacción original del subagente: ("puedo retomar..." en Claude Code, "continuaré desde este estado" en Codex): ninguno de los dos llamó "interrumpida" a la sesión paralela (eso sí se cumplió), pero ambos rozan la línea de "ofrecer continuarla". Vale la pena afinar la frase del manual para dejar más claro que en el caso `parallel` (sin `previous`) no se debe sugerir ningún tipo de continuidad.
+3. `codex exec` avisa "loading hooks from both hooks.json and config.toml" en cada corrida — ya documentado en R1 como no bloqueante (hooks de Orca vs. Engines, sin duplicado).
