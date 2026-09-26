@@ -73,7 +73,7 @@
       "status": "supported",
       "verifiedAt": "2026-09-26",
       "verifiedBy": "owner",
-      "notes": "Revalidado el 2026-09-26 con Engram 1.7.2 (manual v4 con la regla 3 nueva y sessionNotice; P8′ aprobada en T4, ver T4 y T4b en docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md). Límite: dice que la sesión quedó abierta y cuándo y cuenta su resumen, pero no ofrece continuar desde él (0 de 6); si quieres seguir, pídeselo. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
+      "notes": "Revalidado el 2026-09-26 con Engram 1.7.2 (manual v4 con la regla 3 nueva y sessionNotice; P8′ aprobada en T4, ver T4 y T4b en docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md). Límite: dice que la sesión quedó abierta, casi siempre cuándo (5 de 6) y cuenta su resumen, pero no ofrece continuar desde él (0 de 6); si quieres seguir o saber la hora, pídeselo. No toma las instrucciones del servidor MCP: el manual completo en AGENTS.md es obligatorio."
     },
     {
       "node": "shell",
