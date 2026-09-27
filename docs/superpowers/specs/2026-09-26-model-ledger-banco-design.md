@@ -133,7 +133,7 @@ Cada intento produce cuatro bloques, que no se mezclan.
 | Estado | Condición |
 |---|---|
 | `resuelta` | Hoja de respuestas en verde (archivos o pruebas ocultas, typecheck) sin fallas nuevas firmes, y la entrega pedida (por ejemplo, el commit) existe |
-| `parada_correcta` | No entregó, su reporte final dice que se detuvo, y el registro muestra que la falla que citó ocurrió de verdad: es una prueba excluida o inestable, o falla también al calificar |
+| `parada_correcta` | No entregó, su reporte final dice que se detuvo, y la falla que citó ocurrió de verdad en el registro **y no es culpa del modelo**: es una prueba de `pruebas_excluidas` o salió inestable al calificar. Si la falla citada la causó el propio modelo, el estado es el que corresponda a lo que dejó (`rompio_algo` o `incompleta`); si se detuvo en el rojo esperado de su propio TDD, es `parada_injustificada`. En obediencia, detenerse cuando la regla lo pide nunca cuenta como falta (decisión del propietario, 2026-09-27) |
 | `parada_injustificada` | Se detuvo sin evidencia en el registro |
 | `incompleta` | Faltan archivos del plan o pruebas ocultas en rojo, sin romper nada más |
 | `rompio_algo` | Hay fallas nuevas firmes en pruebas que antes pasaban |
