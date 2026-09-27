@@ -42,9 +42,10 @@ implementan:
   de memoria inteligente); sin nube, la base no cambia y el arranque es el de hoy. La cola se alimenta con
   disparadores SQL por tabla, con una guardia que el aplicador de cambios bajados prende y apaga dentro de
   su propia transacción para no volver a encolar lo que acaba de bajar.
-- **M7 / D3.** En Neon: `forge614_sync.changes(id bigserial primary key, installation_id uuid not null,
-  kind text not null, payload jsonb not null, created_at timestamptz not null default now())`, creada si
-  falta; las tablas `revisions`/`state` de hoy no se tocan. Misma variable `POSTGRES_URL` y misma
+- **M7 / D3.** En Neon: `forge614_sync.changes(id bigserial primary key, change_id text not null unique,
+  installation_id uuid not null, kind text not null, op text not null, payload jsonb not null, created_at
+  timestamptz not null default now())`, creada si falta; `change_id` identifica cada fila de la cola local,
+  así una subida repetida tras perder la respuesta de Neon no duplica el cambio; las tablas `revisions`/`state` de hoy no se tocan. Misma variable `POSTGRES_URL` y misma
   verificación de TLS obligatorio fuera de loopback.
 - **M8 / D4.** Conflicto de recuerdos: gana la versión con fecha más reciente; la otra queda en el
   historial, nunca se borra; se avisa una vez en el siguiente `memory_session_start`, como dato, nunca como
