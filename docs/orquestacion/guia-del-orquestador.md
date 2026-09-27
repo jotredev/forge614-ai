@@ -35,6 +35,7 @@ Reglas:
 - Sigue el plan al pie de la letra con TDD; no agregues nada que no pida.
 - Si una prueba falla con el código literal del plan, no cambies la prueba: reporta qué falla, por qué y el ajuste mínimo.
 - <reglas específicas de la tarea>
+- Trabaja solo en esta sesión: no lances subagentes, agentes en paralelo ni otras sesiones, salvo que este prompt lo pida.
 - Commits sin líneas de atribución ni menciones a ninguna IA; verifica el mensaje.
 
 Repórtame con el prefijo "<Proyecto>:" en el formato fijo de la guía (§3).
@@ -56,7 +57,7 @@ Reglas del prompt:
 | **El prompt dice explícitamente que la lectura del plan está autorizada** ("solo lectura, mismo ecosistema"): la regla compartida `sesion-solo-repo-propio` v2 permite leer (nunca escribir ni ejecutar) otro repositorio del mismo ecosistema Forge614 cuando el prompt lo indica | firme (regla del propietario) | decisión del propietario, 2026-09-24, tras Engram T2 docs r1: Codex medium se detuvo con razón al pedirle leer el plan, aunque el mismo modelo con la misma regla lo había leído en T2 r1 (y Opus en T1): la regla v1 era ambigua sobre leer |
 | Cuando un paso cuenta líneas de una salida (p. ej. `git status --short \| wc -l`), el prompt pide `rtk proxy`: el filtro de rtk cambia el formato y el conteo sale distinto | provisional | Reglamento 1.1.2 R1 (Claude Code · Sonnet 5 · medium): `rtk git status --short \| wc -l` dio 12 en vez de 13; el agente lo detectó y lo repitió con `rtk proxy` (0 rondas extra) |
 | Un prompt para una sesión de `forge614-ai` (mismo proyecto de Engram que el orquestador) dice «no guardes nada en Engram: el estado lo lleva el orquestador»; sin esa frase, el manual de Engram lleva al worker a guardar su resultado y puede reemplazar el estado del orquestador | provisional | forge614-ai P4 de Engram 1.8.0 (Sonnet 5 · low): al cerrar guardó «Traspaso T3: PR #21 fusionado» con otro tema y lo marcó como reemplazo de `memoria-inteligente-estado` v84; T3-r1, con la frase en el prompt, no guardó nada |
-| El prompt de una tarea larga y repetitiva (p. ej. documentar muchos archivos) dice «trabaja solo en esta sesión: sin subagentes ni trabajo en paralelo»; Claude Code reparte por su cuenta y los subagentes se pisan | provisional | Engram 1.8.0 J1-r1 (Claude Code · Sonnet 5 · high, 43 archivos de comentarios): lanzó 18 subagentes; uno detuvo a otro, otro hizo el commit sin revisión y un archivo quedó truncado un momento; 92,5 M tokens ≈ $26,30 frente a $2–4 estimados |
+| **Todo prompt** dice «Trabaja solo en esta sesión: no lances subagentes, agentes en paralelo ni otras sesiones, salvo que este prompt lo pida»; un worker nunca levanta más de un agente (él mismo) si el orquestador no lo pidió. Claude Code reparte por su cuenta y los subagentes se pisan | **firme (regla del propietario, 2026-09-27: «que no vuelva a pasar»)** | Engram 1.8.0 J1-r1 (Claude Code · Sonnet 5 · high, 43 archivos de comentarios): lanzó 18 subagentes; uno detuvo a otro, otro hizo el commit sin revisión y un archivo quedó truncado un momento; 92,5 M tokens ≈ $26,30 frente a $2–4 estimados |
 | En una tarea de solo comentarios, el control compara el código sin comentarios **y** la forma de sus líneas: comparar solo el código impreso deja pasar líneas partidas o unidas | provisional | Engram 1.8.0 J1-r1: partió interfaces de una línea para ponerle JSDoc a cada campo; la primera versión de `solo-comentarios.ts` (código impreso) dio 0 y la segunda (líneas) encontró 3 archivos, 1 todavía partido tras la corrección del propio worker |
 
 ## 3. Forma del reporte
@@ -188,7 +189,7 @@ Punto de partida (se ajusta solo con datos de "Corridas de agentes"):
 
 ## 7. Registro de cambios de esta guía
 
-- 2026-09-27 — J1 de Engram 1.8.0 (comentarios en español): el prompt de una tarea larga prohíbe subagentes y el control de solo comentarios compara también la forma de las líneas (§2).
+- 2026-09-27 — J1 de Engram 1.8.0 (comentarios en español): regla firme del propietario, todo prompt prohíbe subagentes y agentes en paralelo salvo que el orquestador los pida (forma del prompt y §2) y el control de solo comentarios compara también la forma de las líneas (§2).
 - 2026-09-27 — Cierre de T3 y P4 de Engram 1.8.0: un prompt para una sesión de `forge614-ai` le pide no guardar en Engram (§2); tercera corrida de algoritmos con casos borde en Sonnet high, pasa a firme, y duodécima de publicación en Sonnet low (§6).
 - 2026-09-27 — Laboratorio de T3 de Engram 1.8.0: la revisión comprueba que los datos de cada prueba ejercitan el caso de su nombre (§4); tercera corrida de código con parche en Codex medium (§6).
 - 2026-09-27 — Laboratorio de T2 de Engram 1.8.0: una prueba de una protección se comprueba quitando la protección (§4); octava corrida de código con parche en Sonnet medium y undécima de publicación en Sonnet low, la primera sin CodeRabbit (§6).
