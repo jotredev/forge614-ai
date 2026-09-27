@@ -1,0 +1,667 @@
+diff --git a/src/app/cloud-apply.test.ts b/src/app/cloud-apply.test.ts
+new file mode 100644
+index 0000000..515c9f8
+--- /dev/null
++++ b/src/app/cloud-apply.test.ts
+@@ -0,0 +1,308 @@
++import { Database } from "bun:sqlite";
++import { expect, test } from "bun:test";
++import { enableCloud, initialize } from "../infrastructure/sqlite/schema";
++import { createProject } from "../infrastructure/sqlite/projects";
++import { save, saveSessionSummary, saveWithSession, startSession } from "../infrastructure/sqlite/writes";
++import type { ChangeRow } from "../infrastructure/postgres/replica";
++import { applyCloudChanges } from "./cloud-apply";
++
++function freshCloudDb(): Database {
++  const db = new Database(":memory:");
++  initialize(db);
++  enableCloud(db);
++  return db;
++}
++
++function drainOutbox(db: Database, installationId: string): ChangeRow[] {
++  const rows = db.query("SELECT id,kind,op,payload,created_at FROM cloud_outbox ORDER BY id").all() as
++    { id: number; kind: string; op: string; payload: string; created_at: string }[];
++  db.exec("DELETE FROM cloud_outbox");
++  return rows.map(row => ({ id: row.id, changeId: String(row.id), installationId, kind: row.kind,
++    op: row.op as "insert" | "update" | "delete", payload: JSON.parse(row.payload), createdAt: row.created_at }));
++}
++
++const notices = (db: Database) => db.query("SELECT code,payload FROM cloud_notices ORDER BY id").all() as { code: string; payload: string }[];
++const memory = (db: Database, id: string) => db.query("SELECT * FROM memories WHERE id=?").get(id) as Record<string, unknown>;
++
++test("Review Focus #1: la guardia se libera tras un rollback y un guardado local vuelve a encolar", () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  const bad: ChangeRow = { id: 1, changeId: "x", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p1", name: "ok", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const originalQuery = db.query.bind(db);
++  Object.defineProperty(db, "query", { value: (sql: string) => {
++    const statement = originalQuery(sql);
++    if (sql === "UPDATE cloud_state SET last_applied_id=? WHERE id=1") {
++      return { ...statement, run: () => { throw new Error("boom outside any row's savepoint"); } };
++    }
++    return statement;
++  }, configurable: true });
++  expect(() => applyCloudChanges(db, [bad], "local")).toThrow();
++  Object.defineProperty(db, "query", { value: originalQuery, configurable: true });
++  expect((db.query("SELECT apply_guard FROM cloud_state WHERE id=1").get() as { apply_guard: number }).apply_guard).toBe(0);
++  db.exec("DELETE FROM cloud_outbox");
++  createProject(db, "after-rollback");
++  expect((db.query("SELECT count(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(1);
++});
++
++test("filas de la propia instalación solo avanzan last_applied_id", () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  createProject(db, "mine");
++  const own = drainOutbox(db, "local");
++  const result = applyCloudChanges(db, own, "local");
++  expect(result).toEqual({ applied: 0, skipped: 0, conflicts: 0, lastAppliedId: own[0]!.id });
++  expect((db.query("SELECT count(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(0);
++  expect((db.query("SELECT apply_guard FROM cloud_state WHERE id=1").get() as { apply_guard: number }).apply_guard).toBe(0);
++  createProject(db, "after-normal-run");
++  expect((db.query("SELECT count(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(1);
++});
++
++test("Review Focus #2: un payload inválido en medio de una tanda se salta y el resto se aplica", () => {
++  const db = freshCloudDb();
++  const good1: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p1", name: "one", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const bad: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p2" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const good2: ChangeRow = { id: 3, changeId: "c", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p3", name: "three", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const result = applyCloudChanges(db, [good1, bad, good2], "local");
++  expect(result).toEqual({ applied: 2, skipped: 1, conflicts: 0, lastAppliedId: 3 });
++  expect(db.query("SELECT projectId FROM projects ORDER BY projectId").all()).toEqual([{ projectId: "p1" }, { projectId: "p3" }]);
++  expect(notices(db)[0]!.code).toBe("CLOUD_ROW_SKIPPED");
++  expect(JSON.parse(notices(db)[0]!.payload)).toEqual({ id: 2, kind: "projects", op: "insert", reason: "INVALID_PAYLOAD" });
++});
++
++test("una tanda vacía devuelve el last_applied_id guardado, no 0", () => {
++  const db = freshCloudDb();
++  db.exec("UPDATE cloud_state SET last_applied_id=41 WHERE id=1");
++  expect(applyCloudChanges(db, [], "local")).toEqual({ applied: 0, skipped: 0, conflicts: 0, lastAppliedId: 41 });
++});
++
++test("kind desconocido se salta con aviso UNKNOWN_KIND", () => {
++  const db = freshCloudDb();
++  const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "not_a_table", op: "insert", payload: {}, createdAt: "2026-01-01T00:00:00.000Z" };
++  const result = applyCloudChanges(db, [row], "local");
++  expect(result).toEqual({ applied: 0, skipped: 1, conflicts: 0, lastAppliedId: 1 });
++  expect(JSON.parse(notices(db)[0]!.payload).reason).toBe("UNKNOWN_KIND");
++});
++
++test("fila huérfana (llave foránea) se salta con aviso y no detiene la tanda", () => {
++  const db = freshCloudDb();
++  const orphan: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "ecosystem_memberships", op: "insert",
++    payload: { projectId: "no-such-project", groupId: "no-such-group", boundAt: "2026-01-01T00:00:00.000Z", source: "command" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const good: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p1", name: "ok", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const result = applyCloudChanges(db, [orphan, good], "local");
++  expect(result).toEqual({ applied: 1, skipped: 1, conflicts: 0, lastAppliedId: 2 });
++  expect(JSON.parse(notices(db)[0]!.payload).reason).toBe("FOREIGN_KEY");
++});
++
++// D5: one test per free-text field, plus one almost-positive case that must be applied.
++const secretCases: { kind: string; op: "insert"; payload: Record<string, unknown> }[] = [
++  { kind: "memories", op: "insert", payload: { id: "m1", projectId: "p1", scope: "project", topic_key: null, type: "fact",
++    title: "password: AKIAABCDEFGHIJKLMNOP", content: "ok", pinned: 0, version: 1, state: "active",
++    created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null } },
++  { kind: "memories", op: "insert", payload: { id: "m2", projectId: "p1", scope: "project", topic_key: null, type: "fact",
++    title: "ok", content: "token AKIAABCDEFGHIJKLMNOP", pinned: 0, version: 1, state: "active",
++    created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null } },
++  { kind: "memories", op: "insert", payload: { id: "m3", projectId: "p1", scope: "project", topic_key: "AKIAABCDEFGHIJKLMNOP", type: "fact",
++    title: "ok", content: "ok", pinned: 0, version: 1, state: "active",
++    created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null } },
++  { kind: "memory_meta", op: "insert", payload: { memory_id: "m1", short: "leak AKIAABCDEFGHIJKLMNOP", review_after: null,
++    superseded_by: null, affects: null, updated_at: "2026-01-01T00:00:00.000Z" } },
++  { kind: "memory_meta", op: "insert", payload: { memory_id: "m1", short: null, review_after: null, superseded_by: null,
++    affects: JSON.stringify(["AKIAABCDEFGHIJKLMNOP"]), updated_at: "2026-01-01T00:00:00.000Z" } },
++  { kind: "projects", op: "insert", payload: { projectId: "p9", name: "AKIAABCDEFGHIJKLMNOP",
++    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } },
++  { kind: "memory_versions", op: "insert", payload: { memory_id: "m1", version: 1,
++    snapshot: JSON.stringify({ id: "m1", title: "AKIAABCDEFGHIJKLMNOP", content: "ok", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
++  { kind: "memory_versions", op: "insert", payload: { memory_id: "m1", version: 1,
++    snapshot: JSON.stringify({ id: "m1", title: "ok", content: "AKIAABCDEFGHIJKLMNOP", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
++];
++for (const [index, testCase] of secretCases.entries()) {
++  test(`D5 #${index + 1}: un secreto en ${testCase.kind} se rechaza sin detener la sincronización`, () => {
++    const db = freshCloudDb();
++    const project = createProject(db, "p1"); db.exec("DELETE FROM cloud_outbox");
++    const payload = { ...testCase.payload };
++    if ("projectId" in payload && payload.projectId !== null) payload.projectId = project.projectId;
++    if (testCase.kind === "memory_meta" || testCase.kind === "memory_versions") {
++      save(db, { projectId: project.projectId, type: "fact", title: "seed", content: "seed" });
++      const seedId = (db.query("SELECT id FROM memories WHERE title='seed'").get() as { id: string }).id;
++      db.exec("DELETE FROM cloud_outbox");
++      (payload as Record<string, unknown>).memory_id = seedId;
++      if (testCase.kind === "memory_versions") (payload as Record<string, unknown>).snapshot = (payload.snapshot as string).replace(/"m1"/g, `"${seedId}"`);
++    }
++    const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: testCase.kind, op: testCase.op,
++      payload, createdAt: "2026-01-01T00:00:00.000Z" };
++    const result = applyCloudChanges(db, [row], "local");
++    expect(result.skipped).toBe(1);
++    expect(result.applied).toBe(0);
++    const notice = JSON.parse(notices(db)[notices(db).length - 1]!.payload);
++    expect(notice.pattern).toBe("aws-access-key-id");
++  });
++}
++
++test("D5 casi positivo: 'password: <redacted>' sí se aplica", () => {
++  const db = freshCloudDb();
++  const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "memories", op: "insert",
++    payload: { id: "m1", projectId: null, scope: "shared", topic_key: null, type: "fact",
++      title: "password: <redacted>", content: "ok", pinned: 0, version: 1, state: "active",
++      created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null }, createdAt: "x" };
++  const result = applyCloudChanges(db, [row], "local");
++  expect(result).toEqual({ applied: 1, skipped: 0, conflicts: 0, lastAppliedId: 1 });
++  expect(memory(db, "m1")!.title).toBe("password: <redacted>");
++});
++
++test("D6: tabla con fecha (projects) — gana el updatedAt más reciente", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "local-name"); db.exec("DELETE FROM cloud_outbox");
++  const older: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "projects", op: "update",
++    payload: { projectId: project.projectId, name: "older", createdAt: project.createdAt, updatedAt: "2000-01-01T00:00:00.000Z" }, createdAt: "x" };
++  applyCloudChanges(db, [older], "local");
++  expect((db.query("SELECT name FROM projects WHERE projectId=?").get(project.projectId) as { name: string }).name).toBe("local-name");
++  const newer: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "projects", op: "update",
++    payload: { projectId: project.projectId, name: "newer", createdAt: project.createdAt, updatedAt: "2999-01-01T00:00:00.000Z" }, createdAt: "x" };
++  applyCloudChanges(db, [newer], "local");
++  expect((db.query("SELECT name FROM projects WHERE projectId=?").get(project.projectId) as { name: string }).name).toBe("newer");
++});
++
++test("D6: empate de fecha converge por JSON canónico en las dos bases", () => {
++  const rowA: ChangeRow = { id: 1, changeId: "a", installationId: "inst-a", kind: "projects", op: "update",
++    payload: { projectId: "p1", name: "aaa", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "x" };
++  const rowB: ChangeRow = { id: 1, changeId: "b", installationId: "inst-b", kind: "projects", op: "update",
++    payload: { projectId: "p1", name: "zzz", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "x" };
++  const dbA = freshCloudDb();
++  const dbB = freshCloudDb();
++  applyCloudChanges(dbA, [rowA, rowB], "inst-x");
++  applyCloudChanges(dbB, [rowB, rowA], "inst-x");
++  const nameA = (dbA.query("SELECT name FROM projects WHERE projectId='p1'").get() as { name: string } | null)?.name;
++  const nameB = (dbB.query("SELECT name FROM projects WHERE projectId='p1'").get() as { name: string } | null)?.name;
++  expect(nameA).toBe(nameB);
++});
++
++test("sessions: endedAt local no se pierde si el que llega llega en null", () => {
++  const db = freshCloudDb();
++  createProject(db, "p"); const projectId = (db.query("SELECT projectId FROM projects LIMIT 1").get() as { projectId: string }).projectId;
++  startSession(db, projectId, "s1"); db.exec("UPDATE sessions SET endedAt='2026-01-01T00:00:00.000Z' WHERE sessionId='s1'"); db.exec("DELETE FROM cloud_outbox");
++  const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "sessions", op: "update",
++    payload: { sessionId: "s1", projectId, kind: "runtime", startedAt: "2026-01-01T00:00:00.000Z", endedAt: null }, createdAt: "x" };
++  applyCloudChanges(db, [row], "local");
++  expect((db.query("SELECT endedAt FROM sessions WHERE sessionId='s1'").get() as { endedAt: string }).endedAt).toBe("2026-01-01T00:00:00.000Z");
++});
++
++test("delete: borra por llave natural si existe; no hace nada si no existe", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "to-delete"); db.exec("DELETE FROM cloud_outbox");
++  const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "projects", op: "delete",
++    payload: { projectId: project.projectId, name: "to-delete", createdAt: project.createdAt, updatedAt: project.createdAt }, createdAt: "x" };
++  applyCloudChanges(db, [row], "local");
++  expect(db.query("SELECT * FROM projects WHERE projectId=?").get(project.projectId)).toBeNull();
++  const again = applyCloudChanges(db, [{ ...row, id: 2 }], "local");
++  expect(again).toEqual({ applied: 1, skipped: 0, conflicts: 0, lastAppliedId: 2 });
++});
++
++test("D8: tema repetido — el más reciente conserva el tema, el otro queda en NULL (converge en ambos sentidos)", () => {
++  const rowKeeper: ChangeRow = { id: 1, changeId: "a", installationId: "inst-a", kind: "memories", op: "insert",
++    payload: { id: "m-old", projectId: null, scope: "shared", topic_key: "shared-topic", type: "fact", title: "old", content: "old",
++      pinned: 0, version: 1, state: "active", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null }, createdAt: "x" };
++  const rowNew: ChangeRow = { id: 2, changeId: "b", installationId: "inst-b", kind: "memories", op: "insert",
++    payload: { id: "m-new", projectId: null, scope: "shared", topic_key: "shared-topic", type: "fact", title: "new", content: "new",
++      pinned: 0, version: 1, state: "active", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-02T00:00:00.000Z", groupId: null }, createdAt: "x" };
++  const dbA = freshCloudDb();
++  applyCloudChanges(dbA, [rowKeeper, rowNew], "inst-x");
++  const dbB = freshCloudDb();
++  applyCloudChanges(dbB, [rowNew, rowKeeper], "inst-x");
++  for (const db of [dbA, dbB]) {
++    expect((memory(db, "m-new") as { topic_key: string | null }).topic_key).toBe("shared-topic");
++    expect((memory(db, "m-old") as { topic_key: string | null }).topic_key).toBeNull();
++  }
++});
++
++test("D9: conflicto de versiones — reasigna, corrige memories.version, notifica y una entrada ligada llega ligada a K", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "p"); db.exec("DELETE FROM cloud_outbox");
++  save(db, { projectId: project.projectId, type: "fact", title: "local v1", content: "local v1", topicKey: "t" });
++  const memoryId = (db.query("SELECT id FROM memories WHERE topic_key='t'").get() as { id: string }).id;
++  save(db, { projectId: project.projectId, type: "fact", title: "local v2", content: "local v2", topicKey: "t", expectedVersion: 1 });
++  db.exec("DELETE FROM cloud_outbox");
++  const remoteSnapshot = { id: memoryId, projectId: project.projectId, scope: "project", topicKey: "t", type: "fact",
++    title: "remote v2", content: "remote v2", pinned: false, version: 2, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2099-01-03T00:00:00.000Z" };
++  const memoriesRow: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "memories", op: "update",
++    payload: { id: memoryId, projectId: project.projectId, scope: "project", topic_key: "t", type: "fact", title: "remote v2",
++      content: "remote v2", pinned: 0, version: 2, state: "active", created_at: "2026-01-01T00:00:00.000Z",
++      updated_at: "2099-01-03T00:00:00.000Z", groupId: null }, createdAt: "x" };
++  const versionRow: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "memory_versions", op: "insert",
++    payload: { memory_id: memoryId, version: 2, snapshot: JSON.stringify(remoteSnapshot) }, createdAt: "x" };
++  const result = applyCloudChanges(db, [memoriesRow, versionRow], "local");
++  expect(result.conflicts).toBe(1);
++  const conflictNotice = JSON.parse(notices(db).find(n => n.code === "CLOUD_CONFLICT")!.payload);
++  expect(conflictNotice.memoryId).toBe(memoryId);
++  expect(conflictNotice.remoteVersion).toBe(2);
++  const localVersion = conflictNotice.localVersion as number;
++  expect(localVersion).toBe(3);
++  expect(memory(db, memoryId) as { version: number; title: string }).toMatchObject({ version: localVersion, title: "remote v2" });
++  // A session entry from the same installation, pointing at the reassigned remote version, lands on K.
++  startSession(db, project.projectId, "s1"); db.exec("DELETE FROM cloud_outbox");
++  const entryRow: ChangeRow = { id: 3, changeId: "c", installationId: "remote", kind: "session_entries", op: "insert",
++    payload: { sessionId: "s1", memoryId, version: 2, recordedAt: "2026-01-04T00:00:00.000Z" }, createdAt: "x" };
++  applyCloudChanges(db, [entryRow], "local");
++  expect((db.query("SELECT version FROM session_entries WHERE sessionId=?").get("s1") as { version: number }).version).toBe(localVersion);
++  // Re-pulling the same remote (memoryId,version) a second time hits the recorded equivalence: no new conflict, no duplicate version row.
++  const countBefore = (db.query("SELECT count(*) AS n FROM memory_versions WHERE memory_id=?").get(memoryId) as { n: number }).n;
++  const replay = applyCloudChanges(db, [{ ...versionRow, id: 4 }], "local");
++  expect(replay.conflicts).toBe(0);
++  expect((db.query("SELECT count(*) AS n FROM memory_versions WHERE memory_id=?").get(memoryId) as { n: number }).n).toBe(countBefore);
++});
++
++test("D9: conflicto donde gana lo local — la versión que llega queda en el historial y la activa sigue siendo la local", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "p"); db.exec("DELETE FROM cloud_outbox");
++  save(db, { projectId: project.projectId, type: "fact", title: "local v1", content: "local v1", topicKey: "t" });
++  const memoryId = (db.query("SELECT id FROM memories WHERE topic_key='t'").get() as { id: string }).id;
++  save(db, { projectId: project.projectId, type: "fact", title: "local v2", content: "local v2", topicKey: "t", expectedVersion: 1 });
++  db.exec("DELETE FROM cloud_outbox");
++  const remoteSnapshot = { id: memoryId, projectId: project.projectId, scope: "project", topicKey: "t", type: "fact",
++    title: "remote v2", content: "remote v2", pinned: false, version: 2, createdAt: "2020-01-01T00:00:00.000Z", updatedAt: "2020-01-03T00:00:00.000Z" };
++  const memoriesRow: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "memories", op: "update",
++    payload: { id: memoryId, projectId: project.projectId, scope: "project", topic_key: "t", type: "fact", title: "remote v2",
++      content: "remote v2", pinned: 0, version: 2, state: "active", created_at: "2020-01-01T00:00:00.000Z",
++      updated_at: "2020-01-03T00:00:00.000Z", groupId: null }, createdAt: "x" };
++  const versionRow: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "memory_versions", op: "insert",
++    payload: { memory_id: memoryId, version: 2, snapshot: JSON.stringify(remoteSnapshot) }, createdAt: "x" };
++  const result = applyCloudChanges(db, [memoriesRow, versionRow], "local");
++  expect(result.conflicts).toBe(1);
++  const active = memory(db, memoryId) as { version: number; title: string };
++  expect(active.title).toBe("local v2");
++  expect(active.version).toBe(2);
++  const kept = db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=3").get(memoryId) as { snapshot: string };
++  expect(JSON.parse(kept.snapshot).title).toBe("remote v2");
++});
++
++test("D9: eco idéntico de la misma versión no produce conflicto", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "p"); db.exec("DELETE FROM cloud_outbox");
++  const result0 = save(db, { projectId: project.projectId, type: "fact", title: "t", content: "c", topicKey: "t" });
++  const outboxRows = drainOutbox(db, "remote");
++  const result = applyCloudChanges(db, outboxRows, "installation-that-is-not-local");
++  expect(result.conflicts).toBe(0);
++  expect((db.query("SELECT count(*) AS n FROM memory_versions WHERE memory_id=?").get(result0.id) as { n: number }).n).toBe(1);
++});
++
++test("punta a punta: A guarda 2 recuerdos con sesión y resumen, B los recibe idénticos sin crecer su cola", () => {
++  const a = freshCloudDb(), b = freshCloudDb();
++  a.exec("DELETE FROM cloud_outbox");
++  const projectA = createProject(a, "shared-name");
++  startSession(a, projectA.projectId, "s1");
++  save(a, { projectId: projectA.projectId, type: "fact", title: "one", content: "one", topicKey: "one" });
++  saveWithSession(a, { projectId: projectA.projectId, type: "fact", title: "two", content: "two", topicKey: "two" }, { sessionId: "s1" });
++  saveSessionSummary(a, projectA.projectId, "s1", { goal: "g", instructions: "i", discoveries: "d", accomplishments: "a", nextSteps: "n", files: [] }, { requestKey: "req-1" });
++  const rowsFromA = drainOutbox(a, "installation-a");
++  const result = applyCloudChanges(b, rowsFromA, "installation-b");
++  expect(result.skipped).toBe(0);
++  const memoriesInB = b.query("SELECT id,title,content,version FROM memories ORDER BY id").all();
++  expect(memoriesInB.length).toBe(3);
++  expect((b.query("SELECT count(*) AS n FROM sessions WHERE sessionId='s1'").get() as { n: number }).n).toBe(1);
++  expect((b.query("SELECT count(*) AS n FROM session_summaries WHERE sessionId='s1'").get() as { n: number }).n).toBe(1);
++  expect((b.query("SELECT count(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(0);
++});
+diff --git a/src/app/cloud-apply.ts b/src/app/cloud-apply.ts
+new file mode 100644
+index 0000000..88ff49e
+--- /dev/null
++++ b/src/app/cloud-apply.ts
+@@ -0,0 +1,317 @@
++import type { Database } from "../infrastructure/sqlite/connection";
++import type { ChangeRow } from "../infrastructure/postgres/replica";
++import { travelingTableColumns } from "../infrastructure/sqlite/schema";
++import { findSecret } from "../modules/memory";
++
++export interface ApplyResult { readonly applied: number; readonly skipped: number; readonly conflicts: number; readonly lastAppliedId: number }
++
++type Row = Record<string, unknown>;
++type Outcome = "applied" | "skipped" | "conflict" | "own";
++
++// Natural key per traveling table (D6-D9): the column(s) that identify a row across installations.
++const NATURAL_KEY: Record<string, readonly string[]> = {
++  projects: ["projectId"],
++  ecosystem_groups: ["id"],
++  ecosystem_memberships: ["projectId"],
++  ecosystem_sources: ["groupId"],
++  memories: ["id"],
++  memory_versions: ["memory_id", "version"],
++  memory_meta: ["memory_id"],
++  sessions: ["sessionId"],
++  session_entries: ["memoryId", "version"],
++  session_summaries: ["sessionId"],
++  confirmations: ["confirmationId"],
++  confirmation_requests: ["memoryId", "requestKey"],
++};
++// Tables where the freshest row wins by this date column (tie broken by canonical JSON, D6).
++const DATED_COLUMN: Record<string, string> = {
++  projects: "updatedAt",
++  ecosystem_memberships: "boundAt",
++  ecosystem_sources: "setAt",
++  memory_meta: "updated_at",
++  session_entries: "recordedAt",
++  confirmations: "recordedAt",
++};
++// Tables where the incoming row column points at a memory_versions row and must be
++// translated through cloud_version_map before it is written locally (D9).
++const VERSION_COLUMN: Record<string, string> = {
++  memories: "version",
++  session_entries: "version",
++  session_summaries: "version",
++  confirmations: "version",
++};
++const MEMORY_ID_COLUMN: Record<string, string> = {
++  memories: "id",
++  session_entries: "memoryId",
++  session_summaries: "memoryId",
++  confirmations: "memoryId",
++};
++
++function canonicalJson(value: unknown): string {
++  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
++  if (value !== null && typeof value === "object") {
++    const keys = Object.keys(value as Row).sort();
++    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalJson((value as Row)[key])}`).join(",")}}`;
++  }
++  return JSON.stringify(value);
++}
++
++/** true when `a` (dated `aDate`) should win over `b` (dated `bDate`): later date, ties by canonical JSON. */
++function laterWins(aDate: string, aCanon: string, bDate: string, bCanon: string): boolean {
++  if (aDate !== bDate) return aDate > bDate;
++  return aCanon > bCanon;
++}
++
++function validPayload(payload: unknown, columns: readonly string[]): payload is Row {
++  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return false;
++  const keys = Object.keys(payload as Row);
++  if (keys.length !== columns.length) return false;
++  const set = new Set(columns);
++  return keys.every(key => set.has(key));
++}
++
++function naturalKeyOf(kind: string, payload: Row): string {
++  return (NATURAL_KEY[kind] ?? []).map(column => String(payload[column])).join("|");
++}
++
++function notice(db: Database, code: string, payload: unknown): void {
++  db.query("INSERT INTO cloud_notices(code,payload) VALUES(?,?)").run(code, JSON.stringify(payload));
++}
++
++/** Field named for a secret rejection: the natural key of the offending row, per D5. */
++function secretPatternOf(kind: string, payload: Row): string | null {
++  const check = (text: unknown): string | null => (typeof text === "string" ? findSecret(text) : null);
++  if (kind === "memories") return check(payload.title) ?? check(payload.content) ?? check(payload.topic_key);
++  if (kind === "projects") return check(payload.name);
++  if (kind === "memory_meta") {
++    const short = check(payload.short);
++    if (short) return short;
++    if (typeof payload.affects === "string") {
++      try {
++        const list = JSON.parse(payload.affects);
++        if (Array.isArray(list)) for (const entry of list) { const hit = check(entry); if (hit) return hit; }
++      } catch { /* not JSON: affects is validated elsewhere, nothing to scan here */ }
++    }
++    return null;
++  }
++  if (kind === "memory_versions") {
++    try {
++      const snapshot = JSON.parse(String(payload.snapshot));
++      return check(snapshot.title) ?? check(snapshot.content) ?? check(snapshot.topicKey);
++    } catch { return null; }
++  }
++  return null;
++}
++
++function mappedVersion(db: Database, memoryId: string, installationId: string, remoteVersion: number): number {
++  const row = db.query("SELECT local_version FROM cloud_version_map WHERE memory_id=? AND installation_id=? AND remote_version=?")
++    .get(memoryId, installationId, remoteVersion) as { local_version: number } | null;
++  return row ? row.local_version : remoteVersion;
++}
++
++function insertRow(db: Database, table: string, columns: readonly string[], payload: Row): void {
++  const placeholders = columns.map(() => "?").join(",");
++  db.query(`INSERT INTO ${table}(${columns.join(",")}) VALUES(${placeholders})`).run(...columns.map(column => payload[column] as never));
++}
++
++function updateRow(db: Database, table: string, columns: readonly string[], keyColumns: readonly string[], payload: Row): void {
++  const setColumns = columns.filter(column => !keyColumns.includes(column));
++  if (setColumns.length === 0) return;
++  const set = setColumns.map(column => `${column}=?`).join(",");
++  const where = keyColumns.map(column => `${column}=?`).join(" AND ");
++  db.query(`UPDATE ${table} SET ${set} WHERE ${where}`)
++    .run(...setColumns.map(column => payload[column] as never), ...keyColumns.map(column => payload[column] as never));
++}
++
++function existingRow(db: Database, table: string, keyColumns: readonly string[], payload: Row): Row | null {
++  const where = keyColumns.map(column => `${column}=?`).join(" AND ");
++  return db.query(`SELECT * FROM ${table} WHERE ${where}`).get(...keyColumns.map(column => payload[column] as never)) as Row | null;
++}
++
++/** Generic upsert for tables whose freshest row wins by a date column (D6). */
++function upsertDated(db: Database, kind: string, columns: readonly string[], payload: Row): void {
++  const keyColumns = NATURAL_KEY[kind]!, dateColumn = DATED_COLUMN[kind]!;
++  const current = existingRow(db, kind, keyColumns, payload);
++  if (!current) { insertRow(db, kind, columns, payload); return; }
++  const localCanon = canonicalJson(pick(current, columns)), remoteCanon = canonicalJson(payload);
++  if (laterWins(String(payload[dateColumn]), remoteCanon, String(current[dateColumn]), localCanon)) {
++    updateRow(db, kind, columns, keyColumns, payload);
++  }
++}
++
++/** Generic upsert for tables with no date column: the incoming row always overwrites (D6). */
++function upsertOverwrite(db: Database, kind: string, columns: readonly string[], payload: Row): void {
++  const keyColumns = NATURAL_KEY[kind]!;
++  const current = existingRow(db, kind, keyColumns, payload);
++  if (!current) insertRow(db, kind, columns, payload); else updateRow(db, kind, columns, keyColumns, payload);
++}
++
++function pick(row: Row, columns: readonly string[]): Row {
++  const out: Row = {};
++  for (const column of columns) out[column] = row[column];
++  return out;
++}
++
++function applySessions(db: Database, columns: readonly string[], payload: Row): void {
++  const current = existingRow(db, "sessions", ["sessionId"], payload);
++  const merged: Row = { ...payload };
++  if (current && current.endedAt !== null && payload.endedAt === null) merged.endedAt = current.endedAt;
++  if (!current) insertRow(db, "sessions", columns, merged); else updateRow(db, "sessions", columns, ["sessionId"], merged);
++}
++
++/** D9: translate an incoming memory_versions row through cloud_version_map, inserting/reassigning as needed. */
++function applyMemoryVersion(db: Database, row: ChangeRow, payload: Row): Outcome {
++  const memoryId = String(payload.memory_id), remoteVersion = Number(payload.version);
++  const known = db.query("SELECT local_version FROM cloud_version_map WHERE memory_id=? AND installation_id=? AND remote_version=?")
++    .get(memoryId, row.installationId, remoteVersion) as { local_version: number } | null;
++  if (known) return "applied";
++  const local = db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(memoryId, remoteVersion) as { snapshot: string } | null;
++  const recordEquivalence = (localVersion: number) =>
++    db.query("INSERT INTO cloud_version_map(memory_id,installation_id,remote_version,local_version) VALUES(?,?,?,?)")
++      .run(memoryId, row.installationId, remoteVersion, localVersion);
++  if (!local) {
++    db.query("INSERT INTO memory_versions(memory_id,version,snapshot) VALUES(?,?,?)").run(memoryId, remoteVersion, String(payload.snapshot));
++    recordEquivalence(remoteVersion);
++    return "applied";
++  }
++  const withoutVersion = (snapshot: string): string => { const parsed = JSON.parse(snapshot); delete parsed.version; return canonicalJson(parsed); };
++  if (withoutVersion(local.snapshot) === withoutVersion(String(payload.snapshot))) {
++    recordEquivalence(remoteVersion);
++    return "applied";
++  }
++  const max = db.query("SELECT MAX(version) AS v FROM memory_versions WHERE memory_id=?").get(memoryId) as { v: number };
++  const localVersion = max.v + 1;
++  const snapshot = JSON.parse(String(payload.snapshot));
++  snapshot.version = localVersion;
++  db.query("INSERT INTO memory_versions(memory_id,version,snapshot) VALUES(?,?,?)").run(memoryId, localVersion, JSON.stringify(snapshot));
++  recordEquivalence(localVersion);
++  // The memories row for this save may have already landed (D9: memories is queued before its
++  // version by saveCore) pointing at the raw remote version; correct it only when that row is the
++  // incoming one (it won by date), never when the local version stayed active.
++  db.query("UPDATE memories SET version=? WHERE id=? AND version=? AND title=? AND content=? AND updated_at=?")
++    .run(localVersion, memoryId, remoteVersion, String(snapshot.title), String(snapshot.content), String(snapshot.updatedAt));
++  notice(db, "CLOUD_CONFLICT", { memoryId, remoteVersion, localVersion });
++  return "conflict";
++}
++
++/**
++ * D8: before writing `candidate`'s topic_key, resolve a collision with whichever other memory id
++ * already holds it (the topic_key unique index is immediate, so the loser must be cleared first).
++ * Returns the topic_key `candidate` may actually be written with (possibly nulled).
++ */
++function resolveTopicConflict(db: Database, candidate: Row, scope: string, ownerColumn: string, ownerId: string | null): string | null {
++  const topicKey = candidate.topic_key as string | null;
++  if (topicKey === null) return null;
++  const other = db.query(`SELECT * FROM memories WHERE scope=? AND ${ownerColumn} IS ? AND topic_key=? AND id<>?`)
++    .get(scope, ownerId, topicKey, candidate.id as string) as Row | null;
++  if (!other) return topicKey;
++  const candidateWins = laterWins(String(candidate.updated_at), canonicalJson(candidate), String(other.updated_at), canonicalJson(other));
++  if (candidateWins) {
++    db.query("UPDATE memories SET topic_key=NULL WHERE id=?").run(other.id as string);
++    notice(db, "CLOUD_TOPIC_CONFLICT", { keptMemoryId: candidate.id, clearedMemoryId: other.id });
++    return topicKey;
++  }
++  notice(db, "CLOUD_TOPIC_CONFLICT", { keptMemoryId: other.id, clearedMemoryId: candidate.id });
++  return null;
++}
++
++function applyMemories(db: Database, row: ChangeRow, columns: readonly string[], payload: Row): Outcome {
++  const id = String(payload.id);
++  const version = mappedVersion(db, id, row.installationId, Number(payload.version));
++  const remote: Row = { ...payload, version };
++  const scope = String(payload.scope);
++  const ownerColumn = scope === "ecosystem" ? "groupId" : "projectId";
++  const ownerId = (remote[ownerColumn] as string | null) ?? null;
++  const current = existingRow(db, "memories", ["id"], remote);
++  if (!current) {
++    remote.topic_key = resolveTopicConflict(db, remote, scope, ownerColumn, ownerId);
++    insertRow(db, "memories", columns, remote);
++    return "applied";
++  }
++  const localCanon = canonicalJson(pick(current, columns)), remoteCanon = canonicalJson(remote);
++  if (laterWins(String(remote.updated_at), remoteCanon, String(current.updated_at), localCanon)) {
++    remote.topic_key = resolveTopicConflict(db, remote, scope, ownerColumn, ownerId);
++    updateRow(db, "memories", columns, ["id"], remote);
++  }
++  return "applied";
++}
++
++function applyUpsert(db: Database, row: ChangeRow, columns: readonly string[], payload: Row): Outcome {
++  const kind = row.kind;
++  if (kind === "memories") return applyMemories(db, row, columns, payload);
++  if (kind === "memory_versions") return applyMemoryVersion(db, row, payload);
++  const remapped: Row = VERSION_COLUMN[kind]
++    ? { ...payload, [VERSION_COLUMN[kind]!]: mappedVersion(db, String(payload[MEMORY_ID_COLUMN[kind]!]), row.installationId, Number(payload[VERSION_COLUMN[kind]!])) }
++    : payload;
++  if (kind === "sessions") { applySessions(db, columns, remapped); return "applied"; }
++  if (DATED_COLUMN[kind]) { upsertDated(db, kind, columns, remapped); return "applied"; }
++  upsertOverwrite(db, kind, columns, remapped);
++  return "applied";
++}
++
++function applyDelete(db: Database, row: ChangeRow, columns: readonly string[], payload: Row): Outcome {
++  const kind = row.kind;
++  const remapped: Row = VERSION_COLUMN[kind] && kind !== "memories"
++    ? { ...payload, [VERSION_COLUMN[kind]!]: mappedVersion(db, String(payload[MEMORY_ID_COLUMN[kind]!]), row.installationId, Number(payload[VERSION_COLUMN[kind]!])) }
++    : payload;
++  const keyColumns = kind === "memory_versions" ? ["memory_id", "version"] : NATURAL_KEY[kind]!;
++  const keyPayload = kind === "memory_versions"
++    ? { memory_id: payload.memory_id, version: mappedVersion(db, String(payload.memory_id), row.installationId, Number(payload.version)) }
++    : remapped;
++  const where = keyColumns.map(column => `${column}=?`).join(" AND ");
++  db.query(`DELETE FROM ${kind} WHERE ${where}`).run(...keyColumns.map(column => keyPayload[column] as never));
++  return "applied";
++}
++
++function applyRow(db: Database, row: ChangeRow, installationId: string, columnsByKind: ReadonlyMap<string, readonly string[]>): Outcome {
++  const columns = columnsByKind.get(row.kind);
++  if (row.installationId === installationId) return "own";
++  if (!columns) { notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "UNKNOWN_KIND" }); return "skipped"; }
++  if (!validPayload(row.payload, columns)) { notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "INVALID_PAYLOAD" }); return "skipped"; }
++  const payload = row.payload;
++  const pattern = secretPatternOf(row.kind, payload);
++  if (pattern) { notice(db, "SECRET_REJECTED", { id: row.id, kind: row.kind, key: naturalKeyOf(row.kind, payload), pattern }); return "skipped"; }
++  if (row.op === "delete") return applyDelete(db, row, columns, payload);
++  return applyUpsert(db, row, columns, payload);
++}
++
++/**
++ * Applies rows pulled from Neon inside one transaction (D2): the apply guard is raised before the
++ * first row and lowered in a `finally` inside that same transaction, so an uncaught error rolls the
++ * whole thing back — guard included — and local triggers resume queuing on the next save (Review
++ * Focus #1). Each row runs in its own SAVEPOINT (D2); a row that fails validation, a secret check or
++ * a foreign key is skipped with a `CLOUD_ROW_SKIPPED` notice and the rest of the batch still applies
++ * (Review Focus #2). Rows from this installation only advance `last_applied_id`.
++ */
++export function applyCloudChanges(db: Database, rows: readonly ChangeRow[], installationId: string): ApplyResult {
++  const columnsByKind = travelingTableColumns();
++  let applied = 0, skipped = 0, conflicts = 0;
++  let lastAppliedId = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
++  db.transaction(() => {
++    db.query("UPDATE cloud_state SET apply_guard=1 WHERE id=1").run();
++    try {
++      for (const row of rows) {
++        db.exec("SAVEPOINT cloud_apply_row");
++        try {
++          const outcome = applyRow(db, row, installationId, columnsByKind);
++          if (outcome === "applied") applied++;
++          else if (outcome === "conflict") { applied++; conflicts++; }
++          else if (outcome === "skipped") skipped++;
++          db.exec("RELEASE cloud_apply_row");
++        } catch (error) {
++          db.exec("ROLLBACK TO cloud_apply_row");
++          db.exec("RELEASE cloud_apply_row");
++          const message = error instanceof Error ? error.message : String(error);
++          const reason = message.includes("FOREIGN KEY") ? "FOREIGN_KEY" : "APPLY_ERROR";
++          notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason });
++          skipped++;
++        }
++        lastAppliedId = row.id;
++        db.query("UPDATE cloud_state SET last_applied_id=? WHERE id=1").run(lastAppliedId);
++      }
++    } finally {
++      db.query("UPDATE cloud_state SET apply_guard=0 WHERE id=1").run();
++    }
++  }).immediate();
++  return { applied, skipped, conflicts, lastAppliedId };
++}
+diff --git a/src/infrastructure/sqlite/connection.ts b/src/infrastructure/sqlite/connection.ts
+index a0904d2..7bbd0a2 100644
+--- a/src/infrastructure/sqlite/connection.ts
++++ b/src/infrastructure/sqlite/connection.ts
+@@ -4,6 +4,7 @@ import { dirname } from "node:path";
+ import { required } from "./memory";
+ import { initialize } from "./schema";
+ export { defaultDatabasePath } from "../filesystem/paths";
++export type { Database } from "bun:sqlite";
+ 
+ export function openDatabase(path: string, options: {create?: boolean; readonly?: boolean}): Database {
+   required(path, "path");
+diff --git a/src/infrastructure/sqlite/schema.ts b/src/infrastructure/sqlite/schema.ts
+index 7779113..a343731 100644
+--- a/src/infrastructure/sqlite/schema.ts
++++ b/src/infrastructure/sqlite/schema.ts
+@@ -520,6 +520,13 @@ CREATE TABLE cloud_notices (
+   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+   shown INTEGER NOT NULL DEFAULT 0
+ );
++CREATE TABLE cloud_version_map (
++  memory_id TEXT NOT NULL,
++  installation_id TEXT NOT NULL,
++  remote_version INTEGER NOT NULL,
++  local_version INTEGER NOT NULL,
++  PRIMARY KEY (memory_id, installation_id, remote_version)
++);
+ `;
+ // Every table that travels (design section 5), in dependency order (D14): projects and the
+ // ecosystem structure first, then memories and their side tables, then sessions, then confirmations.
