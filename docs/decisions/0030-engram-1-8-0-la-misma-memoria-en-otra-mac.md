@@ -117,8 +117,9 @@ implementan:
 - El proyecto de Neon lo crea el propietario solo cuando la tarea T6 del plan esté cerrada y verificada y
   antes del laboratorio L1, con una rama de prueba `prueba-1-8-0` que se borra al cerrar T10.
 - Esta acta es una decisión técnica del orquestador (D1-D11, D13 y D14 derivan del diseño ya aprobado por el
-  propietario el 2026-09-27), a confirmar por el propietario en los puntos marcados como tales en el diseño
-  y en el plan (sección «Dudas resueltas por el orquestador»).
+  propietario el 2026-09-27); el propietario confirmó D1, D13 y D14 el 2026-09-27 (opción A en las tres:
+  cola en la misma base con nivel 12, dirección de Neon pegada por él con entrada oculta, primera vez sube
+  toda la memoria).
 
 ## Referencias
 
