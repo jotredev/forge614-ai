@@ -261,6 +261,15 @@
       "date": "2026-09-26",
       "session": "forge614-ai-orquestador-2026-09-26-e172b",
       "file": "0029-revalidacion-de-engram-en-claude-code-y-codex-con-1-7-2.md"
+    },
+    {
+      "number": "0030",
+      "slug": "engram-1-8-0-la-misma-memoria-en-otra-mac",
+      "title": "Engram 1.8.0: la misma memoria en otra Mac",
+      "status": "aceptada",
+      "date": "2026-09-27",
+      "session": "forge614-ai-orquestador-2026-09-27-engram-1-8-0",
+      "file": "0030-engram-1-8-0-la-misma-memoria-en-otra-mac.md"
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Engram 1.8.0: la misma memoria en otra Mac (diseño)
 
-**Fecha:** 2026-09-27 · **Estado:** borrador para revisión del propietario
+**Fecha:** 2026-09-27 · **Estado:** aprobado por el propietario el 2026-09-27
 **Nodos afectados:** `forge614-engram` (servidor, sincronización y comandos `cloud`). Sin cambio en Engines ni Shell: este diseño no toca el protocolo ni el bloque de arranque que ellos inyectan (sección 11).
 **Actas que rigen:** 0023 (identidad portátil del proyecto), 0024 (evolución aditiva de datos y contratos), 0025 (contrato del ecosistema v2), 0027 (memoria inteligente de Engram en el procedimiento).
 **Acta nueva:** 0030 *(decisión técnica del orquestador, a revisar: número tomado del último archivo en `forge614-ai/docs/decisions/`, el 0029 del 2026-09-26)*.
