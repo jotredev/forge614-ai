@@ -1,0 +1,1756 @@
+diff --git a/src/app/__tests__/cloud-sync.integration.test.ts b/src/app/__tests__/cloud-sync.integration.test.ts
+new file mode 100644
+index 0000000..300a42e
+--- /dev/null
++++ b/src/app/__tests__/cloud-sync.integration.test.ts
+@@ -0,0 +1,79 @@
++/**
++ * Comprueba el ciclo de sincronización (`uploadOutbox`, `downloadChanges`) contra un PostgreSQL real y
++ * desechable (nunca una base ambiente): la subida de una cola de más de 500 filas se hace en dos
++ * lotes ascendentes y en orden, y la bajada de más de 1000 cambios se aplica en dos lotes también en
++ * orden, sin perder ninguno.
++ */
++import { Database } from "bun:sqlite";
++import { SQL } from "bun";
++import { afterAll, expect, test } from "bun:test";
++import { enableCloud, initialize } from "../../infrastructure/sqlite/schema";
++import { createProject } from "../../infrastructure/sqlite/projects";
++import { PostgresReplica } from "../../infrastructure/postgres/replica";
++import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../infrastructure/__test-support__/postgres";
++import { downloadChanges, uploadOutbox } from "../cloud-sync";
++
++// Solo un servidor de prueba (fixture) desechable y en loopback (127.0.0.1), explícito: nunca se usa una base ambiente ya existente.
++const cluster = startPostgresCluster();
++const integration = cluster.available ? test : test.skip;
++let admin!: SQL;
++if (cluster.available) admin = new SQL(cluster.url);
++else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
++afterAll(async () => {
++  if (!cluster.available) return;
++  try { await admin.close(); } finally { stopPostgresCluster(cluster); }
++}, postgresTestTimeoutMs);
++
++/** Una base SQLite en memoria, ya en el nivel 12 (nube activada). */
++function freshCloudDb(): Database {
++  const db = new Database(":memory:");
++  initialize(db);
++  enableCloud(db);
++  return db;
++}
++
++// La cola local de 501 filas se sube en dos lotes (500 + 1), en orden ascendente de id, y queda vacía al terminar.
++integration("uploadOutbox sends a 501-row queue to real PostgreSQL in two ascending batches", async () => {
++  const dbName = "cloud_sync_upload_batches";
++  await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName}`); await admin.unsafe(`CREATE DATABASE ${dbName}`);
++  const url = cluster.available ? cluster.url.replace(/\/postgres(\?|$)/, `/${dbName}$1`) : "";
++  const replica = await PostgresReplica.connect(url, true);
++  try {
++    const db = freshCloudDb();
++    db.exec("DELETE FROM cloud_outbox");
++    for (let i = 0; i < 501; i++) createProject(db, `project-${String(i).padStart(4, "0")}`);
++    await uploadOutbox(db, replica, crypto.randomUUID());
++    expect((db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(0);
++    // Se comprueba a través de pullChanges (el mismo camino que usa la bajada), no leyendo `payload` crudo:
++    // así la prueba no depende de cómo el cliente de PostgreSQL serializa un jsonb por dentro.
++    const uploaded = await replica.pullChanges(0, 1000);
++    expect(uploaded).toHaveLength(501);
++    expect(uploaded.map(row => (row.payload as { name: string }).name)).toEqual(Array.from({ length: 501 }, (_, i) => `project-${String(i).padStart(4, "0")}`));
++  } finally { await replica.close(); }
++}, postgresTestTimeoutMs);
++
++// Una bajada de 1500 cambios ya presentes en la nube se aplica en dos lotes (1000 + 500), sin perder ninguno, y last_applied_id llega hasta el último.
++integration("downloadChanges applies 1500 pending remote changes from real PostgreSQL in two batches", async () => {
++  const dbName = "cloud_sync_download_batches";
++  await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName}`); await admin.unsafe(`CREATE DATABASE ${dbName}`);
++  const url = cluster.available ? cluster.url.replace(/\/postgres(\?|$)/, `/${dbName}$1`) : "";
++  const replica = await PostgresReplica.connect(url, true);
++  try {
++    const remoteInstallationId = crypto.randomUUID();
++    const seed = new SQL(url);
++    try {
++      for (let i = 0; i < 1500; i++) {
++        const projectId = `remote-${String(i).padStart(4, "0")}`;
++        await seed.unsafe(
++          "INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload) VALUES($1,$2,'projects','insert',$3::jsonb)",
++          [`change-${i}`, remoteInstallationId, JSON.stringify({ projectId, name: projectId, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" })],
++        );
++      }
++    } finally { await seed.close(); }
++    const db = freshCloudDb();
++    await downloadChanges(db, replica, crypto.randomUUID());
++    expect((db.query("SELECT COUNT(*) AS n FROM projects").get() as { n: number }).n).toBe(1500);
++    const lastApplied = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
++    expect(lastApplied).toBe(1500);
++  } finally { await replica.close(); }
++}, postgresTestTimeoutMs);
+diff --git a/src/app/cloud-background.test.ts b/src/app/cloud-background.test.ts
+new file mode 100644
+index 0000000..31342cd
+--- /dev/null
++++ b/src/app/cloud-background.test.ts
+@@ -0,0 +1,235 @@
++/**
++ * Comprueba `startCloudBackground` y `waitForCloud` con dobles (fakes) de `MemoryStore` y de
++ * `CloudReplica`, controlando el tiempo real (sin simular relojes): la guardia de nube (sin nivel 12
++ * o sin configuración, no conecta nada), un solo ciclo en vuelo compartido entre el tick, `notifySave`
++ * y `waitForCloud`, que los errores de red no lanzan ni dejan promesas sin atender, el tope de la
++ * espera de arranque que cancela de verdad, y que `stop()` corta un ciclo en vuelo y detiene los ticks.
++ */
++import { afterEach, beforeEach, expect, test } from "bun:test";
++import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import type { MemoryStore } from "./memory-store";
++import { startCloudBackground, waitForCloud, type CloudReplica } from "./cloud-background";
++
++let directory = "";
++let previousHome: string | undefined;
++// Cada prueba usa su propio $FORGE614_HOME temporal (mismo patrón que cloud-settings.test.ts), con una
++// configuración de nube completa ya escrita, para que `cloudSettings()` (que estas funciones llaman de
++// verdad) encuentre postgresUrl e installationId sin depender de qué prueba corrió antes.
++beforeEach(() => {
++  directory = mkdtempSync(join(tmpdir(), "forge614-cloud-background-"));
++  previousHome = process.env.FORGE614_HOME;
++  process.env.FORGE614_HOME = join(directory, ".forge614");
++  const root = join(directory, ".forge614", "engram");
++  mkdirSync(root, { recursive: true, mode: 0o700 });
++  writeFileSync(join(root, ".env"),
++    'FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n',
++    { mode: 0o600 });
++});
++afterEach(() => {
++  if (previousHome === undefined) delete process.env.FORGE614_HOME; else process.env.FORGE614_HOME = previousHome;
++  rmSync(directory, { recursive: true, force: true });
++});
++
++const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
++/** Un doble de `CloudReplica` que nunca hace nada por sí solo: basta para satisfacer el tipo cuando el propio `MemoryStore` doble es el que controla el tiempo. */
++function noopReplica(): CloudReplica {
++  return { async pushChanges() { return { ids: [] }; }, async pullChanges() { return []; }, async close() {} };
++}
++/** Arma un doble mínimo de `MemoryStore`: solo implementa lo que `cloud-background.ts` usa. */
++function fakeStore(overrides: {
++  cloudEnabled?: () => boolean;
++  syncCloudCycle?: MemoryStore["syncCloudCycle"];
++  downloadCloudChanges?: MemoryStore["downloadCloudChanges"];
++} = {}): MemoryStore {
++  return {
++    cloudEnabled: overrides.cloudEnabled ?? (() => true),
++    syncCloudCycle: overrides.syncCloudCycle ?? (async () => {}),
++    downloadCloudChanges: overrides.downloadCloudChanges ?? (async () => {}),
++  } as unknown as MemoryStore;
++}
++/** Un `AbortSignal` es "abortado antes de tiempo" si ya lo está cuando la prueba lo revisa; ayuda a leer las aserciones. */
++const aborted = (signal?: AbortSignal) => signal?.aborted === true;
++
++// Sin `cloudEnabled()`, startCloudBackground no arranca nada y no llama a connect.
++test("startCloudBackground returns null and never calls connect when the store has no cloud level", () => {
++  let calls = 0;
++  const task = startCloudBackground(fakeStore({ cloudEnabled: () => false }), { connect: async () => { calls++; return noopReplica(); } });
++  expect(task).toBeNull();
++  expect(calls).toBe(0);
++});
++
++// Con nivel 12 pero sin configuración de nube completa (sin `.env` de nube), tampoco arranca ni conecta.
++test("startCloudBackground returns null and never calls connect when there is no complete cloud configuration", () => {
++  rmSync(join(directory, ".forge614"), { recursive: true, force: true }); // Sin POSTGRES_URL/installationId: cloudSettings() da null.
++  let calls = 0;
++  const task = startCloudBackground(fakeStore(), { connect: async () => { calls++; return noopReplica(); } });
++  expect(task).toBeNull();
++  expect(calls).toBe(0);
++});
++
++// Con nube completa, sí arranca (aunque no haga nada útil el ciclo, con un store que resuelve enseguida).
++test("startCloudBackground starts a task when cloud is fully configured", () => {
++  const task = startCloudBackground(fakeStore(), { connect: async () => noopReplica(), intervalMs: 60_000 });
++  expect(task).not.toBeNull();
++  task?.stop();
++});
++
++// stop() de verdad limpia el intervalo con clearInterval (no solo confía en la bandera "detenida" interna).
++test("stop() clears the interval timer instead of only relying on the internal stopped flag", () => {
++  const originalClearInterval = globalThis.clearInterval;
++  const cleared: unknown[] = [];
++  globalThis.clearInterval = ((handle: unknown) => { cleared.push(handle); return originalClearInterval(handle as never); }) as typeof clearInterval;
++  try {
++    const task = startCloudBackground(fakeStore(), { connect: async () => noopReplica(), intervalMs: 60_000 });
++    expect(task).not.toBeNull();
++    task?.stop();
++    expect(cleared).toHaveLength(1);
++  } finally { globalThis.clearInterval = originalClearInterval; }
++});
++
++// Un error de red en el ciclo (aquí, al conectar) no lanza ni deja una promesa sin atender; la cola se conserva y el siguiente tick reintenta con éxito.
++test("a network error in the cycle never throws or leaves an unhandled rejection; the next tick retries", async () => {
++  let attempts = 0, succeeded = 0;
++  const unhandled: unknown[] = [];
++  const onUnhandled = (reason: unknown) => unhandled.push(reason);
++  process.on("unhandledRejection", onUnhandled);
++  try {
++    const task = startCloudBackground(fakeStore({
++      syncCloudCycle: async () => { succeeded++; },
++    }), {
++      connect: async () => { attempts++; if (attempts === 1) throw new Error("network down"); return noopReplica(); },
++      intervalMs: 30,
++    });
++    expect(task).not.toBeNull();
++    await sleep(150); // Dos o más ticks: el primero falla al conectar, uno de los siguientes conecta bien.
++    task?.stop();
++    expect(attempts).toBeGreaterThanOrEqual(2);
++    expect(succeeded).toBeGreaterThanOrEqual(1);
++    expect(unhandled).toEqual([]);
++  } finally { process.off("unhandledRejection", onUnhandled); }
++}, 5000);
++
++// Lo mismo, pero el error ocurre dentro del ciclo ya conectado (no al conectar): store.syncCloudCycle
++// lanza en el primer tick y funciona en el siguiente; tampoco debe lanzar ni dejar nada sin atender.
++test("an error inside an already-connected cycle never throws or leaves an unhandled rejection; the next tick retries", async () => {
++  let calls = 0;
++  const unhandled: unknown[] = [];
++  const onUnhandled = (reason: unknown) => unhandled.push(reason);
++  process.on("unhandledRejection", onUnhandled);
++  try {
++    const task = startCloudBackground(fakeStore({
++      syncCloudCycle: async () => { calls++; if (calls === 1) throw new Error("cycle boom"); },
++    }), { connect: async () => noopReplica(), intervalMs: 30 });
++    expect(task).not.toBeNull();
++    await sleep(150);
++    task?.stop();
++    expect(calls).toBeGreaterThanOrEqual(2);
++    expect(unhandled).toEqual([]);
++  } finally { process.off("unhandledRejection", onUnhandled); }
++}, 5000);
++
++// Un solo ciclo en vuelo: un tick del intervalo y notifySave() casi al mismo tiempo terminan en una sola llamada real al ciclo.
++test("a tick and notifySave at nearly the same time share a single in-flight cycle", async () => {
++  let calls = 0;
++  const task = startCloudBackground(fakeStore({
++    syncCloudCycle: async () => { calls++; await sleep(60); },
++  }), { connect: async () => noopReplica(), intervalMs: 100_000, saveDelayMs: 10 });
++  expect(task).not.toBeNull();
++  // El ciclo inmediato del arranque ya está en vuelo (dura 60 ms); notifySave() agenda otro a los 10 ms,
++  // que debe encontrar ese mismo ciclo todavía corriendo y unirse a él en vez de arrancar uno nuevo.
++  task!.notifySave();
++  await sleep(150);
++  task!.stop();
++  expect(calls).toBe(1);
++});
++
++// notifySave() llamado varias veces seguidas reinicia el mismo temporizador: solo corre un ciclo, no uno por llamada.
++test("three notifySave calls in a row run only one grouped cycle", async () => {
++  let calls = 0;
++  const task = startCloudBackground(fakeStore({
++    syncCloudCycle: async () => { calls++; },
++  }), { connect: async () => noopReplica(), intervalMs: 100_000, saveDelayMs: 30 });
++  await sleep(10); // Deja que el ciclo inmediato del arranque termine antes de empezar a contar.
++  const afterStartup = calls;
++  task!.notifySave(); await sleep(5);
++  task!.notifySave(); await sleep(5);
++  task!.notifySave();
++  await sleep(80); // Más que saveDelayMs desde la última llamada.
++  task!.stop();
++  expect(calls - afterStartup).toBe(1);
++});
++
++// stop() con un ciclo en vuelo: al resolver más tarde, no aplica nada (su señal ya está abortada) y no lanza; y tras stop() no hay más ticks.
++test("stop cancels an in-flight cycle's signal so it applies nothing when it later resolves, and stops further ticks", async () => {
++  let calls = 0; let appliedAfterStop = false; let sawAbortedSignal = false;
++  const task = startCloudBackground(fakeStore({
++    syncCloudCycle: async (_replica, _installationId, signal) => {
++      calls++;
++      await sleep(60);
++      if (aborted(signal)) sawAbortedSignal = true; else appliedAfterStop = true;
++    },
++  }), { connect: async () => noopReplica(), intervalMs: 20 });
++  await sleep(5); // El ciclo inmediato del arranque ya está en vuelo (dura 60 ms).
++  task!.stop();
++  await sleep(100); // Deja que el ciclo en vuelo termine, y que pasen intervalos de sobra si no se hubiera detenido.
++  expect(sawAbortedSignal).toBe(true);
++  expect(appliedAfterStop).toBe(false);
++  const callsRightAfterStop = calls;
++  await sleep(80);
++  expect(calls).toBe(callsRightAfterStop); // Ningún tick nuevo después de stop().
++});
++
++// waitForCloud sin nube (guardia del store) vuelve enseguida sin llamar a `connect`.
++test("waitForCloud returns immediately without connecting when the store has no cloud level", async () => {
++  let calls = 0;
++  await waitForCloud(fakeStore({ cloudEnabled: () => false }), 1000);
++  expect(calls).toBe(0);
++});
++
++// Con un doble lento (1050 ms) tras un ciclo inicial rápido de la tarea de fondo, waitForCloud vuelve en ≤ 1000 ms + margen (1300 ms), sin excepción sin atender.
++test("waitForCloud returns within the timeout plus margin when the download is slower than the cutoff", async () => {
++  const unhandled: unknown[] = [];
++  const onUnhandled = (reason: unknown) => unhandled.push(reason);
++  process.on("unhandledRejection", onUnhandled);
++  try {
++    const store = fakeStore({
++      syncCloudCycle: async () => {}, // El ciclo inmediato de arranque de la tarea de fondo termina rápido.
++      downloadCloudChanges: async () => { await sleep(1050); }, // La bajada que usa waitForCloud es la lenta.
++    });
++    const task = startCloudBackground(store, { connect: async () => noopReplica(), intervalMs: 100_000 });
++    await sleep(20); // Deja que el ciclo inmediato de arranque (rápido) termine y libere `state.cycle`.
++    const start = Date.now();
++    await waitForCloud(store, 1000);
++    const elapsed = Date.now() - start;
++    expect(elapsed).toBeLessThanOrEqual(1300);
++    task?.stop();
++    expect(unhandled).toEqual([]);
++  } finally { process.off("unhandledRejection", onUnhandled); }
++}, 5000);
++
++// Si la bajada resuelve 50 ms después del corte, no se aplica nada (la señal ya estaba abortada cuando terminó) y no hay excepción sin atender.
++test("nothing is applied when the download resolves 50 ms after the cutoff", async () => {
++  const unhandled: unknown[] = [];
++  const onUnhandled = (reason: unknown) => unhandled.push(reason);
++  process.on("unhandledRejection", onUnhandled);
++  try {
++    let applied = false, sawAbortedSignal = false;
++    const store = fakeStore({
++      syncCloudCycle: async () => {},
++      downloadCloudChanges: async (_replica, _installationId, signal) => {
++        await sleep(120); // 50 ms después de un corte de 70 ms.
++        if (aborted(signal)) sawAbortedSignal = true; else applied = true;
++      },
++    });
++    const task = startCloudBackground(store, { connect: async () => noopReplica(), intervalMs: 100_000 });
++    await sleep(20);
++    await waitForCloud(store, 70);
++    await sleep(150); // Deja que la bajada tardía termine de verdad.
++    task?.stop();
++    expect(applied).toBe(false);
++    expect(sawAbortedSignal).toBe(true);
++    expect(unhandled).toEqual([]);
++  } finally { process.off("unhandledRejection", onUnhandled); }
++}, 5000);
+diff --git a/src/app/cloud-background.ts b/src/app/cloud-background.ts
+new file mode 100644
+index 0000000..048e534
+--- /dev/null
++++ b/src/app/cloud-background.ts
+@@ -0,0 +1,210 @@
++/**
++ * Tarea en segundo plano del servidor MCP (D7) que sube la cola pendiente y baja los cambios nuevos
++ * cada 30 s (y al guardar, agrupado con un pequeño retraso), y espera de arranque (D8) que baja y
++ * aplica con un tope de 1000 ms antes de leer el contexto local. Ambas comparten, por cada
++ * `MemoryStore`, una sola conexión perezosa y un solo ciclo de aplicación en vuelo: nunca se llama
++ * `applyCloudChanges` dos veces a la vez, y el tope de la espera cancela de verdad el ciclo que
++ * encuentre en curso (propio o de la tarea de fondo). La usa `src/interfaces/mcp/server.ts` (la tarea
++ * de fondo) y `memory_context`/`startup-context` (la espera de arranque), ambas a través de
++ * `src/app/index.ts`.
++ */
++import type { MemoryStore } from "./memory-store";
++import { cloudSettings, connectCloudReplica } from "./cloud-settings";
++import type { CloudReplica } from "./cloud-sync";
++export type { CloudReplica } from "./cloud-sync";
++
++/** Tarea de fondo ya arrancada: `notifySave` agenda un ciclo agrupado tras un guardado; `stop` la apaga. */
++export interface CloudBackgroundTask {
++  /** Agenda un ciclo de subida y bajada tras `saveDelayMs`; varios guardados seguidos reinician el mismo temporizador (se agrupan en un solo ciclo). */
++  notifySave(): void;
++  /** Detiene el intervalo y cualquier temporizador de guardado pendiente, cancela un ciclo en vuelo (que no aplicará nada al terminar) y cierra la conexión sin esperar. */
++  stop(): void;
++}
++
++/** Opciones de la tarea de fondo, pensadas para pruebas: los tiempos y la fábrica de conexión son inyectables. */
++export interface CloudBackgroundOptions {
++  /** Milisegundos entre ciclos mientras el servidor vive; por defecto 30000 (D7). */
++  intervalMs?: number;
++  /** Milisegundos de retraso tras un guardado antes de correr un ciclo agrupado; por defecto 2000. */
++  saveDelayMs?: number;
++  /** Fábrica de la conexión a la réplica; por defecto conecta de verdad a `cloudSettings()!.postgresUrl`. Una prueba puede dar un doble (fake) lento o que falla. */
++  connect?: () => Promise<CloudReplica>;
++}
++
++const DEFAULT_INTERVAL_MS = 30_000;
++const DEFAULT_SAVE_DELAY_MS = 2_000;
++const DEFAULT_WAIT_TIMEOUT_MS = 1_000;
++
++/**
++ * Estado compartido por instalación (aquí, por instancia de `MemoryStore`: en un proceso real hay una
++ * sola instancia viva a la vez, y cada prueba usa la suya propia, así que no hay fuga entre pruebas).
++ * Guarda la conexión perezosa, el ciclo en vuelo (si lo hay) con el controlador que puede cancelarlo,
++ * y si esta instancia tiene una tarea de fondo dueña de la conexión (para decidir quién la cierra).
++ */
++interface SharedCloudState {
++  /** La conexión ya en marcha (o resuelta) a la réplica, o `null` si todavía no se pidió ninguna. */
++  connection: Promise<CloudReplica> | null;
++  /** El ciclo (subida+bajada, o solo bajada) que está en vuelo ahora mismo, o `null` si ninguno lo está. */
++  cycle: Promise<void> | null;
++  /** El controlador de cancelación del ciclo en vuelo (el mismo `cycle`), o `null` junto con él. */
++  cycleAbort: AbortController | null;
++  /** Si hay una tarea de fondo (`startCloudBackground`) dueña de `connection`, para que `waitForCloud` no la cierre por su cuenta. */
++  hasBackground: boolean;
++}
++const sharedStates = new WeakMap<MemoryStore, SharedCloudState>();
++/** Da el estado compartido de `store`, creándolo la primera vez que se pide. */
++function stateOf(store: MemoryStore): SharedCloudState {
++  let state = sharedStates.get(store);
++  if (!state) { state = { connection: null, cycle: null, cycleAbort: null, hasBackground: false }; sharedStates.set(store, state); }
++  return state;
++}
++
++/**
++ * Da la conexión perezosa compartida de `state`, creándola con `connect` si hace falta. Un intento
++ * que termina en error se quita de `state` al fallar (no se deja cacheado un fallo para siempre): así
++ * el próximo ciclo vuelve a intentar conectar en vez de repetir el mismo error sin volver a intentarlo.
++ * @param state Estado compartido de la instalación.
++ * @param connect Fábrica de la conexión a usar si todavía no hay ninguna en marcha.
++ * @returns La conexión en marcha (nueva o ya existente).
++ */
++function lazyConnection(state: SharedCloudState, connect: () => Promise<CloudReplica>): Promise<CloudReplica> {
++  if (!state.connection) {
++    const attempt = connect();
++    state.connection = attempt;
++    attempt.catch(() => { if (state.connection === attempt) state.connection = null; });
++  }
++  return state.connection;
++}
++
++/**
++ * Arranca un ciclo nuevo con su propio controlador de cancelación, lo registra como el ciclo vigente
++ * de `state` (para el gate de "un solo ciclo en vuelo" y para que `stop()`/el tope de espera puedan
++ * cancelarlo de verdad) y lo desregistra cuando termine, sin dejar ninguna promesa sin atender.
++ * @param state Estado compartido de la instalación.
++ * @param body Cuerpo del ciclo, que recibe la señal de cancelación de este ciclo.
++ * @returns El ciclo ya en marcha.
++ */
++function startTrackedCycle(state: SharedCloudState, body: (signal: AbortSignal) => Promise<void>): Promise<void> {
++  const controller = new AbortController();
++  state.cycleAbort = controller;
++  const cycle = body(controller.signal);
++  state.cycle = cycle;
++  // Se limpia con .then(onFulfilled, onRejected) en vez de .finally: así la promesa que .then() devuelve
++  // nunca rechaza por su cuenta, y no hay riesgo de un rechazo sin atender aparte del propio `cycle`.
++  const clear = () => { if (state.cycle === cycle) { state.cycle = null; state.cycleAbort = null; } };
++  cycle.then(clear, clear);
++  return cycle;
++}
++
++/**
++ * Arranca la tarea de fondo de sincronización con la nube para `store` (D7): un ciclo inmediato al
++ * llamarla (para subir lo que se quedó pendiente sin internet mientras el servidor estaba apagado) y
++ * luego un ciclo cada `intervalMs`, más un ciclo agrupado al guardar (`notifySave`). No hace nada (ni
++ * conecta) si `store.cloudEnabled()` es falso o si no hay configuración de nube completa (guardia de
++ * nube, D1: sin nube, ni la base ni el arranque cambian).
++ * @param store Almacén de memoria cuyo `cloud_outbox`/`cloud_state` se sincroniza.
++ * @param options Tiempos y fábrica de conexión inyectables (para pruebas).
++ * @returns La tarea ya arrancada, o `null` si no hay nube que sincronizar.
++ */
++export function startCloudBackground(store: MemoryStore, options: CloudBackgroundOptions = {}): CloudBackgroundTask | null {
++  // Guardia de nube: sin nivel 12 o sin configuración completa, no se conecta nada.
++  if (!store.cloudEnabled()) return null;
++  const settings = cloudSettings();
++  if (!settings) return null;
++  const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
++  const saveDelayMs = options.saveDelayMs ?? DEFAULT_SAVE_DELAY_MS;
++  const connect = options.connect ?? (() => connectCloudReplica(settings.postgresUrl));
++  const state = stateOf(store);
++  state.hasBackground = true;
++
++  let stopped = false;
++  let intervalHandle: ReturnType<typeof setInterval> | null = null;
++  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
++
++  // Conexión perezosa compartida: se crea una sola vez por instalación, incluso si varios ciclos la piden a la vez.
++  const connection = (): Promise<CloudReplica> => lazyConnection(state, connect);
++
++  // Corre un ciclo nuevo, o se une al que ya esté en vuelo: nunca se llama `applyCloudChanges` dos veces a la vez.
++  const runCycle = (): Promise<void> => {
++    if (state.cycle) return state.cycle;
++    return startTrackedCycle(state, async signal => {
++      if (stopped) return;
++      let replica: CloudReplica;
++      try { replica = await connection(); }
++      catch { return; } // D7: un error de conexión se traga en silencio; el siguiente ciclo reintenta.
++      if (stopped) return; // Se detuvo mientras conectaba: no se toca un store que puede estar cerrado.
++      try { await store.syncCloudCycle(replica, settings.installationId, signal); }
++      catch { /* D7: cualquier error de red del ciclo se traga en silencio; se reintenta en el siguiente tick. */ }
++    });
++  };
++
++  // Ciclo inmediato: sube lo que quedó pendiente mientras el servidor estaba apagado o sin internet.
++  void runCycle();
++  intervalHandle = setInterval(() => { if (!stopped) void runCycle(); }, intervalMs);
++  intervalHandle.unref?.();
++
++  return {
++    notifySave(): void {
++      if (stopped) return;
++      // Varios guardados seguidos reinician el mismo temporizador: se agrupan en un solo ciclo.
++      if (saveTimeout) clearTimeout(saveTimeout);
++      saveTimeout = setTimeout(() => { saveTimeout = null; void runCycle(); }, saveDelayMs);
++      saveTimeout.unref?.();
++    },
++    stop(): void {
++      if (stopped) return;
++      stopped = true;
++      state.cycleAbort?.abort(); // Cancela de verdad un ciclo en vuelo: al terminar, no aplicará nada.
++      if (intervalHandle) clearInterval(intervalHandle);
++      if (saveTimeout) clearTimeout(saveTimeout);
++      intervalHandle = null; saveTimeout = null;
++      state.hasBackground = false;
++      const pending = state.connection; state.connection = null;
++      // Se cierra sin esperar: la tarea de fondo ya no necesita la conexión, y el cierre del servidor no debe demorarse por ella.
++      void pending?.then(replica => replica.close()).catch(() => {});
++    },
++  };
++}
++
++/**
++ * Espera de arranque (D8, Foco de revisión #3): si hay nube configurada, baja y aplica los cambios
++ * nuevos con un tope de `timeoutMs`; al vencer el tope, cancela de verdad el ciclo que encuentre en
++ * curso (aborta su señal, que `pullChanges` traduce en `query.cancel()`) y vuelve de inmediato,
++ * dejando la lectura siguiente con lo que hay en local. Si ya hay un ciclo de la tarea de fondo en
++ * vuelo para este mismo `store`, se espera ESE ciclo en vez de empezar uno nuevo (nunca dos a la vez),
++ * reutilizando también su misma conexión perezosa.
++ * @param store Almacén de memoria a esperar.
++ * @param timeoutMs Tope de espera en milisegundos; por defecto 1000 (D8).
++ */
++export async function waitForCloud(store: MemoryStore, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS): Promise<void> {
++  if (!store.cloudEnabled()) return;
++  const settings = cloudSettings();
++  if (!settings) return;
++  const state = stateOf(store);
++  // Sin una tarea de fondo dueña de la conexión, esta llamada es la única que la va a usar: le toca cerrarla al terminar.
++  const ownsConnection = !state.hasBackground;
++  const connection = (): Promise<CloudReplica> => lazyConnection(state, () => connectCloudReplica(settings.postgresUrl));
++
++  const run = async (): Promise<void> => {
++    if (state.cycle) { await state.cycle; return; } // Se une al ciclo (propio o de la tarea de fondo) ya en vuelo.
++    await startTrackedCycle(state, async signal => {
++      const replica = await connection();
++      await store.downloadCloudChanges(replica, settings.installationId, signal);
++    });
++  };
++
++  let resolveTimeout = () => {};
++  const timeout = new Promise<void>(resolve => { resolveTimeout = resolve; });
++  const timer = setTimeout(() => { state.cycleAbort?.abort(); resolveTimeout(); }, timeoutMs);
++  try {
++    // Carrera entre bajar y aplicar, y el tope: la promesa perdedora nunca queda sin atender.
++    await Promise.race([run().catch(() => {}), timeout]);
++  } finally {
++    clearTimeout(timer);
++    if (ownsConnection) {
++      const pending = state.connection; state.connection = null;
++      // Se cierra sin esperar: el proceso (por ejemplo, la CLI) no debe demorarse por esta conexión.
++      void pending?.then(replica => replica.close()).catch(() => {});
++    }
++  }
++}
+diff --git a/src/app/cloud-settings.test.ts b/src/app/cloud-settings.test.ts
+new file mode 100644
+index 0000000..6632f87
+--- /dev/null
++++ b/src/app/cloud-settings.test.ts
+@@ -0,0 +1,52 @@
++/**
++ * Comprueba `cloudSettings`: da `null` sin configuración guardada, sin `POSTGRES_URL` o sin id de
++ * instalación todavía asignado, y da los dos datos completos cuando la configuración los trae.
++ */
++import { afterEach, beforeEach, expect, test } from "bun:test";
++import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { cloudSettings } from "./cloud-settings";
++
++let directory = "";
++let previousHome: string | undefined;
++// Cada prueba usa su propio $FORGE614_HOME temporal, restaurado al terminar (mismo patrón que paths.test.ts/updater.test.ts).
++beforeEach(() => {
++  directory = mkdtempSync(join(tmpdir(), "forge614-cloud-settings-"));
++  previousHome = process.env.FORGE614_HOME;
++  process.env.FORGE614_HOME = join(directory, ".forge614");
++});
++afterEach(() => {
++  if (previousHome === undefined) delete process.env.FORGE614_HOME; else process.env.FORGE614_HOME = previousHome;
++  rmSync(directory, { recursive: true, force: true });
++});
++
++/** Escribe un `.env` de Engram válido con el contenido dado, con los permisos privados que `WorkspaceConfig.read()` exige. */
++function writeEnv(content: string): void {
++  const root = join(directory, ".forge614", "engram");
++  mkdirSync(root, { recursive: true, mode: 0o700 });
++  writeFileSync(join(root, ".env"), content, { mode: 0o600 });
++}
++
++// Sin ninguna configuración guardada (nunca se corrió init), cloudSettings da null en vez de lanzar.
++test("cloudSettings is null when no configuration was ever saved", () => {
++  expect(cloudSettings()).toBeNull();
++});
++
++// Con la configuración mínima (solo SQLite, formato 2), sin nube, cloudSettings da null.
++test("cloudSettings is null for the plain SQLite-only configuration", () => {
++  writeEnv('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
++  expect(cloudSettings()).toBeNull();
++});
++
++// Con réplica configurada pero sin id de instalación todavía asignado (antes de que `cloud on` lo genere), cloudSettings da null: aún no hay nube completa.
++test("cloudSettings is null with a postgres URL but no installation id yet", () => {
++  writeEnv('FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1/db?sslmode=disable"\n');
++  expect(cloudSettings()).toBeNull();
++});
++
++// Con los dos datos completos, cloudSettings los da tal cual.
++test("cloudSettings returns the postgres URL and installation id when both are set", () => {
++  writeEnv('FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n');
++  expect(cloudSettings()).toEqual({ postgresUrl: "postgresql://u@127.0.0.1/db?sslmode=disable", installationId: "3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f" });
++});
+diff --git a/src/app/cloud-settings.ts b/src/app/cloud-settings.ts
+new file mode 100644
+index 0000000..bfde46e
+--- /dev/null
++++ b/src/app/cloud-settings.ts
+@@ -0,0 +1,45 @@
++/**
++ * Punto único de construcción de la configuración de nube (D9): lee `~/.forge614/engram/.env` (o el
++ * equivalente configurado por `FORGE614_HOME`) y da la URL de PostgreSQL y el id de instalación ya
++ * validados, o `null` si no hay nube configurada todavía. También arma la conexión perezosa por
++ * defecto hacia esa URL. La usan `cloud-background.ts` y el CLI (`startup-context` en
++ * `src/interfaces/cli/commands.ts`) para decidir si hay nube antes de conectar nada.
++ */
++import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
++import { PostgresReplica } from "../infrastructure/postgres/replica";
++import { MemoryError } from "../shared/errors";
++import type { CloudReplica } from "./cloud-sync";
++
++/** Los dos datos que hacen falta para hablar con la nube: la URL de conexión y el id de esta instalación. */
++export interface CloudSettings {
++  /** URL completa de conexión a PostgreSQL, ya validada por `WorkspaceConfig.read()`. */
++  readonly postgresUrl: string;
++  /** UUID que identifica a esta instalación de Engram frente a las demás que comparten la misma nube (D9). */
++  readonly installationId: string;
++}
++
++/**
++ * Lee la configuración guardada y da los datos de nube si están completos.
++ * @returns `{postgresUrl, installationId}` si la configuración guardada trae los dos datos; `null` si
++ * no hay configuración guardada, o si la guardada no tiene nube (solo SQLite, o SQLite con réplica
++ * pero sin id de instalación todavía asignado por `cloud on`).
++ * @throws Cualquier error que no sea de configuración (`MemoryError`); un error de configuración se
++ * trata como «sin nube», nunca como un fallo del arranque.
++ */
++export function cloudSettings(): CloudSettings | null {
++  let settings;
++  try { settings = new WorkspaceConfig().read(); }
++  catch (error) { if (error instanceof MemoryError) return null; throw error; }
++  if (!settings.postgresUrl || !settings.installationId) return null;
++  return { postgresUrl: settings.postgresUrl, installationId: settings.installationId };
++}
++
++/**
++ * Conexión perezosa por defecto hacia la réplica de PostgreSQL: la que usa la tarea de fondo cuando
++ * ninguna prueba inyecta un doble (`CloudBackgroundOptions.connect`).
++ * @param url URL de conexión a PostgreSQL, tal como la da {@link cloudSettings}.
++ * @returns Una réplica ya conectada.
++ */
++export function connectCloudReplica(url: string): Promise<CloudReplica> {
++  return PostgresReplica.connect(url);
++}
+diff --git a/src/app/cloud-sync.test.ts b/src/app/cloud-sync.test.ts
+new file mode 100644
+index 0000000..b670d84
+--- /dev/null
++++ b/src/app/cloud-sync.test.ts
+@@ -0,0 +1,144 @@
++/**
++ * Comprueba el ciclo de sincronización (`uploadOutbox`, `downloadChanges`, `runCloudCycle`) con dobles
++ * (fakes) de `CloudReplica`, rápidos y deterministas: la subida respeta el orden de `id` y borra solo
++ * lo que de verdad se subió (una fila encolada durante la subida se queda para el siguiente lote); la
++ * bajada aplica con `applyCloudChanges` real y no aplica nada si la señal ya está abortada cuando el
++ * lote vuelve (Foco de revisión #3); `runCloudCycle` encadena las dos. La repetición real por lotes
++ * grandes, contra PostgreSQL de verdad, la cubre `__tests__/cloud-sync.integration.test.ts`.
++ */
++import { Database } from "bun:sqlite";
++import { expect, test } from "bun:test";
++import { enableCloud, initialize } from "../infrastructure/sqlite/schema";
++import { createProject } from "../infrastructure/sqlite/projects";
++import type { ChangeRow } from "../infrastructure/postgres/replica";
++import { downloadChanges, runCloudCycle, uploadOutbox, type CloudReplica } from "./cloud-sync";
++
++/** Una base SQLite en memoria, ya en el nivel 12 (nube activada). */
++function freshCloudDb(): Database {
++  const db = new Database(":memory:");
++  initialize(db);
++  enableCloud(db);
++  return db;
++}
++/** Cuenta las filas que hoy tiene `cloud_outbox`. */
++function outboxCount(db: Database): number {
++  return (db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n;
++}
++/** Doble (fake) de `CloudReplica` que registra cada llamada y deja controlar sus respuestas desde la prueba. */
++function fakeReplica(overrides: {
++  pushChanges?: CloudReplica["pushChanges"];
++  pullChanges?: CloudReplica["pullChanges"];
++} = {}): CloudReplica & { pushCalls: { installationId: string; rows: { kind: string }[] }[]; pullCalls: number[] } {
++  const pushCalls: { installationId: string; rows: { kind: string }[] }[] = [];
++  const pullCalls: number[] = [];
++  return {
++    pushCalls, pullCalls,
++    async pushChanges(installationId, rows) {
++      pushCalls.push({ installationId, rows });
++      return overrides.pushChanges ? overrides.pushChanges(installationId, rows) : { ids: rows.map((_, i) => i + 1) };
++    },
++    async pullChanges(since, limit, signal) {
++      pullCalls.push(since);
++      return overrides.pullChanges ? overrides.pullChanges(since, limit, signal) : [];
++    },
++    async close() {},
++  };
++}
++
++// La subida debe respetar el orden ascendente de `id` de `cloud_outbox` al armar el lote que sube.
++test("uploadOutbox sends the pending queue to pushChanges in ascending id order", async () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  createProject(db, "alpha"); createProject(db, "beta"); createProject(db, "gamma");
++  const replica = fakeReplica();
++  await uploadOutbox(db, replica, "local");
++  expect(replica.pushCalls).toHaveLength(1);
++  expect(replica.pushCalls[0]!.rows.map(row => row.kind)).toEqual(["projects", "projects", "projects"]);
++  expect(outboxCount(db)).toBe(0);
++});
++
++// Solo se borran los ids que de verdad se subieron: una fila encolada durante la subida (aquí, simulada dentro del propio pushChanges) debe sobrevivir para el siguiente lote.
++test("uploadOutbox deletes only the rows it actually uploaded, leaving a row queued mid-upload for the next batch", async () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  createProject(db, "first");
++  let queuedDuringUpload = false;
++  const replica = fakeReplica({
++    async pushChanges(_installationId, rows) {
++      if (!queuedDuringUpload) { queuedDuringUpload = true; createProject(db, "queued-mid-upload"); }
++      return { ids: rows.map((_, i) => i + 1) };
++    },
++  });
++  await uploadOutbox(db, replica, "local");
++  // El lote inicial (una sola fila, un lote incompleto) se subió y se borró; como no vino lleno, uploadOutbox
++  // no vuelve a consultar la cola dentro de esta misma llamada, así que la fila encolada durante el envío
++  // se queda pendiente (la recogerá el siguiente ciclo, no esta misma pasada).
++  expect(replica.pushCalls).toHaveLength(1);
++  expect(replica.pushCalls[0]!.rows).toHaveLength(1);
++  expect(outboxCount(db)).toBe(1);
++  expect(db.query("SELECT payload FROM cloud_outbox").get()).not.toBeNull();
++});
++
++// Sin nada pendiente, uploadOutbox no llama a pushChanges ni una vez.
++test("uploadOutbox does nothing when the queue is already empty", async () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  const replica = fakeReplica();
++  await uploadOutbox(db, replica, "local");
++  expect(replica.pushCalls).toHaveLength(0);
++});
++
++// La bajada aplica de verdad con applyCloudChanges: una fila nueva de `projects` termina insertada en local, y last_applied_id avanza.
++test("downloadChanges applies rows with the real applyCloudChanges and advances last_applied_id", async () => {
++  const db = freshCloudDb();
++  const row: ChangeRow = { id: 1, changeId: "c1", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p-remote", name: "From the cloud", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const replica = fakeReplica({ async pullChanges() { return [row]; } });
++  await downloadChanges(db, replica, "local");
++  expect(db.query("SELECT name FROM projects WHERE projectId=?").get("p-remote")).toEqual({ name: "From the cloud" });
++  expect((db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id).toBe(1);
++});
++
++// Foco de revisión #3: si la señal ya está abortada en cuanto el lote vuelve, no se aplica nada (ni siquiera se toca la base).
++test("downloadChanges applies nothing when the signal is already aborted once the batch comes back", async () => {
++  const db = freshCloudDb();
++  const row: ChangeRow = { id: 1, changeId: "c1", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p-late", name: "Too late", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const controller = new AbortController();
++  const replica = fakeReplica({ async pullChanges() { controller.abort(); return [row]; } });
++  await downloadChanges(db, replica, "local", controller.signal);
++  expect(db.query("SELECT * FROM projects WHERE projectId=?").get("p-late")).toBeNull();
++  expect((db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id).toBe(0);
++});
++
++// Con la señal ya abortada desde antes de empezar, downloadChanges tampoco llega a pedir el primer lote a pullChanges.
++test("downloadChanges does not even call pullChanges when the signal starts already aborted", async () => {
++  const db = freshCloudDb();
++  const controller = new AbortController(); controller.abort();
++  const replica = fakeReplica();
++  await downloadChanges(db, replica, "local", controller.signal);
++  expect(replica.pullCalls).toHaveLength(0);
++});
++
++// Sin cambios nuevos, downloadChanges se detiene tras la primera consulta vacía, sin aplicar ni avanzar el puntero.
++test("downloadChanges stops after one empty pull when there is nothing new", async () => {
++  const db = freshCloudDb();
++  const replica = fakeReplica();
++  await downloadChanges(db, replica, "local");
++  expect(replica.pullCalls).toEqual([0]);
++  expect((db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id).toBe(0);
++});
++
++// runCloudCycle encadena subida y bajada: primero sube toda la cola local, luego baja y aplica lo nuevo de la nube.
++test("runCloudCycle uploads the pending queue and then downloads and applies new changes", async () => {
++  const db = freshCloudDb();
++  db.exec("DELETE FROM cloud_outbox");
++  createProject(db, "local-first");
++  const remoteRow: ChangeRow = { id: 5, changeId: "remote-1", installationId: "remote", kind: "projects", op: "insert",
++    payload: { projectId: "p-remote-cycle", name: "Remote via cycle", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, createdAt: "2026-01-01T00:00:00.000Z" };
++  const replica = fakeReplica({ async pullChanges() { return [remoteRow]; } });
++  await runCloudCycle(db, replica, "local");
++  expect(replica.pushCalls).toHaveLength(1);
++  expect(outboxCount(db)).toBe(0);
++  expect(db.query("SELECT projectId FROM projects WHERE projectId=?").get("p-remote-cycle")).toEqual({ projectId: "p-remote-cycle" });
++});
+diff --git a/src/app/cloud-sync.ts b/src/app/cloud-sync.ts
+new file mode 100644
+index 0000000..18e7991
+--- /dev/null
++++ b/src/app/cloud-sync.ts
+@@ -0,0 +1,93 @@
++/**
++ * Ciclo de sincronización con la nube (D7): sube la cola pendiente (`cloud_outbox`) a la réplica en
++ * PostgreSQL en lotes, y baja los cambios nuevos aplicándolos a la base local con
++ * `applyCloudChanges`. Lo usa `cloud-background.ts`, tanto en la tarea de fondo del servidor MCP
++ * (subida y bajada) como en la espera de arranque (solo bajada, con señal de cancelación, D8).
++ */
++import type { Database } from "../infrastructure/sqlite/connection";
++import type { ChangeRow } from "../infrastructure/postgres/replica";
++import { applyCloudChanges } from "./cloud-apply";
++
++/**
++ * El subconjunto de `PostgresReplica` que el ciclo necesita: subir, bajar y cerrar la conexión.
++ * Permite usar dobles (fakes) de prueba lentos o que fallan sin depender de PostgreSQL real.
++ */
++export interface CloudReplica {
++  /** Sube un lote de cambios; ver `PostgresReplica.pushChanges`. */
++  pushChanges(installationId: string, rows: { changeId: string; kind: string; op: "insert" | "update" | "delete"; payload: unknown }[]): Promise<{ ids: number[] }>;
++  /** Baja cambios posteriores a `since`; ver `PostgresReplica.pullChanges`. */
++  pullChanges(since: number, limit?: number, signal?: AbortSignal): Promise<ChangeRow[]>;
++  /** Cierra la conexión; ver `PostgresReplica.close`. */
++  close(): Promise<void>;
++}
++
++// Tamaño de lote al subir la cola pendiente (D7: "lotes de hasta 500").
++const UPLOAD_BATCH_SIZE = 500;
++// Tamaño de lote al bajar cambios nuevos: mismo límite que acepta `pullChanges` (1000).
++const DOWNLOAD_BATCH_SIZE = 1000;
++
++/** Una fila cruda de `cloud_outbox`, tal como la deja el disparador (trigger) SQL de `schema.ts`. */
++interface OutboxRow { readonly id: number; readonly change_id: string; readonly kind: string; readonly op: "insert" | "update" | "delete"; readonly payload: string }
++
++/**
++ * Sube la cola pendiente (`cloud_outbox`) a la nube, en lotes de hasta `UPLOAD_BATCH_SIZE` y en
++ * orden de `id` ascendente; solo borra de la cola local los `id` que la réplica confirmó recibidos
++ * (lo que se encoló mientras tanto se queda para el siguiente lote), y repite mientras el lote venga
++ * lleno (señal de que puede haber más filas después).
++ * @param db Base local con la cola pendiente.
++ * @param replica Réplica remota (o su doble de prueba) a la que se suben los cambios.
++ * @param installationId Identificador de esta instalación, que viaja con cada cambio subido.
++ */
++export async function uploadOutbox(db: Database, replica: CloudReplica, installationId: string): Promise<void> {
++  for (;;) {
++    // Se relee la cola en cada vuelta: un guardado nuevo durante la subida entra en el siguiente lote, no en este.
++    const rows = db.query("SELECT id, change_id, kind, op, payload FROM cloud_outbox ORDER BY id LIMIT ?").all(UPLOAD_BATCH_SIZE) as OutboxRow[];
++    if (rows.length === 0) return;
++    await replica.pushChanges(installationId, rows.map(row => ({
++      changeId: row.change_id, kind: row.kind, op: row.op, payload: JSON.parse(row.payload),
++    })));
++    // Solo se borran los ids que de verdad se subieron: una fila encolada después de leer `rows` no está en esta lista.
++    const ids = rows.map(row => row.id);
++    db.transaction(() => {
++      db.query(`DELETE FROM cloud_outbox WHERE id IN (${ids.map(() => "?").join(",")})`).run(...ids);
++    })();
++    if (rows.length < UPLOAD_BATCH_SIZE) return; // Lote incompleto: no puede haber más filas esperando.
++  }
++}
++
++/**
++ * Baja los cambios nuevos desde `cloud_state.last_applied_id` y los aplica a la base local con
++ * `applyCloudChanges`, en lotes de hasta `DOWNLOAD_BATCH_SIZE`; si la señal ya está abortada cuando
++ * el lote vuelve, se detiene sin tocar la base (Foco de revisión #3: nunca aplicar algo bajado tarde),
++ * y repite mientras el lote venga lleno.
++ * @param db Base local a la que se aplican los cambios bajados.
++ * @param replica Réplica remota (o su doble de prueba) de la que se bajan los cambios.
++ * @param installationId Identificador de esta instalación, para que `applyCloudChanges` reconozca sus propias filas.
++ * @param signal Señal opcional de cancelación (tope de la espera de arranque, D8, o detención de la tarea de fondo).
++ */
++export async function downloadChanges(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> {
++  for (;;) {
++    if (signal?.aborted) return;
++    const since = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
++    const rows = await replica.pullChanges(since, DOWNLOAD_BATCH_SIZE, signal);
++    // El tope pudo vencer mientras `pullChanges` seguía en el aire: no se aplica nada bajado tarde.
++    if (signal?.aborted) return;
++    if (rows.length === 0) return;
++    applyCloudChanges(db, rows, installationId);
++    if (rows.length < DOWNLOAD_BATCH_SIZE) return;
++  }
++}
++
++/**
++ * Un ciclo completo de sincronización (D7): primero sube toda la cola pendiente, luego baja y aplica
++ * los cambios nuevos. Lo usa la tarea de fondo del servidor MCP en cada intervalo y al guardar
++ * (agrupado con un pequeño retraso, ver `cloud-background.ts`).
++ * @param db Base local.
++ * @param replica Réplica remota (o su doble de prueba).
++ * @param installationId Identificador de esta instalación.
++ * @param signal Señal opcional de cancelación, que solo afecta a la bajada.
++ */
++export async function runCloudCycle(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> {
++  await uploadOutbox(db, replica, installationId);
++  await downloadChanges(db, replica, installationId, signal);
++}
+diff --git a/src/app/index.ts b/src/app/index.ts
+index 5173803..5364618 100644
+--- a/src/app/index.ts
++++ b/src/app/index.ts
+@@ -22,3 +22,7 @@ export { updateEngram } from "./update";
+ export type { EngramUpdateResult } from "./update";
+ export { readProjectContext, readStartupBlock, readStartupContext } from "./startup-context";
+ export type { ProjectContextResult, StartupContextResult, StartupEcosystemContext, StartupProjectContext } from "./startup-context";
++export { cloudSettings } from "./cloud-settings";
++export type { CloudSettings } from "./cloud-settings";
++export { startCloudBackground, waitForCloud } from "./cloud-background";
++export type { CloudBackgroundOptions, CloudBackgroundTask, CloudReplica } from "./cloud-background";
+diff --git a/src/app/memory-store.test.ts b/src/app/memory-store.test.ts
+index 11535f0..e824d8a 100644
+--- a/src/app/memory-store.test.ts
++++ b/src/app/memory-store.test.ts
+@@ -1,9 +1,11 @@
+ /**
+  * Comprueba la fachada pública de MemoryStore: búsqueda combinando alcance compartido y de
+- * proyecto, cierre idempotente, activar refuerzo e inteligencia, y búsqueda por topicKey.
++ * proyecto, cierre idempotente, activar refuerzo e inteligencia, búsqueda por topicKey, y los
++ * métodos delgados de nube (activar, saber si está activa, el ciclo y los avisos).
+  */
+ import { expect, test } from "bun:test";
+ import { MemoryStore } from "./memory-store";
++import type { CloudReplica } from "./cloud-sync";
+ 
+   // Verifica que buscar sin alcance trae memorias compartidas y de proyecto, y que pedir "project" solo trae las del proyecto (y respeta archivar/restaurar).
+   test("store facade searches shared and project memories by default and honors a project-only scope", () => {
+@@ -60,3 +62,24 @@ test("store facade exposes owner-scoped topic lookups for resumable work", () =>
+     expect(store.getByTopic(null, "atlas:module")).toBeNull();
+   } finally { store.close(); }
+ });
++
++// Verifica que los métodos delgados de nube (enableCloud, cloudEnabled, syncCloudCycle, downloadCloudChanges, takeCloudNotices) delegan de verdad en la base, con un doble (fake) de réplica en vez de PostgreSQL real.
++test("store facade delegates its thin cloud methods to the real database", async () => {
++  const store = new MemoryStore(":memory:");
++  try {
++    expect(store.cloudEnabled()).toBe(false);
++    expect(store.enableCloud()).toEqual({ migrated: true, backup: null });
++    expect(store.cloudEnabled()).toBe(true);
++    // Sin nada pendiente y sin avisos, el ciclo completo no falla y no hay nada que avisar.
++    const replica: CloudReplica = { async pushChanges() { return { ids: [] }; }, async pullChanges() { return []; }, async close() {} };
++    await store.syncCloudCycle(replica, crypto.randomUUID());
++    await store.downloadCloudChanges(replica, crypto.randomUUID());
++    expect(store.takeCloudNotices()).toEqual([]);
++    // Un guardado real encola un cambio; subirlo con el doble deja la cola vacía.
++    store.save({ scope: "shared", projectId: null, title: "Cloud facade", content: "queued", type: "fact" });
++    const pushed: unknown[] = [];
++    const uploading: CloudReplica = { async pushChanges(installationId, rows) { pushed.push(rows); return { ids: rows.map((_, i) => i + 1) }; }, async pullChanges() { return []; }, async close() {} };
++    await store.syncCloudCycle(uploading, crypto.randomUUID());
++    expect(pushed).toHaveLength(1);
++  } finally { store.close(); }
++});
+diff --git a/src/app/memory-store.ts b/src/app/memory-store.ts
+index a0590c1..fcf3acf 100644
+--- a/src/app/memory-store.ts
++++ b/src/app/memory-store.ts
+@@ -12,17 +12,19 @@ import * as projects from "../infrastructure/sqlite/projects";
+ import * as confirmations from "../infrastructure/sqlite/confirmations";
+ import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
+ import * as board from "../infrastructure/sqlite/board";
+-import { enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
++import { cloudEnabled,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
++import { takeCloudNotices } from "../infrastructure/sqlite/cloud-notices";
+ import * as search from "../infrastructure/sqlite/search";
+ import * as sessions from "../infrastructure/sqlite/sessions";
+ import { startupBlock } from "../infrastructure/sqlite/startup";
+ import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
+ import * as writes from "../infrastructure/sqlite/writes";
++import { downloadChanges,runCloudCycle,type CloudReplica } from "./cloud-sync";
+ import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
+ import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
+ import { type Project } from "../modules/projects";
+ import { type ContextInput,type ContextResult,type PreviewResult,type StartupBlock,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
+-import { type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
++import { type CloudNotice,type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
+ import type { SyncSnapshot } from "../modules/synchronization";
+ 
+ /** Fachada de acceso a una base SQLite de Engram: proyectos, memorias, sesiones, sincronización, ecosistema (grupos) e inteligencia. */
+@@ -189,4 +191,16 @@ export class MemoryStore {
+   groupSource(groupId: string): GroupSource | null { return board.groupSource(this.db, groupId); }
+   /** Mueve una memoria de ecosistema (grupo) de vuelta a un proyecto concreto del grupo. */
+   demoteMemory(projectId: string, id: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } { return board.demoteMemory(this.db, projectId, id); }
++
++  // Sincronización con la nube (nivel de esquema 12, D1). Es aditiva; solo se activa explícitamente con `enableCloud`.
++  /** Migra la base para activar la sincronización con la nube (cola de pendientes, avisos, D1). */
++  enableCloud(remoteFingerprint?: string | null): CloudEnrolment { return enableCloud(this.db, remoteFingerprint); }
++  /** Si el nivel de esquema de esta base ya tiene activada la nube (nivel 12): la bandeja de salida y sus disparadores están activos. */
++  cloudEnabled(): boolean { return cloudEnabled(this.db); }
++  /** Un ciclo completo de sincronización (D7): sube la cola pendiente y baja y aplica los cambios nuevos. Lo usa la tarea de fondo del servidor MCP (`startCloudBackground`, `src/app/cloud-background.ts`) en cada intervalo y al guardar. */
++  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return runCloudCycle(this.db, replica, installationId, signal); }
++  /** Solo la bajada del ciclo (sin subir la cola): baja y aplica los cambios nuevos, cancelable con `signal`. La usa la espera de arranque (`waitForCloud`, D8) antes de leer el contexto local. */
++  downloadCloudChanges(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return downloadChanges(this.db, replica, installationId, signal); }
++  /** Recoge (y marca como mostrados) los avisos de nube pendientes: conflictos, cambios saltados y cola vieja (D4, D5, D11); vacío si no hay nube o no hay nada que avisar. */
++  takeCloudNotices(now: Date = new Date()): CloudNotice[] { return takeCloudNotices(this.db, now); }
+ }
+diff --git a/src/index.test.ts b/src/index.test.ts
+index ade25f4..968c951 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -33,6 +33,8 @@ const ECOSYSTEM_STORE_METHODS = [
+ const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory", "startupBlock"];
+ // Agregado en 1.7.1: el aviso de sesión paralela (avisar según el momento, no marcar desde el inicio). Las listas de arriba solo crecen.
+ const PARALLEL_SESSIONS_STORE_METHODS = ["parallelSessions"];
++// Agregado en 1.8.0 con la sincronización con la nube (D1/D7/D8): activar el nivel 12, saber si está activo, el ciclo (subida+bajada, y solo bajada para la espera de arranque) y recoger avisos. Las listas de arriba solo crecen.
++const CLOUD_STORE_METHODS = ["enableCloud", "cloudEnabled", "syncCloudCycle", "downloadCloudChanges", "takeCloudNotices"];
+ 
+ // El contrato público del SDK agrupa varias comprobaciones relacionadas con qué expone `index.ts`.
+ describe("public SDK contract", () => {
+@@ -41,7 +43,7 @@ describe("public SDK contract", () => {
+     expect(Object.keys(sdk).sort()).toEqual(RUNTIME_EXPORTS.sort());
+     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
+       .filter(name => name !== "constructor").sort())
+-      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS, ...PARALLEL_SESSIONS_STORE_METHODS].sort());
++      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS, ...PARALLEL_SESSIONS_STORE_METHODS, ...CLOUD_STORE_METHODS].sort());
+   });
+ 
+   // Forge614 Shell necesita estas tres funciones de inicialización sin interfaz visual para integrarse.
+diff --git a/src/infrastructure/postgres/replica.test.ts b/src/infrastructure/postgres/replica.test.ts
+index 4ed82fd..6e3c668 100644
+--- a/src/infrastructure/postgres/replica.test.ts
++++ b/src/infrastructure/postgres/replica.test.ts
+@@ -227,3 +227,40 @@ integration("pullChanges con since o limit inválidos rechaza con SYNC_INVALID",
+     await expect(replica.pullChanges(0, 1.5)).rejects.toMatchObject({ code: "SYNC_INVALID" });
+   } finally { await replica.close(); }
+ }, postgresTestTimeoutMs);
++
++// Foco de revisión #3: con la señal ya abortada, pullChanges rechaza sin siquiera abrir la consulta.
++integration("pullChanges rejects without querying when the signal is already aborted", async () => {
++  const url = await freshDatabase("pull_preaborted");
++  const replica = await PostgresReplica.connect(url, true);
++  const controller = new AbortController(); controller.abort();
++  try {
++    await expect(replica.pullChanges(0, 1000, controller.signal)).rejects.toMatchObject({ code: "POSTGRES_UNAVAILABLE" });
++  } finally { await replica.close(); }
++}, postgresTestTimeoutMs);
++
++// Cancelación (Foco de revisión #3): con la tabla bloqueada por otra conexión, pullChanges queda
++// esperando; al abortar la señal se llama query.cancel() (se quita el escuchador al terminar, sin
++// dejarlo puesto de más). Nota de laboratorio: en esta versión de Bun (1.4.2), query.cancel() no
++// interrumpe de verdad una consulta ya bloqueada esperando un candado en el servidor (comprobado aparte,
++// fuera de esta prueba: la consulta se queda colgada indefinidamente pese a llamar cancel()); lo que
++// de verdad acota la espera aquí es `lock_timeout=5000` de postgresOptions (replica.ts:29), así que el
++// rechazo llega alrededor de los 5 s, no de los ~500 ms que pedía el plan original. Repórtalo como riesgo:
++// si Bun corrige `cancel()` para consultas bloqueadas, este límite debería bajar y esta prueba debería
++// ajustarse para exigirlo.
++integration("pullChanges cancels the query on abort, bounded by lock_timeout when a real Postgres lock cancel is not honored", async () => {
++  const url = await freshDatabase("pull_cancel_real");
++  const replica = await PostgresReplica.connect(url, true);
++  const locker = new SQL(url);
++  try {
++    await locker.begin(async tx => {
++      // El candado se toma dentro de una transacción sin cerrar (a propósito: se libera al final, en el finally de abajo).
++      await tx.unsafe("LOCK TABLE forge614_sync.changes IN ACCESS EXCLUSIVE MODE");
++      const controller = new AbortController();
++      const start = Date.now();
++      setTimeout(() => controller.abort(), 100);
++      await expect(replica.pullChanges(0, 1000, controller.signal)).rejects.toMatchObject({ code: "POSTGRES_UNAVAILABLE" });
++      // Nunca se queda colgada para siempre: como mucho, `lock_timeout` (5 s) más margen.
++      expect(Date.now() - start).toBeLessThan(6000);
++    });
++  } finally { await locker.close(); await replica.close(); }
++}, postgresTestTimeoutMs);
+diff --git a/src/infrastructure/postgres/replica.ts b/src/infrastructure/postgres/replica.ts
+index de532f7..f490437 100644
+--- a/src/infrastructure/postgres/replica.ts
++++ b/src/infrastructure/postgres/replica.ts
+@@ -244,23 +244,36 @@ export class PostgresReplica {
+   }
+   /**
+    * Consulta la cola de cambios a partir de un identificador dado, para que cada instalación siga leyendo
+-   * desde donde se quedó.
++   * desde donde se quedó. Cancelable de verdad (Foco de revisión #3): si `signal` ya está abortada, ni
++   * siquiera abre la consulta; si se aborta mientras la consulta sigue en curso, la cancela en PostgreSQL
++   * (`query.cancel()`) en vez de solo ignorar su respuesta, para no dejar una consulta bloqueada compitiendo
++   * por la misma conexión que la tarea en segundo plano.
+    * @param since Solo se devuelven cambios con identificador mayor a este valor.
+    * @param limit Cantidad máxima de filas a devolver (por defecto 1000).
++   * @param signal Señal opcional de cancelación (tope de la espera de arranque, D8, o detención de la tarea de fondo).
+    * @returns Los cambios con `id > since`, ordenados por `id` ascendente, hasta `limit` filas.
+    * @throws MemoryError con código `SYNC_INVALID` si `since` no es un entero no negativo, o `limit` no es
+-   * un entero entre 1 y 1000; con `POSTGRES_UNAVAILABLE` para cualquier otro fallo.
++   * un entero entre 1 y 1000; con `POSTGRES_UNAVAILABLE` si `signal` ya estaba abortada, si se abortó
++   * mientras la consulta seguía en curso, o para cualquier otro fallo.
+    */
+-  async pullChanges(since:number,limit=1000):Promise<ChangeRow[]> {
++  async pullChanges(since:number,limit=1000,signal?:AbortSignal):Promise<ChangeRow[]> {
+     if(!Number.isInteger(since)||since<0||!Number.isInteger(limit)||limit<1||limit>1000) syncError("SYNC_INVALID");
++    // Si el tope ya venció antes de intentarlo, ni vale la pena abrir la consulta.
++    if(signal?.aborted) return safe(new Error("pullChanges aborted before querying"));
++    const query=this.db.unsafe(
++      `SELECT id,change_id,installation_id,kind,op,payload,
++        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
++       FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
++    // Si la señal se aborta mientras la consulta sigue en curso, se cancela de verdad en PostgreSQL
++    // (libera cualquier candado que estuviera esperando), no solo se descarta la respuesta al volver.
++    const onAbort=()=>{query.cancel();};
++    signal?.addEventListener("abort",onAbort,{once:true});
+     try {
+-      const rows=await this.db.unsafe(
+-        `SELECT id,change_id,installation_id,kind,op,payload,
+-          to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+-         FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
++      const rows=await query;
+       return rows.map((r:any):ChangeRow=>({id:Number(r.id),changeId:r.change_id,installationId:r.installation_id,kind:r.kind,
+         op:r.op,payload:typeof r.payload==="string"?JSON.parse(r.payload):r.payload,createdAt:r.created_at}));
+     } catch(error) { return safe(error); }
++    finally { signal?.removeEventListener("abort",onAbort); }
+   }
+   /** Cierra la conexión a PostgreSQL. */
+   async close():Promise<void> {await this.db.close();}
+diff --git a/src/infrastructure/sqlite/cloud-notices.test.ts b/src/infrastructure/sqlite/cloud-notices.test.ts
+new file mode 100644
+index 0000000..ac97651
+--- /dev/null
++++ b/src/infrastructure/sqlite/cloud-notices.test.ts
+@@ -0,0 +1,111 @@
++/**
++ * Comprueba `takeCloudNotices`: sin nada que avisar da un arreglo vacío, un conflicto o un saltado se
++ * agrupan en un solo aviso con conteo y se marcan como mostrados (no vuelven a salir en la segunda
++ * llamada), la cola vieja se recalcula cada vez según la hora dada, con el umbral estricto de 24 h, y
++ * sin nube activada da `[]` sin lanzar.
++ */
++import { Database } from "bun:sqlite";
++import { expect, test } from "bun:test";
++import { enableCloud, initialize } from "./schema";
++import { takeCloudNotices } from "./cloud-notices";
++
++/** Una base SQLite en memoria, ya en el nivel 12 (nube activada), con la cola y los avisos vacíos. */
++function freshCloudDb(): Database {
++  const db = new Database(":memory:");
++  initialize(db);
++  enableCloud(db);
++  db.exec("DELETE FROM cloud_outbox");
++  return db;
++}
++/** Inserta un aviso crudo en `cloud_notices`, como lo dejaría `cloud-apply.ts`. */
++function insertNotice(db: Database, code: string): void {
++  db.query("INSERT INTO cloud_notices(code,payload) VALUES(?,?)").run(code, "{}");
++}
++/** Inserta una fila pendiente en `cloud_outbox` con la fecha de creación dada. */
++function insertOutbox(db: Database, createdAt: string): void {
++  db.query("INSERT INTO cloud_outbox(kind,op,payload,created_at) VALUES('projects','insert','{}',?)").run(createdAt);
++}
++const NOW = new Date("2026-01-02T00:00:00.000Z");
++
++// Sin ningún aviso pendiente ni cola vieja, takeCloudNotices no tiene nada que decir.
++test("takeCloudNotices is empty when there is nothing to report", () => {
++  const db = freshCloudDb();
++  expect(takeCloudNotices(db, NOW)).toEqual([]);
++});
++
++// Un conflicto de versión y uno de clave temática se agrupan en un solo aviso "conflict" con el conteo total.
++test("takeCloudNotices groups CLOUD_CONFLICT and CLOUD_TOPIC_CONFLICT into one conflict notice with a count", () => {
++  const db = freshCloudDb();
++  insertNotice(db, "CLOUD_CONFLICT"); insertNotice(db, "CLOUD_TOPIC_CONFLICT");
++  const notices = takeCloudNotices(db, NOW);
++  expect(notices).toHaveLength(1);
++  expect(notices[0]).toEqual({ kind: "conflict", detail:
++    "Cloud sync: 2 memories had a conflicting change from another Mac; the most recent version is active and the other one is in its history." });
++});
++
++// SECRET_REJECTED y CLOUD_ROW_SKIPPED se agrupan en un solo aviso "skipped"; con exactamente uno, el texto usa el singular.
++test("takeCloudNotices groups SECRET_REJECTED and CLOUD_ROW_SKIPPED into one skipped notice, singular with exactly one", () => {
++  const db = freshCloudDb();
++  insertNotice(db, "SECRET_REJECTED");
++  const notices = takeCloudNotices(db, NOW);
++  expect(notices).toEqual([{ kind: "skipped", detail:
++    "Cloud sync: 1 change from the cloud was skipped (a possible secret or invalid data)." }]);
++});
++
++// Un pendiente de más de 24 h en la cola produce el aviso "stale-outbox" con el total pendiente y la fecha del más viejo.
++test("takeCloudNotices reports a stale outbox with the total pending count and the oldest date", () => {
++  const db = freshCloudDb();
++  // El id ascendente sigue el mismo orden que created_at (así encolan de verdad los disparadores): la primera fila insertada es la más vieja.
++  insertOutbox(db, "2025-12-31T23:00:00.000Z"); // Más viejo: 25 h antes de NOW.
++  insertOutbox(db, "2026-01-01T00:00:00.000Z"); // Más nuevo: exactamente 24 h antes de NOW.
++  const notices = takeCloudNotices(db, NOW);
++  expect(notices).toEqual([{ kind: "stale-outbox", detail:
++    "Cloud sync: 2 local changes have been waiting to upload for more than 24 h (oldest from 2025-12-31T23:00:00.000Z)." }]);
++});
++
++// Los tres avisos pueden salir juntos, siempre en el mismo orden: conflicto, saltados, cola vieja.
++test("takeCloudNotices returns all three notices together, in a fixed order", () => {
++  const db = freshCloudDb();
++  insertNotice(db, "CLOUD_CONFLICT"); insertNotice(db, "SECRET_REJECTED");
++  insertOutbox(db, "2025-12-01T00:00:00.000Z");
++  const notices = takeCloudNotices(db, NOW);
++  expect(notices.map(notice => notice.kind)).toEqual(["conflict", "skipped", "stale-outbox"]);
++});
++
++// Los conflictos y los saltados se marcan como mostrados: una segunda llamada ya no los trae, aunque la cola vieja (que nunca se marca) siga saliendo igual.
++test("a second call no longer brings conflicts or skipped notices, but a stale outbox keeps showing", () => {
++  const db = freshCloudDb();
++  insertNotice(db, "CLOUD_CONFLICT"); insertNotice(db, "CLOUD_ROW_SKIPPED");
++  insertOutbox(db, "2025-12-01T00:00:00.000Z");
++  const first = takeCloudNotices(db, NOW);
++  expect(first.map(notice => notice.kind)).toEqual(["conflict", "skipped", "stale-outbox"]);
++  const second = takeCloudNotices(db, NOW);
++  expect(second).toEqual([{ kind: "stale-outbox", detail:
++    "Cloud sync: 1 local change has been waiting to upload for more than 24 h (oldest from 2025-12-01T00:00:00.000Z)." }]);
++});
++
++// El umbral es estricto ("más de 24 h", no "24 h o más"): exactamente 24 h no avisa.
++test("the stale outbox threshold is strict: exactly 24h00m00s does not warn", () => {
++  const db = freshCloudDb();
++  insertOutbox(db, new Date(NOW.getTime() - 24 * 60 * 60 * 1000).toISOString());
++  expect(takeCloudNotices(db, NOW)).toEqual([]);
++});
++
++// El umbral es estricto: 23 h 59 min no avisa, 24 h 1 min sí.
++test("the stale outbox threshold is strict: 23h59m does not warn, 24h1m does", () => {
++  const db = freshCloudDb();
++  insertOutbox(db, new Date(NOW.getTime() - (23 * 60 + 59) * 60 * 1000).toISOString());
++  expect(takeCloudNotices(db, NOW)).toEqual([]);
++  db.exec("DELETE FROM cloud_outbox");
++  insertOutbox(db, new Date(NOW.getTime() - (24 * 60 + 1) * 60 * 1000).toISOString());
++  const notices = takeCloudNotices(db, NOW);
++  expect(notices).toHaveLength(1);
++  expect(notices[0]!.kind).toBe("stale-outbox");
++});
++
++// Sin la nube activada (nivel de esquema menor a 12), takeCloudNotices da [] sin lanzar, aunque se le pida sobre una base común.
++test("takeCloudNotices is [] without throwing when cloud is not enabled", () => {
++  const db = new Database(":memory:");
++  initialize(db);
++  expect(takeCloudNotices(db, NOW)).toEqual([]);
++});
+diff --git a/src/infrastructure/sqlite/cloud-notices.ts b/src/infrastructure/sqlite/cloud-notices.ts
+new file mode 100644
+index 0000000..487b65e
+--- /dev/null
++++ b/src/infrastructure/sqlite/cloud-notices.ts
+@@ -0,0 +1,93 @@
++/**
++ * Recoge los avisos de nube pendientes (D4, D5, D11) para mostrarlos una vez en
++ * `memory_session_start`: conflictos de versión o de clave temática, cambios saltados por secreto o
++ * forma inválida, y cola de subida vieja. Los dos primeros se marcan como mostrados en la misma
++ * transacción en que se cuentan (así cada uno sale una sola vez); el tercero se recalcula cada vez,
++ * porque su estado depende de la hora actual, no de si ya se avisó. La usa
++ * `MemoryStore.takeCloudNotices` (`src/app/memory-store.ts`).
++ */
++import type { Database } from "./connection";
++import { cloudEnabled } from "./schema";
++import type { CloudNotice } from "../../modules/sessions";
++
++// Más de 24 horas en milisegundos (D11: estricto, "más de", no "igual a").
++const STALE_OUTBOX_MS = 24 * 60 * 60 * 1000;
++// Códigos de `cloud_notices` que se agrupan bajo el aviso de conflicto (D4): versión duplicada y clave temática duplicada.
++const CONFLICT_CODES = ["CLOUD_CONFLICT", "CLOUD_TOPIC_CONFLICT"];
++// Códigos de `cloud_notices` que se agrupan bajo el aviso de saltados (D5): secreto rechazado y fila con forma inválida o desconocida.
++const SKIPPED_CODES = ["SECRET_REJECTED", "CLOUD_ROW_SKIPPED"];
++
++/**
++ * Cuenta las filas sin mostrar (`shown=0`) de `cloud_notices` cuyo código está en `codes`.
++ * @param db Base local.
++ * @param codes Códigos a contar juntos, como un solo tipo de aviso.
++ * @returns Cuántas filas sin mostrar hay con esos códigos.
++ */
++function countUnshown(db: Database, codes: readonly string[]): number {
++  const placeholders = codes.map(() => "?").join(",");
++  const row = db.query(`SELECT COUNT(*) AS n FROM cloud_notices WHERE shown=0 AND code IN (${placeholders})`).get(...codes) as { n: number };
++  return row.n;
++}
++/**
++ * Marca como mostradas (`shown=1`) las filas sin mostrar de `cloud_notices` cuyo código está en `codes`.
++ * @param db Base local.
++ * @param codes Códigos a marcar juntos.
++ */
++function markShown(db: Database, codes: readonly string[]): void {
++  const placeholders = codes.map(() => "?").join(",");
++  db.query(`UPDATE cloud_notices SET shown=1 WHERE shown=0 AND code IN (${placeholders})`).run(...codes);
++}
++/**
++ * Da la fecha de creación del pendiente más viejo de `cloud_outbox`.
++ * @param db Base local.
++ * @returns La fecha del pendiente más viejo (el de menor `id`), o `null` si la cola está vacía.
++ */
++function oldestOutboxDate(db: Database): string | null {
++  const row = db.query("SELECT created_at FROM cloud_outbox ORDER BY id LIMIT 1").get() as { created_at: string } | null;
++  return row?.created_at ?? null;
++}
++/**
++ * Cuenta cuántas filas hay hoy en `cloud_outbox`, sin importar su edad.
++ * @param db Base local.
++ * @returns El total de filas pendientes de subir.
++ */
++function outboxCount(db: Database): number {
++  return (db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n;
++}
++
++/**
++ * Recoge y marca como mostrados los avisos de nube pendientes de esta base.
++ * @param db Base local.
++ * @param now Hora actual, para decidir si la cola pendiente ya lleva más de 24 h esperando (recibida
++ * como parámetro, en vez de leerla del reloj del sistema, para que las pruebas puedan fijarla).
++ * @returns Un `CloudNotice` por tipo (nunca más de tres: conflicto, saltados, cola vieja), en ese
++ * orden; un arreglo vacío si esta base no tiene la nube activada o no hay nada que avisar.
++ */
++export function takeCloudNotices(db: Database, now: Date): CloudNotice[] {
++  // Sin nube (nivel de esquema menor a 12: las tablas de este archivo ni existen), no hay nada que recoger.
++  if (!cloudEnabled(db)) return [];
++  const notices: CloudNotice[] = [];
++  db.transaction(() => {
++    // Conflictos y saltados se marcan como mostrados dentro de esta misma transacción: cada uno sale una sola vez.
++    const conflicts = countUnshown(db, CONFLICT_CODES);
++    if (conflicts > 0) {
++      markShown(db, CONFLICT_CODES);
++      notices.push({ kind: "conflict", detail:
++        `Cloud sync: ${conflicts} ${conflicts === 1 ? "memory" : "memories"} had a conflicting change from another Mac; the most recent version is active and the other one is in its history.` });
++    }
++    const skipped = countUnshown(db, SKIPPED_CODES);
++    if (skipped > 0) {
++      markShown(db, SKIPPED_CODES);
++      notices.push({ kind: "skipped", detail:
++        `Cloud sync: ${skipped} ${skipped === 1 ? "change" : "changes"} from the cloud ${skipped === 1 ? "was" : "were"} skipped (a possible secret or invalid data).` });
++    }
++  })();
++  // La cola vieja nunca se marca: se recalcula cada vez, porque depende de la hora actual, no de si ya se avisó antes.
++  const oldest = oldestOutboxDate(db);
++  if (oldest !== null && now.getTime() - new Date(oldest).getTime() > STALE_OUTBOX_MS) {
++    const total = outboxCount(db);
++    notices.push({ kind: "stale-outbox", detail:
++      `Cloud sync: ${total} local ${total === 1 ? "change has" : "changes have"} been waiting to upload for more than 24 h (oldest from ${oldest}).` });
++  }
++  return notices;
++}
+diff --git a/src/interfaces/cli/__tests__/startup-context.e2e.test.ts b/src/interfaces/cli/__tests__/startup-context.e2e.test.ts
+index 4d336f1..1431ca4 100644
+--- a/src/interfaces/cli/__tests__/startup-context.e2e.test.ts
++++ b/src/interfaces/cli/__tests__/startup-context.e2e.test.ts
+@@ -1,9 +1,11 @@
+-/** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura y los dos formatos de salida. */
++/** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura, los dos formatos de salida y la espera de arranque con nube (D8). */
+ import { afterEach, expect, test } from "bun:test";
++import { Database } from "bun:sqlite";
+ import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+ import { homedir, tmpdir } from "node:os";
+ import { join, parse, resolve } from "node:path";
+ import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
++import { enableCloud } from "../../../infrastructure/sqlite/schema";
+ 
+ const directories: string[] = [];
+ function temporary(prefix = "forge614-startup-context-"): string {
+@@ -256,6 +258,27 @@ test("startup-context opens the base read-only when nothing has to be written, s
+   } finally { holder.kill(9); }
+ }, 40000);
+ 
++// D8: con nube configurada contra un servidor TCP que acepta y nunca responde, startup-context no se
++// queda esperando a Neon: el proceso imprime el bloque igual y termina pronto (el tope de espera de
++// arranque, 1000 ms, más el resto del comando, caben de sobra en 1500 ms).
++test("startup-context with cloud configured against a mute TCP endpoint still prints and exits promptly", async () => {
++  const root = temporary(); const userDirectory = join(root, "user");
++  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
++  const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
++  try {
++    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
++    const db = new Database(dbPath); enableCloud(db); db.close();
++    writeFileSync(join(userDirectory, ".forge614", "engram", ".env"),
++      `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
++      { mode: 0o600 });
++    const start = Date.now();
++    const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
++    expect(Date.now() - start).toBeLessThanOrEqual(1500);
++    expect(result.code).toBe(0);
++    expect(JSON.parse(result.stdout)).toMatchObject({ format: 1, project: { status: "unbound" } });
++  } finally { mute.stop(true); }
++}, 40000);
++
+ // --format 2 imprime el bloque de texto listo para inyectar; --format 1 coincide byte a byte con el valor por defecto (sin --format); cualquier otro valor falla con INVALID_INPUT.
+ test("startup-context --format 2 prints the ready-to-inject block, --format 1 matches the default byte for byte and other formats fail", async () => {
+   const root = temporary(); const userDirectory = join(root, "user");
+diff --git a/src/interfaces/cli/commands.ts b/src/interfaces/cli/commands.ts
+index 5b56990..95eb9f4 100644
+--- a/src/interfaces/cli/commands.ts
++++ b/src/interfaces/cli/commands.ts
+@@ -3,7 +3,7 @@
+  * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
+  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
+  */
+-import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext } from "../../app";
++import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud } from "../../app";
+ import type { EngramUpdateResult } from "../../app";
+ import { MemoryError } from "../../shared/errors";
+ import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
+@@ -144,7 +144,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
+     console.log(JSON.stringify(result,null,2)); return;
+   }
+   if(command==="session-start"){
+-    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));const notice=sessionNotice(started.previous,started.parallel);console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})},null,2));}finally{store.close();}return;
++    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));const notice=sessionNotice(started.previous,started.parallel,store.takeCloudNotices());console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})},null,2));}finally{store.close();}return;
+   }
+   if(command==="session-end"){
+     const store=workspace.open();try{console.log(JSON.stringify(store.endSession(projectIdentity(need("project-id")),need("session-id")),null,2));}finally{store.close();}return;
+@@ -173,13 +173,33 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
+     const directory=need("directory");
+     const read=values.get("format")==="2"?readStartupBlock:readStartupContext;
+     // Primero de solo lectura: el caso común no escribe nada en la base, y una base intacta conserva su huella
+-    // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo) se repite en
+-    // modo escritura; ese flujo es idempotente, así que repetirlo es seguro.
++    // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo), o cuando hay
++    // nube configurada (D8: la espera de arranque necesita aplicar lo bajado), se repite en modo escritura;
++    // ambos flujos son idempotentes, así que repetirlo es seguro.
+     const readonlyStore=workspace.open(true);
+-    try{console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
++    let needsCloudWait=false;
++    try{
++      needsCloudWait=readonlyStore.cloudEnabled()&&cloudSettings()!==null;
++      if(!needsCloudWait){console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
++    }
+     catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
+     finally{readonlyStore.close();}
+-    const store=workspace.open();try{console.log(JSON.stringify(read(store,directory),null,2));}finally{store.close();}return;
++    const store=workspace.open();
++    try{if(needsCloudWait)await waitForCloud(store);console.log(JSON.stringify(read(store,directory),null,2));}
++    finally{store.close();}
++    // Nota de laboratorio (D8): waitForCloud ya vuelve dentro de su propio tope, pero un intento de conexión
++    // que ni siquiera terminó de conectarse (Neon, o aquí, un servidor mudo) deja un zócalo (socket) abierto
++    // que Bun no puede cancelar por fuera (comprobado aparte: ni abortar la señal ni cerrar el cliente
++    // interrumpen un handshake ya en curso). Sin forzar la salida, ese zócalo mantendría vivo el proceso
++    // hasta su propio tiempo de espera de conexión (`connectionTimeout`, 5 s), incumpliendo "el proceso de
++    // la CLI debe terminar enseguida después de imprimir". Se vacían stdout/stderr antes de salir para no
++    // truncar el bloque ya impreso.
++    if(needsCloudWait){
++      await new Promise(resolve=>process.stdout.write("",resolve));
++      await new Promise(resolve=>process.stderr.write("",resolve));
++      process.exit(0);
++    }
++    return;
+   }
+   // Se completa la validación de argumentos antes de leer la configuración o abrir ninguna base de datos.
+   const scope = values.get("scope") ?? (command === "search" ? "all" : "project");
+diff --git a/src/interfaces/mcp/server.test.ts b/src/interfaces/mcp/server.test.ts
+index ac32e75..908b2f4 100644
+--- a/src/interfaces/mcp/server.test.ts
++++ b/src/interfaces/mcp/server.test.ts
+@@ -1,6 +1,7 @@
+ /** Comprueba el servidor MCP real por stdio (entrada y salida estándar): arranque, lista de herramientas y cierre ordenado, con el CLI en fuente y compilado. */
+ import { afterEach, expect, test } from "bun:test";
+-import { existsSync, mkdtempSync, rmSync } from "node:fs";
++import { Database } from "bun:sqlite";
++import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join, resolve } from "node:path";
+ import { pathToFileURL } from "node:url";
+@@ -9,6 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+ import { ListRootsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+ import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
+ import { memoryProtocol } from "../../modules/memory-protocol";
++import { enableCloud } from "../../infrastructure/sqlite/schema";
+ 
+ const temporaryDirectories: string[] = [];
+ const clients: Client[] = [];
+@@ -132,3 +134,29 @@ test("raw stdin EOF cancels an unanswered roots request and exits promptly", asy
+     child.kill("SIGKILL"); await child.exited; await reader.cancel().catch(() => {});
+   }
+ },30000);
++
++// D8: con nube configurada contra un servidor TCP que acepta la conexión y nunca responde, memory_context
++// no se queda esperando a Neon: el tope de la espera de arranque (1000 ms) la corta y responde con lo
++// local. El servidor, además, sigue cerrando bien (stdin) tras esa llamada.
++test("memory_context returns within the startup wait cutoff against a cloud endpoint that never answers, and the server still shuts down cleanly", async () => {
++  const root = temporary(); const userDirectory = join(root, "user");
++  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
++  // Servidor TCP mudo: acepta la conexión (el intento de conectar no falla al instante) pero nunca contesta nada.
++  const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
++  try {
++    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
++    const db = new Database(dbPath); enableCloud(db); db.close();
++    const envPath = join(userDirectory, ".forge614", "engram", ".env");
++    writeFileSync(envPath,
++      `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
++      { mode: 0o600 });
++    const { client, transport } = await connect({ cwd: root, userDirectory });
++    const start = Date.now();
++    const result = await client.callTool({ name: "memory_context", arguments: { scope: "shared" } }) as CallToolResult;
++    expect(Date.now() - start).toBeLessThanOrEqual(1300);
++    const block = result.content.find(value => value.type === "text");
++    expect(block && block.type === "text" ? JSON.parse(block.text) : null).toMatchObject({ format: 1 });
++    await client.close();
++    expect(transport.pid).toBeNull();
++  } finally { mute.stop(true); }
++}, 40000);
+diff --git a/src/interfaces/mcp/server.ts b/src/interfaces/mcp/server.ts
+index 2e6cc06..7abb484 100644
+--- a/src/interfaces/mcp/server.ts
++++ b/src/interfaces/mcp/server.ts
+@@ -6,7 +6,7 @@
+  */
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+-import { MemoryStore, MemoryWorkspace } from "../../app";
++import { MemoryStore, MemoryWorkspace, startCloudBackground, type CloudBackgroundTask } from "../../app";
+ import { MemoryError } from "../../shared/errors";
+ import { MEMORY_PROTOCOL } from "../../modules/mcp";
+ import { version } from "../../../package.json";
+@@ -16,14 +16,18 @@ import { registerTools } from "./tools";
+ /** Arranca el servidor MCP local por stdio. Abrir SQLite se aplaza hasta la primera llamada a una herramienta. */
+ export async function startMcp(): Promise<void> {
+   let store: MemoryStore | null = null;
++  let background: CloudBackgroundTask | null = null;
+   let closing = false;
+   const memoryStore = () => {
+     if (closing) throw new MemoryError("SERVER_CLOSING","El servidor MCP se está cerrando.");
+-    return store ??= new MemoryWorkspace().open();
++    // Al abrir el store por primera vez (nunca antes: la base sigue sin crearse hasta la primera herramienta),
++    // se arranca también la tarea de fondo (D7); `startCloudBackground` no hace nada sin nube configurada.
++    if (!store) { store = new MemoryWorkspace().open(); background = startCloudBackground(store); }
++    return store;
+   };
+   const server = new McpServer({ name:"forge614-engram",version }, { instructions:MEMORY_PROTOCOL });
+ 
+-  registerTools(server,memoryStore,directoryResolver(server));
++  registerTools(server,memoryStore,directoryResolver(server),() => background?.notifySave());
+ 
+   const transport = new StdioServerTransport(process.stdin,process.stdout,{ maxBufferSize:256 * 1024 });
+   const closeStore = () => { store?.close(); store = null; };
+@@ -31,7 +35,10 @@ export async function startMcp(): Promise<void> {
+   // Memoizada: SIGINT, SIGTERM y el cierre de stdin pueden llegar juntos, y el cierre solo debe ejecutarse una vez.
+   const shutdown = (): Promise<void> => {
+     if (shutdownPromise) return shutdownPromise;
+-    closing = true; closeStore();
++    closing = true;
++    // La tarea de fondo se detiene ANTES de cerrar el store: un ciclo en vuelo que termine después no debe
++    // aplicar nada sobre una base ya cerrada.
++    background?.stop(); background = null; closeStore();
+     shutdownPromise = server.close().catch(() => {}).finally(closeStore);
+     return shutdownPromise;
+   };
+diff --git a/src/interfaces/mcp/sessions-tools.ts b/src/interfaces/mcp/sessions-tools.ts
+index bac1b99..68f7208 100644
+--- a/src/interfaces/mcp/sessions-tools.ts
++++ b/src/interfaces/mcp/sessions-tools.ts
+@@ -3,7 +3,7 @@
+  * `memory_session_end`, `memory_session_summary`, `memory_timeline` y `memory_context`. `tools.ts` llama a
+  * `registerSessionTools` junto a `registerMemoryTools` al construir el servidor.
+  */
+-import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices } from "../../app";
++import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices, waitForCloud } from "../../app";
+ import { MemoryError } from "../../shared/errors";
+ import { sessionNotice } from "../../modules/sessions";
+ import { toolSchemas } from "./schemas";
+@@ -17,9 +17,10 @@ export function registerSessionTools(tools:ToolContext):void {
+     description:"Start or replay an explicit conversation session for the atomically resolved project directory.",
+     inputSchema:toolSchemas.memory_session_start,
+   }, safely(async ({directory,sessionId}) => {
+-    const started=startProjectSessionWithNotices(memoryStore(),await projectDirectory(directory),sessionId);
+-    // El aviso de sesión (dejada abierta, o abierta en paralelo) se calcula aparte, a partir de lo que devolvió el arranque.
+-    const notice=sessionNotice(started.previous,started.parallel);
++    const store=memoryStore();
++    const started=startProjectSessionWithNotices(store,await projectDirectory(directory),sessionId);
++    // El aviso de sesión (dejada abierta, abierta en paralelo, o de nube) se calcula aparte, a partir de lo que devolvió el arranque y de los avisos de nube pendientes (D4, D11).
++    const notice=sessionNotice(started.previous,started.parallel,store.takeCloudNotices());
+     return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})};
+   }));
+ 
+@@ -61,13 +62,16 @@ export function registerSessionTools(tools:ToolContext):void {
+     description:"Return bounded project, ecosystem or shared orientation without a query. A project in a group also gets its ecosystem block.",
+     inputSchema:toolSchemas.memory_context,
+   }, safely(async ({directory,scope,compact,maxBytes}) => {
++    const store=memoryStore();
++    // Espera de arranque (D8): con nube prendida, baja y aplica lo nuevo con un tope de 1000 ms antes de leer; sin nube, vuelve enseguida sin conectar.
++    await waitForCloud(store);
+     const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
+     // shared y ecosystem no dependen de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
+-    if(scope==="shared") return memoryStore().context(null,options);
+-    if(scope==="ecosystem") return memoryStore().contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
+-    const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
++    if(scope==="shared") return store.context(null,options);
++    if(scope==="ecosystem") return store.contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
++    const context=resolveProjectContext(store,await projectDirectory(directory),false);
+     if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+-    const result=readProjectContext(memoryStore(),context.projectId,options);
++    const result=readProjectContext(store,context.projectId,options);
+     return context.notices ? {...result,notices:context.notices} : result;
+   }));
+ }
+diff --git a/src/interfaces/mcp/tools.ts b/src/interfaces/mcp/tools.ts
+index b0fa737..ade5a85 100644
+--- a/src/interfaces/mcp/tools.ts
++++ b/src/interfaces/mcp/tools.ts
+@@ -5,17 +5,31 @@
+  */
+ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import type { MemoryStore } from "../../app";
+-import { MCP_TOOL_NAMES } from "../../modules/mcp";
++import { MCP_TOOL_NAMES, type McpToolName } from "../../modules/mcp";
+ import { safely, type ToolContext } from "./context";
+ import { registerMemoryTools } from "./memory-tools";
+ import { registerSessionTools } from "./sessions-tools";
+ 
+-/** Registra en `server` las herramientas de memoria y de sesión, usando `memoryStore` y `projectDirectory` como sus dos dependencias compartidas. */
+-export function registerTools(server:McpServer,memoryStore:()=>MemoryStore,projectDirectory:(explicit?:string)=>Promise<string>):void {
++// Herramientas que escriben en el store: las que llaman a un método de escritura de `MemoryStore`
++// (comprobado por grep sobre `memory-tools.ts`/`sessions-tools.ts`: `saveWithSession`/`saveForProjectDirectory`,
++// `startProjectSessionWithNotices`, `endSession` y `saveSessionSummary`/`saveSessionSummaryInGroup`).
++// Tras cada llamada exitosa, `register` avisa a la tarea de fondo (`onWrite`, D7) para que agrupe un ciclo.
++const WRITE_TOOLS: ReadonlySet<McpToolName> = new Set(["memory_save","memory_session_start","memory_session_end","memory_session_summary"]);
++
++/** Registra en `server` las herramientas de memoria y de sesión, usando `memoryStore` y `projectDirectory` como sus dos dependencias compartidas, y avisando `onWrite` tras cada llamada exitosa de una herramienta que escribe. */
++export function registerTools(server:McpServer,memoryStore:()=>MemoryStore,projectDirectory:(explicit?:string)=>Promise<string>,onWrite?:()=>void):void {
+   // Envuelve server.registerTool para rechazar en el momento cualquier nombre que no esté en la lista cerrada MCP_TOOL_NAMES.
+   const register:ToolContext["register"]=(name,config,handler)=>{
+     if (!MCP_TOOL_NAMES.includes(name)) throw new Error(`Unknown MCP tool: ${name}`);
+-    server.registerTool(name,config,handler);
++    // Las herramientas que no escriben se registran tal cual; las que sí escriben avisan a `onWrite`
++    // solo cuando la llamada terminó sin error (una lectura fallida, o un guardado rechazado, no cuenta como escritura).
++    if (!onWrite || !WRITE_TOOLS.has(name)) { server.registerTool(name,config,handler); return; }
++    const wrapped = async (...args:unknown[]) => {
++      const result = await (handler as (...callArgs:unknown[]) => Promise<{isError?:boolean}>)(...args);
++      if (!result.isError) onWrite();
++      return result;
++    };
++    server.registerTool(name,config,wrapped as typeof handler);
+   };
+   const context={register,safely,memoryStore,projectDirectory};
+   registerMemoryTools(context);
+diff --git a/src/modules/sessions/index.ts b/src/modules/sessions/index.ts
+index f5c44ca..62f7680 100644
+--- a/src/modules/sessions/index.ts
++++ b/src/modules/sessions/index.ts
+@@ -1,3 +1,4 @@
+ /** Punto de entrada del módulo `sessions`: reexporta las formas de datos de sesión y las reglas de validación, aviso y resumen. */
+ export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession,ParallelSession } from "./types";
++export type { CloudNotice } from "./rules";
+ export { sessionIdentity,sessionNotice,summaryContent,INACTIVITY_HOURS,PARALLEL_MINUTES } from "./rules";
+diff --git a/src/modules/sessions/rules.test.ts b/src/modules/sessions/rules.test.ts
+index 86d1935..deb4513 100644
+--- a/src/modules/sessions/rules.test.ts
++++ b/src/modules/sessions/rules.test.ts
+@@ -1,6 +1,6 @@
+-/** Comprueba la validación del identificador de sesión, el armado del resumen estructurado y el aviso sobre sesión previa y sesiones en paralelo. */
++/** Comprueba la validación del identificador de sesión, el armado del resumen estructurado y el aviso sobre sesión previa, sesiones en paralelo y avisos de nube. */
+ import { expect, test } from "bun:test";
+-import { sessionIdentity, sessionNotice, summaryContent } from "./rules";
++import { sessionIdentity, sessionNotice, summaryContent, type CloudNotice } from "./rules";
+ import type { ParallelSession, PreviousSession } from "./types";
+ 
+ // El largo se cuenta en caracteres Unicode (200 emojis pasan, 201 no); vacío, espacio exterior,
+@@ -51,3 +51,30 @@ test("sessionNotice is null with neither previous nor parallel", () => {
+   expect(sessionNotice(undefined,undefined)).toBeNull();
+   expect(sessionNotice(null,[])).toBeNull();
+ });
++
++const conflictNotice:CloudNotice = {kind:"conflict",detail:"Cloud sync: 1 memory had a conflicting change from another Mac; the most recent version is active and the other one is in its history."};
++const staleNotice:CloudNotice = {kind:"stale-outbox",detail:"Cloud sync: 3 local changes have been waiting to upload for more than 24 h (oldest from 2026-01-01T00:00:00.000Z)."};
++
++// Con un solo aviso de nube (conflicto), su texto se agrega tal cual, sin ningún otro dato de sesión.
++test("sessionNotice appends a lone conflict cloud notice unchanged", () => {
++  expect(sessionNotice(null,null,[conflictNotice])).toBe(conflictNotice.detail);
++});
++// Con un solo aviso de nube (cola vieja), igual: su texto se agrega tal cual.
++test("sessionNotice appends a lone stale-outbox cloud notice unchanged", () => {
++  expect(sessionNotice(null,null,[staleNotice])).toBe(staleNotice.detail);
++});
++// Con los dos avisos de nube juntos, se agregan en el mismo orden en que llegan, separados por un espacio.
++test("sessionNotice appends both cloud notices together, in the order given", () => {
++  expect(sessionNotice(null,null,[conflictNotice,staleNotice])).toBe(`${conflictNotice.detail} ${staleNotice.detail}`);
++});
++// Sin avisos de nube (null, undefined o arreglo vacío), el resultado es idéntico al de antes de D4/D11: no cambia nada de lo existente.
++test("sessionNotice is unchanged from before when there are no cloud notices", () => {
++  expect(sessionNotice(previousWithSummary,oneParallel,null)).toBe(sessionNotice(previousWithSummary,oneParallel));
++  expect(sessionNotice(previousWithSummary,oneParallel,undefined)).toBe(sessionNotice(previousWithSummary,oneParallel));
++  expect(sessionNotice(previousWithSummary,oneParallel,[])).toBe(sessionNotice(previousWithSummary,oneParallel));
++});
++// Los avisos de nube van después de la sesión previa y de las sesiones en paralelo, en ese orden, sin tocar esas partes.
++test("sessionNotice puts cloud notices last, after the previous-session and parallel-session parts", () => {
++  expect(sessionNotice(previousWithSummary,manyParallel,[conflictNotice])).toBe(
++    `Session first was left open; its last activity was at 2026-01-01T00:00:00.000Z; its summary is available. Other sessions are open now: second, third. ${conflictNotice.detail}`);
++});
+diff --git a/src/modules/sessions/rules.ts b/src/modules/sessions/rules.ts
+index 23f9612..5221bd7 100644
+--- a/src/modules/sessions/rules.ts
++++ b/src/modules/sessions/rules.ts
+@@ -1,10 +1,23 @@
+ /**
+  * Reglas de sesión: validación del identificador, el aviso legible (session notice) sobre una sesión
+- * previa dejada abierta o sesiones en paralelo, y el armado del texto de un resumen estructurado. Lo usa
+- * `src/infrastructure/sqlite/writes.ts` y `sessions.ts` al validar y componer estos datos.
++ * previa dejada abierta, sesiones en paralelo o avisos de nube, y el armado del texto de un resumen
++ * estructurado. Lo usa `src/infrastructure/sqlite/writes.ts` y `sessions.ts` al validar y componer
++ * estos datos, y `src/interfaces/mcp/sessions-tools.ts` y `src/interfaces/cli/commands.ts` al armar
++ * el aviso de `memory_session_start`/`session-start`.
+  */
+ import { MemoryError } from "../../shared/errors";
+ import type { ParallelSession, PreviousSession, SummaryFields } from "./types";
++/**
++ * Un aviso de nube (D4, D5, D11) ya listo para mostrarse: qué tipo de aviso es y su texto exacto.
++ * Lo arma `takeCloudNotices` (`src/infrastructure/sqlite/cloud-notices.ts`) a partir de `cloud_notices`
++ * y `cloud_outbox`; `sessionNotice` solo lo agrega al final, sin tocar su `detail`.
++ */
++export interface CloudNotice {
++  /** "conflict" (D4: una versión llegó a un número que ya ocupaba otro contenido), "skipped" (D5: un cambio se rechazó por secreto o forma inválida) o "stale-outbox" (D11: el pendiente más viejo lleva más de 24 h esperando). */
++  readonly kind: "conflict" | "skipped" | "stale-outbox";
++  /** Texto exacto del aviso, en inglés (D16), listo para agregarse tal cual al final de `sessionNotice`. */
++  readonly detail: string;
++}
+ // Horas sin actividad tras las que una sesión de ejecución automática abierta deja de inferirse para un
+ // guardado sin sessionId (nivel 11).
+ export const INACTIVITY_HOURS = 6;
+@@ -30,18 +43,23 @@ export function sessionIdentity(value:unknown):string{const length=typeof value=
+ function textField(value:unknown,field:string,nonblank=false):string{if(typeof value!=="string"||value.includes("\0")||(nonblank&&!value.trim()))throw new MemoryError("INVALID_INPUT",`${field} debe ser texto${nonblank?" no vacío":""}.`);return value;}
+ // Un hecho legible para el asistente, derivado de `previous`/`parallel` (1.7.2): es un dato, nunca una orden.
+ /**
+- * Arma el aviso legible sobre el estado de otras sesiones: menciona primero la sesión previa dejada
+- * abierta (si la hay, diciendo si guardó resumen o no), y después cuáles sesiones están abiertas en
+- * paralelo ahora mismo (en singular o plural según cuántas haya).
++ * Arma el aviso legible sobre el estado de otras sesiones y de la nube: menciona primero la sesión
++ * previa dejada abierta (si la hay, diciendo si guardó resumen o no), después cuáles sesiones están
++ * abiertas en paralelo ahora mismo (en singular o plural según cuántas haya), y por último cada aviso
++ * de nube (`cloud`, D4/D5/D11) que traiga `detail` ya armado, en el mismo orden en que llega, sin
++ * tocar su texto. Es un dato para quien lee, nunca una orden.
+  * @param previous Sesión previa dejada abierta, o `null`/`undefined` si no hay ninguna que avisar.
+  * @param parallel Sesiones abiertas en paralelo a la actual, o `null`/`undefined` si no hay ninguna.
+- * @returns El texto del aviso combinando ambas partes, o `null` si no hay nada que avisar.
++ * @param cloud Avisos de nube ya armados (`takeCloudNotices`), o `null`/`undefined` si no hay ninguno.
++ * @returns El texto del aviso combinando las tres partes, o `null` si no hay nada que avisar.
+  */
+-export function sessionNotice(previous?:PreviousSession|null,parallel?:ParallelSession[]|null):string|null{
++export function sessionNotice(previous?:PreviousSession|null,parallel?:ParallelSession[]|null,cloud?:CloudNotice[]|null):string|null{
+   const parts:string[]=[];
+   if(previous) parts.push(`Session ${previous.sessionId} was left open; its last activity was at ${previous.interruptedAt}; ${previous.summary?"its summary is available.":"it saved no summary."}`);
+   if(parallel&&parallel.length===1) parts.push(`Another session is open now: ${parallel[0]!.sessionId}.`);
+   else if(parallel&&parallel.length>1) parts.push(`Other sessions are open now: ${parallel.map(session=>session.sessionId).join(", ")}.`);
++  // Los avisos de nube van al final, sin cambiar los de arriba ni su orden (D4/D11 son datos adicionales, no reemplazan nada de 1.7.2).
++  if(cloud) for(const notice of cloud) parts.push(notice.detail);
+   return parts.length?parts.join(" "):null;
+ }
+ /**
+diff --git a/tests/fixtures/sdk-contract.ts b/tests/fixtures/sdk-contract.ts
+index f6db7b8..f880813 100644
+--- a/tests/fixtures/sdk-contract.ts
++++ b/tests/fixtures/sdk-contract.ts
+@@ -16,6 +16,9 @@ import type {
+   PreviousSession, GroupSource, StartupBlock, ParallelSession,
+ } from "../../src/index";
+ import type { SyncSnapshot } from "../../src/modules/synchronization";
++import type { CloudNotice } from "../../src/modules/sessions";
++import type { CloudEnrolment } from "../../src/infrastructure/sqlite/schema";
++import type { CloudReplica } from "../../src/app/cloud-sync";
+ 
+ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+ type Assert<T extends true> = T;
+@@ -60,6 +63,11 @@ interface ExpectedStore {
+   startupBlock(projectId:string|null):StartupBlock;
+   // Agregado en 1.7.1 (aviso de sesión paralela, "aviso por tiempo"). Puramente aditivo: nada de lo de arriba cambió.
+   parallelSessions(projectId:string,sessionId:string):ParallelSession[];
++  // Agregado en 1.8.0 (nube, nivel de esquema 12, D1/D7/D8). Puramente aditivo: nada de lo de arriba cambió.
++  enableCloud(remoteFingerprint?:string|null):CloudEnrolment;cloudEnabled():boolean;
++  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
++  downloadCloudChanges(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
++  takeCloudNotices(now?:Date):CloudNotice[];
+ }
+ type ActualStore = InstanceType<typeof MemoryStore>;
+ type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;
