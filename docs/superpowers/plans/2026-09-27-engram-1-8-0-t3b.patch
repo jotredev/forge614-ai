@@ -1,0 +1,974 @@
+diff --git a/src/app/cloud-apply.test.ts b/src/app/cloud-apply.test.ts
+index d2b6d20..6f1a04e 100644
+--- a/src/app/cloud-apply.test.ts
++++ b/src/app/cloud-apply.test.ts
+@@ -133,6 +133,8 @@ const secretCases: { kind: string; op: "insert"; payload: Record<string, unknown
+     snapshot: JSON.stringify({ id: "m1", title: "AKIAABCDEFGHIJKLMNOP", content: "ok", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
+   { kind: "memory_versions", op: "insert", payload: { memory_id: "m1", version: 1,
+     snapshot: JSON.stringify({ id: "m1", title: "ok", content: "AKIAABCDEFGHIJKLMNOP", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
++  // T3b (D6): el remoto anotado de un proyecto es texto libre (llega de un archivo config ajeno), así que pasa por el mismo filtro.
++  { kind: "project_remotes", op: "insert", payload: { project_id: "placeholder", origin: "leak AKIAABCDEFGHIJKLMNOP", updated_at: "2026-01-01T00:00:00.000Z" } },
+ ];
+ for (const [index, testCase] of secretCases.entries()) {
+   // Verifica, para cada campo de texto libre de la lista de arriba, que un secreto (aquí, una clave de acceso de AWS) en ese campo hace que la fila se rechace con el patrón correcto, sin aplicarse.
+@@ -148,6 +150,8 @@ for (const [index, testCase] of secretCases.entries()) {
+       (payload as Record<string, unknown>).memory_id = seedId;
+       if (testCase.kind === "memory_versions") (payload as Record<string, unknown>).snapshot = (payload.snapshot as string).replace(/"m1"/g, `"${seedId}"`);
+     }
++    // project_remotes exige un proyecto real por su llave foránea; se sustituye el marcador por el creado arriba.
++    if (testCase.kind === "project_remotes") (payload as Record<string, unknown>).project_id = project.projectId;
+     const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: testCase.kind, op: testCase.op,
+       payload, createdAt: "2026-01-01T00:00:00.000Z" };
+     const result = applyCloudChanges(db, [row], "local");
+@@ -184,6 +188,21 @@ test("D6: tabla con fecha (projects) — gana el updatedAt más reciente", () =>
+   expect((db.query("SELECT name FROM projects WHERE projectId=?").get(project.projectId) as { name: string }).name).toBe("newer");
+ });
+ 
++// T3b (D6): igual que projects, pero con la tabla nueva project_remotes (llave natural project_id, fecha updated_at).
++test("D6: tabla con fecha (project_remotes) — gana el updated_at más reciente", () => {
++  const db = freshCloudDb();
++  const project = createProject(db, "p1"); db.exec("DELETE FROM cloud_outbox");
++  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(project.projectId, "github.com/org/repo", "2020-01-01T00:00:00.000Z");
++  const older: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "project_remotes", op: "update",
++    payload: { project_id: project.projectId, origin: "github.com/org/older", updated_at: "2000-01-01T00:00:00.000Z" }, createdAt: "x" };
++  applyCloudChanges(db, [older], "local");
++  expect((db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(project.projectId) as { origin: string }).origin).toBe("github.com/org/repo");
++  const newer: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "project_remotes", op: "update",
++    payload: { project_id: project.projectId, origin: "github.com/org/newer", updated_at: "2999-01-01T00:00:00.000Z" }, createdAt: "x" };
++  applyCloudChanges(db, [newer], "local");
++  expect((db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(project.projectId) as { origin: string }).origin).toBe("github.com/org/newer");
++});
++
+ // Verifica que dos filas con la misma fecha de actualización se desempatan por JSON canónico de forma que ambas bases llegan al mismo resultado, sin importar en qué orden reciban las dos filas.
+ test("D6: empate de fecha converge por JSON canónico en las dos bases", () => {
+   const rowA: ChangeRow = { id: 1, changeId: "a", installationId: "inst-a", kind: "projects", op: "update",
+diff --git a/src/app/cloud-apply.ts b/src/app/cloud-apply.ts
+index 221603c..5c8242c 100644
+--- a/src/app/cloud-apply.ts
++++ b/src/app/cloud-apply.ts
+@@ -20,6 +20,7 @@ type Outcome = "applied" | "skipped" | "conflict" | "own";
+ // Clave natural de cada tabla viajera (D6-D9): la columna (o columnas) que identifica una fila entre instalaciones distintas, sin depender de un id autonumérico local.
+ const NATURAL_KEY: Record<string, readonly string[]> = {
+   projects: ["projectId"],
++  project_remotes: ["project_id"],
+   ecosystem_groups: ["id"],
+   ecosystem_memberships: ["projectId"],
+   ecosystem_sources: ["groupId"],
+@@ -35,6 +36,7 @@ const NATURAL_KEY: Record<string, readonly string[]> = {
+ // Tablas donde gana la fila más reciente según esta columna de fecha (el empate se rompe con el JSON canónico, D6).
+ const DATED_COLUMN: Record<string, string> = {
+   projects: "updatedAt",
++  project_remotes: "updated_at",
+   ecosystem_memberships: "boundAt",
+   ecosystem_sources: "setAt",
+   memory_meta: "updated_at",
+@@ -103,6 +105,7 @@ function secretPatternOf(kind: string, payload: Row): string | null {
+   const check = (text: unknown): string | null => (typeof text === "string" ? findSecret(text) : null);
+   if (kind === "memories") return check(payload.title) ?? check(payload.content) ?? check(payload.topic_key);
+   if (kind === "projects") return check(payload.name);
++  if (kind === "project_remotes") return check(payload.origin);
+   if (kind === "memory_meta") {
+     const short = check(payload.short);
+     if (short) return short;
+diff --git a/src/app/memory-store.ts b/src/app/memory-store.ts
+index 74f60db..a0590c1 100644
+--- a/src/app/memory-store.ts
++++ b/src/app/memory-store.ts
+@@ -70,21 +70,21 @@ export class MemoryStore {
+   endSession(projectId: string, sessionId: string): Session { return writes.endSession(this.db, projectId, sessionId); }
+   /** Lee una sesión por proyecto y id, o `null` si no existe. */
+   getSession(projectId: string, sessionId: string): Session | null { return sessions.getSession(this.db, projectId, sessionId); }
+-  /** Como `startSession`, pero resolviendo primero el proyecto a partir de una carpeta (la liga o la crea según `bindingAvailable`). */
++  /** Como `startSession`, pero resolviendo primero el proyecto a partir de una carpeta (la liga, la crea, o la reconoce por remoto de Git según `origin`, D6). */
+   startSessionForProjectDirectory(directory: string, name: string, runtimeDirectory: string, sessionId: string,
+-      bindingAvailable?: (directory:string)=>boolean): Session { return writes.startSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, sessionId, bindingAvailable); }
++      bindingAvailable?: (directory:string)=>boolean, origin?: string | null): Session { return writes.startSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, sessionId, bindingAvailable, origin); }
+   /** Lee el proyecto ya ligado a una carpeta, o `null` si ninguno lo está. */
+   projectForDirectory(directory: string): Project | null { return projects.projectForDirectory(this.db, directory); }
+   /** Liga una carpeta a un proyecto ya existente. */
+   bindProjectDirectory(directory: string, projectId: string): Project { return writes.bindProjectDirectory(this.db, directory, projectId); }
+-  /** Resuelve el proyecto de una carpeta por su vínculo registrado, creándolo si `create` es `true` y no existía ninguno. */
+-  resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } { return writes.resolveProjectDirectory(this.db, directory, name, create, bindingAvailable); }
++  /** Resuelve el proyecto de una carpeta por su vínculo registrado, creándolo si `create` es `true` y no existía ninguno (o ligándola por remoto de Git si `origin` coincide con un proyecto ya conocido, D6, T3b). */
++  resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } { return writes.resolveProjectDirectory(this.db, directory, name, create, bindingAvailable, origin); }
+   /** Guarda una memoria resolviendo antes el proyecto de la carpeta dada. */
+-  saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion { return writes.saveForProjectDirectory(this.db, directory, name, input, bindingAvailable); }
++  saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): MemoryVersion { return writes.saveForProjectDirectory(this.db, directory, name, input, bindingAvailable, origin); }
+   /** Como `saveForProjectDirectory`, pero además ligado a una sesión (la abre si hace falta). */
+   saveWithSessionForProjectDirectory(directory: string, name: string, runtimeDirectory: string,
+       input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {},
+-      bindingAvailable?: (directory:string)=>boolean): SessionSaveResult { return writes.saveWithSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, input, options, bindingAvailable); }
++      bindingAvailable?: (directory:string)=>boolean, origin?: string | null): SessionSaveResult { return writes.saveWithSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, input, options, bindingAvailable, origin); }
+   /** Guarda una memoria con el proyecto y alcance (`scope`) ya indicados en `input`. */
+   save(input: SaveInput): MemoryVersion { return writes.save(this.db, input); }
+   /** Como `save`, pero ligado a una sesión de proyecto. */
+diff --git a/src/app/project-context.ts b/src/app/project-context.ts
+index 99042be..63664e1 100644
+--- a/src/app/project-context.ts
++++ b/src/app/project-context.ts
+@@ -11,6 +11,7 @@ import { MemoryStore } from "./memory-store";
+ import { applyIdentityFile, groupOf, publishIdentity, type IdentityNotice } from "./project-identity";
+ import { readProjectFile } from "../infrastructure/filesystem/project-identity-file";
+ import { canonicalProject, canonicalProjectForRead, identityRoot, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
++import { readOriginRemote } from "../infrastructure/git/remote-origin";
+ export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
+ 
+ /** Resultado de identificar el proyecto de una carpeta. */
+@@ -43,13 +44,16 @@ type Canonical = ReturnType<typeof canonicalProject>;
+ export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
+   if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT","create debe ser booleano.");
+   const canonical = canonicalProject(directory);
+-  return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create);
++  // D6 (T3b): el remoto solo hace falta cuando de verdad se puede crear un proyecto; con create=false
++  // (la ruta más frecuente, en cada lectura) leerlo sería un archivo de disco de más sin ningún uso.
++  const origin = create && canonical.git ? readOriginRemote(canonical.directory) : null;
++  return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create, origin);
+ }
+ 
+-/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. */
++/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. Nunca lee el remoto de Git (D6): es una ruta de solo lectura. */
+ export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
+   const canonical = canonicalProjectForRead(directory);
+-  return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true);
++  return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true, null);
+ }
+ 
+ /**
+@@ -60,14 +64,15 @@ export function resolveStartupProjectContext(store: MemoryStore, directory: stri
+  * @param create Si se permite crear un proyecto nuevo al caer al vínculo de carpeta.
+  * @param root Carpeta desde la que se busca el archivo de identidad, o `null` si no aplica.
+  * @param publish Si se debe reescribir el archivo de identidad tras resolver por vínculo de carpeta.
++ * @param origin Remoto de Git crudo de `canonical.directory` (D6, T3b), o `null` si no aplica o no se leyó.
+  */
+-function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean): ProjectContext {
++function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean, origin: string | null): ProjectContext {
+   const fromFile = applyIdentityFile(store, canonical.directory, root);
+   const notices = [...fromFile.notices];
+   let projectId: string | null, source: string;
+   if (fromFile.projectId !== null) { projectId = fromFile.projectId; source = "file"; }
+   else {
+-    const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable);
++    const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable,origin);
+     projectId = resolved.project?.projectId ?? null;
+     source = resolved.created ? "created" : resolved.project ? "binding" : "unbound";
+     // Solo se publica (reescribe) el archivo de identidad cuando se pidió y de verdad se resolvió un proyecto por vínculo de carpeta.
+@@ -111,7 +116,9 @@ export function saveProjectMemory(store: MemoryStore, directory: string, input:
+   const canonical = canonicalProject(directory);
+   const root = identityRoot(directory, canonical);
+   applyIdentityFile(store, canonical.directory, root);
+-  const saved = store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable);
++  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
++  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
++  const saved = store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable,origin);
+   const project = saved.projectId === null ? null : store.getProject(saved.projectId);
+   if (project) publishIdentity(store, project, root, false);
+   return saved;
+@@ -132,7 +139,9 @@ export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, direc
+   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
+   const root = identityRoot(directory, canonical);
+   const notices = [...applyIdentityFile(store, canonical.directory, root).notices];
+-  const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable);
++  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
++  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
++  const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable,origin);
+   const project = saved.memory.projectId === null ? null : store.getProject(saved.memory.projectId);
+   if (project) notices.push(...publishIdentity(store, project, root, false));
+   return { saved, notices };
+@@ -172,7 +181,9 @@ export function startProjectSessionWithNotices(store: MemoryStore, directory: st
+   // Solo con el nivel 11: si este id ya nombra una sesión, se comprueba antes de iniciarla (una repetición nunca informa `previous`/`parallel`).
+   const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
+   const existed = known !== null && store.getSession(known, sessionId) !== null;
+-  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
++  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
++  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
++  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable,origin);
+   const project = store.getProject(session.projectId);
+   if (project) notices.push(...publishIdentity(store, project, root, true));
+   const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;
+diff --git a/src/infrastructure/git/remote-origin.test.ts b/src/infrastructure/git/remote-origin.test.ts
+new file mode 100644
+index 0000000..917babe
+--- /dev/null
++++ b/src/infrastructure/git/remote-origin.test.ts
+@@ -0,0 +1,41 @@
++/**
++ * Prueba `readOriginRemote`: lee la url del remoto `origin` directamente del archivo `config` de
++ * Git, tolera comentarios y tabulaciones, y no resuelve `include` ni otras secciones sin ser "origin".
++ */
++import { expect, test } from "bun:test";
++import { writeFileSync } from "node:fs";
++import { join } from "node:path";
++import { readOriginRemote } from "./remote-origin";
++import { withDirectory } from "../__test-support__/fixtures";
++
++// Escribe el texto dado como el archivo config del directorio común de Git de la prueba.
++const writeConfig = (directory: string, text: string): void => writeFileSync(join(directory, "config"), text);
++
++// Verifica el caso normal: una sección [remote "origin"] con su línea url se lee tal cual.
++test("reads the url from [remote \"origin\"]", () => withDirectory(dir => {
++  writeConfig(dir, '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = https://github.com/org/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n');
++  expect(readOriginRemote(dir)).toBe("https://github.com/org/repo.git");
++}));
++
++// Verifica que un remoto con otro nombre (no "origin") no cuenta: sin una sección [remote "origin"], no hay url que leer.
++test("returns null when other remotes exist but none is named \"origin\"", () => withDirectory(dir => {
++  writeConfig(dir, '[remote "upstream"]\n\turl = https://github.com/org/upstream.git\n');
++  expect(readOriginRemote(dir)).toBeNull();
++}));
++
++// Verifica que, sin archivo config en absoluto, se devuelve null en vez de lanzar.
++test("returns null when the config file does not exist", () => withDirectory(dir => {
++  expect(readOriginRemote(dir)).toBeNull();
++}));
++
++// Verifica que se toleran comentarios (# y ;) y tabuladores de indentación alrededor de la línea url.
++test("tolerates comments and tabs around the url line", () => withDirectory(dir => {
++  writeConfig(dir, '[remote "origin"]\n\t; comentario antes de la url\n\turl = https://github.com/org/repo.git # comentario al final\n');
++  expect(readOriginRemote(dir)).toBe("https://github.com/org/repo.git");
++}));
++
++// Verifica que una directiva include no se sigue: solo cuenta lo que está escrito en este mismo archivo.
++test("does not resolve include: only reads what is directly in this file", () => withDirectory(dir => {
++  writeConfig(dir, '[include]\n\tpath = ../other.gitconfig\n[remote "origin"]\n\turl = https://github.com/org/repo.git\n');
++  expect(readOriginRemote(dir)).toBe("https://github.com/org/repo.git");
++}));
+diff --git a/src/infrastructure/git/remote-origin.ts b/src/infrastructure/git/remote-origin.ts
+new file mode 100644
+index 0000000..b4ee1d7
+--- /dev/null
++++ b/src/infrastructure/git/remote-origin.ts
+@@ -0,0 +1,82 @@
++/**
++ * Lee el remoto `origin` de un repositorio Git directamente del archivo `config` de su directorio
++ * común (el que ya calcula `project-directory.ts`), sin ejecutar `git` (así el arranque no se alarga
++ * con un proceso más). La usa `src/app/project-context.ts` en cada ruta de escritura, para anotar el
++ * remoto normalizado de un proyecto (D6, identidad de proyecto por remoto de Git).
++ */
++import { readFileSync } from "node:fs";
++import { join } from "node:path";
++
++// Encabezado de sección de un archivo de configuración de Git: "[tipo]" o "[tipo \"subsección\"]",
++// con espacios tolerados alrededor. El tipo de sección es insensible a mayúsculas; la subsección no.
++const SECTION = /^\s*\[\s*([^\s\]"]+)(?:\s+"([^"]*)")?\s*\]/u;
++// Una asignación "clave = valor" dentro de una sección, con espacios y tabuladores tolerados
++// alrededor del "=". La clave es insensible a mayúsculas, como en el resto de Git.
++const ASSIGNMENT = /^\s*([^\s=;#]+)\s*=\s*(.*)$/u;
++
++/**
++ * Lee, sin ejecutar `git`, el valor crudo de `url` dentro de la sección `[remote "origin"]` del
++ * archivo `config` de un directorio común de Git.
++ *
++ * Limitación documentada: no resuelve `include`, `includeIf` ni `insteadOf` (directivas de Git que
++ * traen configuración de otro archivo o la reescriben); solo lee lo que está escrito directamente en
++ * este archivo. Quien llama debe normalizar el valor devuelto (con `normalizeRemote`) antes de
++ * compararlo o guardarlo: este lector nunca normaliza ni valida, solo devuelve el texto tal cual.
++ * @param commonDirectory Directorio común de Git (`.git`, o su equivalente en un `worktree`) que
++ * contiene el archivo `config` a leer.
++ * @returns El valor crudo de `url` dentro de `[remote "origin"]`, o `null` si el archivo no existe, no
++ * se puede leer, o esa sección no declara ninguna línea `url`. Nunca lanza.
++ */
++export function readOriginRemote(commonDirectory: string): string | null {
++  let text: string;
++  try {
++    // Se lee de una vez el archivo entero: son unas pocas líneas, no hace falta leerlo por partes.
++    text = readFileSync(join(commonDirectory, "config"), "utf8");
++  } catch {
++    // Sin archivo, sin permiso de lectura, o cualquier otro fallo: se trata como "no hay remoto anotado".
++    return null;
++  }
++  // Se recorre línea por línea, llevando si la línea actual cae dentro de la sección [remote "origin"].
++  let insideOrigin = false;
++  for (const line of text.split(/\r?\n/u)) {
++    const section = SECTION.exec(line);
++    if (section) {
++      // Una nueva sección reemplaza la anterior: solo cuenta como "origin" si el tipo es "remote" y la
++      // subsección entre comillas es exactamente "origin" (las subsecciones de Git distinguen mayúsculas).
++      insideOrigin = section[1]!.toLowerCase() === "remote" && section[2] === "origin";
++      continue;
++    }
++    if (!insideOrigin) continue;
++    const assignment = ASSIGNMENT.exec(line);
++    if (!assignment || assignment[1]!.toLowerCase() !== "url") continue;
++    return unquote(stripComment(assignment[2]!));
++  }
++  // Se recorrió el archivo entero (o no había sección [remote "origin"], o no tenía línea "url").
++  return null;
++}
++
++/**
++ * Quita de un valor de configuración de Git el comentario final (`#` o `;`) que no está dentro de
++ * comillas, y recorta los espacios sobrantes.
++ * @param value Lo que sigue al "=" de una asignación, sin procesar todavía.
++ * @returns El valor sin su comentario final, recortado.
++ */
++function stripComment(value: string): string {
++  let insideQuotes = false;
++  for (let i = 0; i < value.length; i++) {
++    const char = value[i];
++    // Una comilla que no está escapada (\") abre o cierra el tramo entre comillas.
++    if (char === "\"" && value[i - 1] !== "\\") insideQuotes = !insideQuotes;
++    else if (!insideQuotes && (char === "#" || char === ";")) return value.slice(0, i).trim();
++  }
++  return value.trim();
++}
++
++/**
++ * Quita las comillas envolventes de un valor de configuración de Git, si las tiene.
++ * @param value Valor ya sin comentario final.
++ * @returns `value` sin sus comillas envolventes; tal cual si no estaba entre comillas.
++ */
++function unquote(value: string): string {
++  return value.length >= 2 && value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1) : value;
++}
+diff --git a/src/infrastructure/sqlite/cloud-schema.test.ts b/src/infrastructure/sqlite/cloud-schema.test.ts
+index 99a3e55..ad5377b 100644
+--- a/src/infrastructure/sqlite/cloud-schema.test.ts
++++ b/src/infrastructure/sqlite/cloud-schema.test.ts
+@@ -131,6 +131,11 @@ test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en clo
+ 
+     expect(countOf("projects")).toBeGreaterThan(0);
+ 
++    // T3b (D6): igual que las demás, un INSERT en project_remotes encola una fila mientras apply_guard esté en 0.
++    const remotesBefore = countOf("project_remotes");
++    db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(project.projectId, "github.com/org/repo", "now");
++    expect(countOf("project_remotes")).toBe(remotesBefore + 1);
++
+     const group = "grupo-uno";
+     const groupsBefore = countOf("ecosystem_groups");
+     db.query("INSERT INTO ecosystem_groups(id,name,createdAt) VALUES(?,?,?)").run(group, group, "now");
+@@ -220,6 +225,15 @@ test("enableCloud encola toda la memoria local existente en orden de dependencia
+   } finally { db.close(); }
+ });
+ 
++// T3b (D6, D14): a diferencia de las demás tablas que viajan, project_remotes nace exactamente en el
++// nivel 12 (no existe antes), así que nunca puede tener filas "ya existentes" que enqueueAllExisting
++// deba encolar en su primera activación; lo que sí debe respetarse es que, en TRAVELING_TABLES, quede
++// justo después de projects (su clave foránea exige que el proyecto ya haya viajado).
++test("project_remotes viaja justo después de projects en TRAVELING_TABLES (D14)", () => {
++  const order = [...travelingTableColumns().keys()];
++  expect(order.indexOf("project_remotes")).toBe(order.indexOf("projects") + 1);
++});
++
+ // Comprueba que una huella remota (fingerprint: identificador de con qué base remota se sincroniza)
+ // distinta a la guardada hace que enableCloud vuelva a encolar todo y reinicie last_applied_id, mientras que la misma huella no cambia nada.
+ test("enableCloud con otra huella remota vuelve a encolar todo y pone last_applied_id=0; con la misma huella no encola nada nuevo", () => {
+diff --git a/src/infrastructure/sqlite/projects.test.ts b/src/infrastructure/sqlite/projects.test.ts
+index eb975ea..1838778 100644
+--- a/src/infrastructure/sqlite/projects.test.ts
++++ b/src/infrastructure/sqlite/projects.test.ts
+@@ -1,10 +1,11 @@
+ /**
+  * Prueba projects.ts: la persistencia básica de proyectos (crear, buscar, listar), la resolución de a
+- * qué proyecto pertenece una carpeta local, y el corte de nivel de esquema para los vínculos de proyecto.
++ * qué proyecto pertenece una carpeta local (incluida la identidad por remoto de Git de D6, T3b), y el
++ * corte de nivel de esquema para los vínculos de proyecto.
+  */
+ import { expect, test } from "bun:test";
+ import { createProject, getProject, listProjects, projectForDirectory, resolveProjectDirectory } from "./projects";
+-import { enableProjectBindings } from "./schema";
++import { enableCloud, enableProjectBindings } from "./schema";
+ import { withDatabase } from "../__test-support__/fixtures";
+ 
+ // Crear un proyecto debe recortar (trim) espacios del nombre visible, y listProjects debe ordenar por
+@@ -39,3 +40,91 @@ test("schema 7 retains project bindings without admitting future versions", () =
+   db.exec("PRAGMA user_version=13");
+   expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
+ }));
++
++// D6 (T3b): con la nube activa, una carpeta sin ligar cuyo remoto coincide con el de un proyecto ya
++// conocido se liga a ese proyecto en vez de crear uno nuevo, sin que el nombre repetido lo impida
++// (justo el caso de una carpeta que llegó de otra Mac con el mismo nombre de proyecto).
++test("D6: con nube, remoto coincidente liga a un proyecto existente con el mismo nombre en vez de rechazarlo", () => withDatabase(db => {
++  enableCloud(db);
++  const existing = createProject(db, "Shared");
++  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)")
++    .run(existing.projectId, "github.com/org/repo", "2020-01-01T00:00:00.000Z");
++  const result = resolveProjectDirectory(db, "/mac-2/shared", "Shared", true, undefined, "https://github.com/org/repo.git");
++  expect(result).toEqual({ project: existing, created: false });
++  expect(projectForDirectory(db, "/mac-2/shared")?.projectId).toBe(existing.projectId);
++}));
++
++// D6 (T3b): sin ninguna coincidencia por remoto, el flujo sigue siendo el de siempre: se crea un
++// proyecto nuevo, y su remoto queda anotado (ya normalizado) para la próxima vez.
++test("D6: con nube, sin coincidencia de remoto crea un proyecto nuevo como siempre y anota su remoto", () => withDatabase(db => {
++  enableCloud(db);
++  const result = resolveProjectDirectory(db, "/mac-1/fresh", "Fresh", true, undefined, "https://github.com/org/fresh.git");
++  expect(result.created).toBe(true);
++  expect(db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(result.project!.projectId)).toEqual({ origin: "github.com/org/fresh" });
++}));
++
++// D6 (T3b): dos proyectos que comparten el mismo remoto son una ambigüedad que nunca se resuelve
++// adivinando; la carpeta nueva sigue el flujo de hoy (aquí, con un nombre sin choque, crea un proyecto).
++test("D6: dos proyectos con el mismo remoto no ligan a ninguno; sigue el flujo de hoy", () => withDatabase(db => {
++  enableCloud(db);
++  const p1 = createProject(db, "One"); const p2 = createProject(db, "Two");
++  const now = "2020-01-01T00:00:00.000Z";
++  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(p1.projectId, "github.com/org/dup", now);
++  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(p2.projectId, "github.com/org/dup", now);
++  const result = resolveProjectDirectory(db, "/mac-3/dup", "Three", true, undefined, "https://github.com/org/dup.git");
++  expect(result.created).toBe(true);
++  expect(result.project!.projectId).not.toBe(p1.projectId);
++  expect(result.project!.projectId).not.toBe(p2.projectId);
++}));
++
++// D6 (T3b): el remoto anotado nunca conserva las credenciales embebidas que traía la entrada.
++test("D6: el remoto guardado nunca conserva credenciales", () => withDatabase(db => {
++  enableCloud(db);
++  const result = resolveProjectDirectory(db, "/mac-1/creds", "Creds", true, undefined, "https://user:token@github.com/org/creds.git");
++  const stored = db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(result.project!.projectId) as { origin: string };
++  expect(stored.origin).toBe("github.com/org/creds");
++  expect(stored.origin).not.toContain("@");
++  expect(stored.origin).not.toContain("token");
++}));
++
++// D6 (T3b): resolver dos veces la misma carpeta con el mismo remoto no debe reescribir updated_at ni
++// encolar un segundo cambio a la nube (evita encolar en cada guardado de un proyecto ya conocido).
++test("D6: resolver dos veces con el mismo remoto no cambia updated_at ni vuelve a encolar", () => withDatabase(db => {
++  enableCloud(db);
++  const first = resolveProjectDirectory(db, "/mac-1/stable", "Stable", true, undefined, "https://github.com/org/stable.git");
++  const before = db.query("SELECT updated_at FROM project_remotes WHERE project_id=?").get(first.project!.projectId) as { updated_at: string };
++  db.exec("DELETE FROM cloud_outbox");
++  resolveProjectDirectory(db, "/mac-1/stable", "Stable", true, undefined, "https://github.com/org/stable.git");
++  const after = db.query("SELECT updated_at FROM project_remotes WHERE project_id=?").get(first.project!.projectId) as { updated_at: string };
++  expect(after.updated_at).toBe(before.updated_at);
++  expect(db.query("SELECT count(*) AS n FROM cloud_outbox WHERE kind='project_remotes'").get()).toEqual({ n: 0 });
++}));
++
++// D6 (T3b): un remoto distinto para una carpeta ya ligada sí actualiza origin y updated_at, y encola el cambio.
++test("D6: un remoto nuevo actualiza origin y updated_at, y encola el cambio", () => withDatabase(db => {
++  enableCloud(db);
++  const first = resolveProjectDirectory(db, "/mac-1/moved", "Moved", true, undefined, "https://github.com/org/old.git");
++  db.exec("DELETE FROM cloud_outbox");
++  resolveProjectDirectory(db, "/mac-1/moved", "Moved", true, undefined, "https://github.com/org/new.git");
++  const stored = db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(first.project!.projectId) as { origin: string };
++  expect(stored.origin).toBe("github.com/org/new");
++  expect(db.query("SELECT count(*) AS n FROM cloud_outbox WHERE kind='project_remotes'").get()).toEqual({ n: 1 });
++}));
++
++// D6 (T3b): sin nube activa, la tabla project_remotes ni siquiera existe; resolver con un remoto
++// no debe fallar ni intentar consultarla.
++test("D6: sin nube, resolver con un remoto no toca project_remotes ni falla", () => withDatabase(db => {
++  enableProjectBindings(db);
++  const result = resolveProjectDirectory(db, "/mac-1/no-cloud", "NoCloud", true, undefined, "https://github.com/org/no-cloud.git");
++  expect(result.created).toBe(true);
++  expect(db.query("SELECT name FROM sqlite_master WHERE name='project_remotes'").all()).toEqual([]);
++}));
++
++// D6 (T3b): un remoto cuyo contenido, tras normalizarse, todavía parece un secreto (aquí, en la ruta)
++// nunca se anota, aunque el proyecto sí se resuelva con normalidad.
++test("D6: un remoto con un secreto que sobrevive a la normalización no se anota", () => withDatabase(db => {
++  enableCloud(db);
++  const result = resolveProjectDirectory(db, "/mac-1/leaky", "Leaky", true, undefined, "https://github.com/org/AKIAABCDEFGHIJKLMNOP");
++  expect(result.created).toBe(true);
++  expect(db.query("SELECT * FROM project_remotes WHERE project_id=?").get(result.project!.projectId)).toBeNull();
++}));
+diff --git a/src/infrastructure/sqlite/projects.ts b/src/infrastructure/sqlite/projects.ts
+index 511c1cf..ff79d5e 100644
+--- a/src/infrastructure/sqlite/projects.ts
++++ b/src/infrastructure/sqlite/projects.ts
+@@ -8,14 +8,18 @@
+  * (projectDirectories), comprobación de si el esquema (schema, la versión de la estructura de la base de
+  * datos) admite vínculos de proyecto (requireProjectBindings), resolución del proyecto de una carpeta
+  * (projectForDirectory/resolveProjectDirectory) y registro de un proyecto que ya trae su propio
+- * identificador (registerProject).
++ * identificador (registerProject). Desde T3b (D6), resolveProjectDirectory también liga por remoto de
++ * Git (usableNormalizedRemote/knownRemotes/annotateRemote) cuando la carpeta llega sin vínculo previo y
++ * la base tiene la nube activa: así una carpeta clonada en otra Mac reconoce al proyecto que ya llegó
++ * de la nube en vez de crear uno nuevo con el mismo nombre.
+  */
+ import type { Database } from "bun:sqlite";
+-import { projectIdentity,type Project } from "../../modules/projects";
++import { findSecret } from "../../modules/memory";
++import { matchProjectByRemote,normalizeRemote,projectIdentity,type Project } from "../../modules/projects";
+ import { MemoryError } from "../../shared/errors";
+ import { ecosystemEnabled,recordIdentityEvent } from "./ecosystem-groups";
+ import { required } from "./memory";
+-import { schemaFeatures } from "./schema";
++import { cloudEnabled,schemaFeatures } from "./schema";
+ 
+ /**
+  * Crea un proyecto nuevo con un identificador generado y las marcas de fecha de creación y actualización.
+@@ -92,54 +96,122 @@ export function projectForDirectory(db: Database, directory: string): Project |
+       WHERE b.directory=?`).get(path) as Project | null;
+   }
+ 
++/**
++ * Normaliza `origin` y lo descarta en silencio si no queda usable: vacío tras normalizar, o con un
++ * secreto detectable (D6, "un remoto con un secreto que sobrevive a la normalización no se anota").
++ * @param origin Remoto crudo (sin normalizar), tal como lo dio quien llama.
++ * @returns El remoto ya normalizado, listo para comparar o guardar; o `null` si no es usable.
++ */
++function usableNormalizedRemote(origin: string): string | null {
++  const normalized = normalizeRemote(origin);
++  if (!normalized || findSecret(normalized)) return null;
++  return normalized;
++}
++
++/**
++ * Lee cada remoto ya anotado de `project_remotes`, en la forma que pide `matchProjectByRemote`.
++ * @param db conexión a la base de datos SQLite (con la nube ya activa: la tabla existe).
++ * @returns un par (projectId, origin) por cada proyecto con remoto anotado.
++ */
++function knownRemotes(db: Database): { projectId: string; origin: string | null }[] {
++  return db.query("SELECT project_id AS projectId, origin FROM project_remotes").all() as { projectId: string; origin: string | null }[];
++}
++
++/**
++ * Anota (o actualiza) el remoto normalizado de un proyecto en `project_remotes`, sin escribir nada si
++ * ya tenía anotado ese mismo valor (D6: "solo si falta o cambió", para no encolar un cambio en cada
++ * guardado de un proyecto ya conocido).
++ * @param db conexión a la base de datos SQLite (con la nube ya activa).
++ * @param projectId proyecto cuyo remoto se anota.
++ * @param normalized remoto ya normalizado (ver {@link usableNormalizedRemote}).
++ */
++function annotateRemote(db: Database, projectId: string, normalized: string): void {
++  const current = db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(projectId) as { origin: string } | null;
++  if (current && current.origin === normalized) return;
++  const now = new Date().toISOString();
++  if (!current) db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(projectId,normalized,now);
++  else db.query("UPDATE project_remotes SET origin=?,updated_at=? WHERE project_id=?").run(normalized,now,projectId);
++}
++
+ /**
+  * Resuelve el proyecto de una carpeta: si ya está vinculada, la devuelve; si no y se pide crear, crea un
+  * proyecto nuevo y lo vincula a la carpeta, salvo que ya exista otro proyecto con el mismo nombre (en ese
+  * caso exige una vinculación explícita) o que alguna carpeta ya vinculada no esté disponible según la
+  * función de comprobación opcional.
++ *
++ * D6 (identidad de proyecto por remoto de Git, T3b): con la nube activa, `create` en true y un `origin`
++ * usable, y solo si la carpeta todavía no está ligada, se busca antes que la comprobación de nombre
++ * repetido un proyecto ya conocido con ese mismo remoto (`matchProjectByRemote`); si hay exactamente
++ * uno, esta carpeta se liga a él en vez de crear uno nuevo, y el error de nombre repetido no aplica
++ * (es justo el caso de una carpeta que llegó de otra Mac con un proyecto del mismo nombre). Gane la
++ * carpeta un vínculo ya existente, uno por remoto, o uno recién creado, el remoto del proyecto
++ * resultante se anota al final (o se actualiza, si cambió). Sin nube, la tabla ni se consulta.
+  * @param db conexión a la base de datos SQLite.
+  * @param directory ruta de la carpeta a resolver.
+  * @param name nombre a usar si hay que crear el proyecto.
+  * @param create si es true, crea el proyecto y el vínculo cuando la carpeta todavía no tiene uno.
+  * @param bindingAvailable función opcional que dice si la carpeta de un vínculo existente sigue disponible
+  * en el disco (por ejemplo, montada o presente); si falta información se trata como no disponible.
++ * @param origin remoto de Git crudo (sin normalizar) de la carpeta, o `null`/`undefined` si no se
++ * conoce; solo se usa cuando `create` es true y la base tiene la nube activa.
+  * @returns el proyecto resuelto (o null si no existía y no se pidió crear) y si se creó uno nuevo.
+  * @throws MemoryError con código MIGRATION_REQUIRED si el esquema no admite vínculos de proyecto.
+  * @throws MemoryError con código INVALID_INPUT si directory o name están vacíos o no son texto.
+- * @throws MemoryError con código PROJECT_BINDING_REQUIRED si ya existe un proyecto con el mismo nombre,
+- * o si hay proyectos cuyas carpetas registradas no están disponibles.
++ * @throws MemoryError con código PROJECT_BINDING_REQUIRED si ya existe un proyecto con el mismo nombre
++ * y ningún remoto coincidente lo evitó, o si hay proyectos cuyas carpetas registradas no están disponibles.
+  */
+-export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
++export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean,
++    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } {
+     requireProjectBindings(db);
+     const path = required(directory,"directory"); const displayName = required(name,"name");
+     const operation = () => {
+-      // Si la carpeta ya tiene proyecto, o no se pidió crear uno, no hay nada más que hacer.
++      // Sin pedir crear, es una simple lectura: ni se busca por remoto ni se anota nada.
+       const bound = projectForDirectory(db, path);
+-      if (bound || !create) return { project: bound, created: false };
+-      // Dos proyectos distintos no pueden compartir el mismo nombre visible sin una vinculación explícita.
+-      const collision = db.query("SELECT projectId FROM projects WHERE name=? LIMIT 1").get(displayName);
+-      if (collision) {
+-        throw new MemoryError("PROJECT_BINDING_REQUIRED","Existe un proyecto con el mismo nombre; se requiere vinculación explícita.");
+-      }
+-      if (bindingAvailable) {
+-        // Se revisa cada vínculo carpeta-proyecto existente: un proyecto cuenta como disponible si al
+-        // menos una de sus carpetas registradas responde que existe.
+-        const bindings=db.query("SELECT projectId,directory FROM project_bindings").all() as {projectId:string;directory:string}[];
+-        const available=new Map<string,boolean>();
+-        for(const binding of bindings){
+-          let exists=false;try{exists=bindingAvailable(binding.directory);}catch{/* Si la comprobación falla, la disponibilidad es ambigua: se trata como no disponible. */}
+-          available.set(binding.projectId,(available.get(binding.projectId)??false)||exists);
+-        }
+-        // Si algún proyecto quedó sin ninguna carpeta disponible, crear uno nuevo a ciegas sería arriesgado.
+-        if([...available.values()].some(exists=>!exists)) {
+-          throw new MemoryError("PROJECT_BINDING_REQUIRED","Hay proyectos cuyas carpetas registradas no están disponibles; se requiere vinculación explícita con project-bind.");
++      if (!create) return { project: bound, created: false };
++      // El remoto solo es usable con la nube activa (la tabla existe) y si sobrevive a la normalización y al filtro de secretos.
++      const usableRemote = cloudEnabled(db) && origin ? usableNormalizedRemote(origin) : null;
++      let project = bound;
++      let created = false;
++      if (!project) {
++        // Solo si la carpeta no está ligada tiene sentido buscar, por su remoto, un proyecto que ya llegó de otra Mac.
++        const matchedId = usableRemote ? matchProjectByRemote(usableRemote, knownRemotes(db)) : null;
++        const matched = matchedId ? getProject(db, matchedId) : null;
++        if (matched) {
++          // Coincidencia por remoto: se liga sin pasar por la comprobación de nombre repetido (D6, ese es justo su caso de uso).
++          db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
++            .run(path,matched.projectId,new Date().toISOString());
++          project = matched;
++        } else {
++          // Sin coincidencia por remoto: el flujo de hoy, sin cambios.
++          // Dos proyectos distintos no pueden compartir el mismo nombre visible sin una vinculación explícita.
++          const collision = db.query("SELECT projectId FROM projects WHERE name=? LIMIT 1").get(displayName);
++          if (collision) {
++            throw new MemoryError("PROJECT_BINDING_REQUIRED","Existe un proyecto con el mismo nombre; se requiere vinculación explícita.");
++          }
++          if (bindingAvailable) {
++            // Se revisa cada vínculo carpeta-proyecto existente: un proyecto cuenta como disponible si al
++            // menos una de sus carpetas registradas responde que existe.
++            const bindings=db.query("SELECT projectId,directory FROM project_bindings").all() as {projectId:string;directory:string}[];
++            const available=new Map<string,boolean>();
++            for(const binding of bindings){
++              let exists=false;try{exists=bindingAvailable(binding.directory);}catch{/* Si la comprobación falla, la disponibilidad es ambigua: se trata como no disponible. */}
++              available.set(binding.projectId,(available.get(binding.projectId)??false)||exists);
++            }
++            // Si algún proyecto quedó sin ninguna carpeta disponible, crear uno nuevo a ciegas sería arriesgado.
++            if([...available.values()].some(exists=>!exists)) {
++              throw new MemoryError("PROJECT_BINDING_REQUIRED","Hay proyectos cuyas carpetas registradas no están disponibles; se requiere vinculación explícita con project-bind.");
++            }
++          }
++          // Ninguna de las comprobaciones anteriores bloqueó la creación: se crea el proyecto y se vincula la carpeta.
++          project = createProject(db, displayName);
++          db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
++            .run(path,project.projectId,new Date().toISOString());
++          created = true;
+         }
+       }
+-      // Ninguna de las comprobaciones anteriores bloqueó la creación: se crea el proyecto y se vincula la carpeta.
+-      const project = createProject(db, displayName);
+-      db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
+-        .run(path,project.projectId,new Date().toISOString());
+-      return { project, created: true };
++      // D6: se anota el remoto del proyecto resultante (ligado de antes, ligado por remoto o recién creado), si hay uno usable.
++      if (usableRemote) annotateRemote(db, project!.projectId, usableRemote);
++      return { project, created };
+     };
+     return operation();
+   }
+diff --git a/src/infrastructure/sqlite/schema.ts b/src/infrastructure/sqlite/schema.ts
+index a1ef7c9..0c3d5aa 100644
+--- a/src/infrastructure/sqlite/schema.ts
++++ b/src/infrastructure/sqlite/schema.ts
+@@ -633,8 +633,9 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
+ // Activación de la nube (nivel de esquema 12, D1). Solo agrega: una bandeja de salida (outbox) de
+ // cambios pendientes, alimentada por disparadores AFTER INSERT/UPDATE/DELETE en cada tabla que viaja
+ // (sección 5 del diseño); un estado de aplicación de una sola fila (el apply_guard de D2,
+-// last_applied_id y la huella del remoto de D14); y una tabla de avisos. Nunca se llega aquí al
+-// simplemente abrir la base; solo `enableCloud` la escribe.
++// last_applied_id y la huella del remoto de D14); una tabla de avisos; y (T3b, D6) el remoto de Git
++// normalizado de cada proyecto (project_remotes), para reconocer en otra Mac una carpeta sin archivo
++// de identidad. Nunca se llega aquí al simplemente abrir la base; solo `enableCloud` la escribe.
+ const CLOUD_TABLES_SCHEMA = `CREATE TABLE cloud_outbox (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   change_id TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(16)))),
+@@ -663,13 +664,20 @@ CREATE TABLE cloud_version_map (
+   local_version INTEGER NOT NULL,
+   PRIMARY KEY (memory_id, installation_id, remote_version)
+ );
++CREATE TABLE project_remotes (
++  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(projectId),
++  origin TEXT NOT NULL,
++  updated_at TEXT NOT NULL
++);
+ `;
+ // Cada tabla que viaja (sección 5 del diseño), en orden de dependencia (D14): primero projects y la
+ // estructura de ecosistema, luego memories y sus tablas auxiliares, luego sessions, luego confirmations.
+ // Las listas de columnas coinciden exactamente con este archivo (se verificaron contra el SQL real de
+-// arriba, no contra los números de línea del plan).
++// arriba, no contra los números de línea del plan). project_remotes (D6, identidad de proyecto por
++// remoto de Git, T3b) va justo después de projects: su clave foránea exige que el proyecto ya viajó.
+ const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
+   ["projects", ["projectId", "name", "createdAt", "updatedAt"]],
++  ["project_remotes", ["project_id", "origin", "updated_at"]],
+   ["ecosystem_groups", ["id", "name", "createdAt"]],
+   ["ecosystem_memberships", ["projectId", "groupId", "boundAt", "source"]],
+   ["ecosystem_sources", ["groupId", "projectId", "setAt"]],
+diff --git a/src/infrastructure/sqlite/writes.ts b/src/infrastructure/sqlite/writes.ts
+index 0eff4bd..f419744 100644
+--- a/src/infrastructure/sqlite/writes.ts
++++ b/src/infrastructure/sqlite/writes.ts
+@@ -48,15 +48,18 @@ import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessio
+  * @param create si es falso, solo busca el vínculo existente y nunca crea nada.
+  * @param bindingAvailable función opcional que dice si la carpeta de un vínculo ya guardado sigue
+  *   existiendo en disco; se usa para decidir si hace falta un vínculo explícito antes de crear.
++ * @param origin remoto de Git crudo de la carpeta (D6, T3b), o `null`/`undefined` si no se conoce;
++ *   ver `resolveProjectDirectory` de `./projects` para cómo se usa.
+  * @returns el proyecto encontrado o creado (o null si no existe y `create` es falso) y si se creó.
+  * @throws MemoryError con código MIGRATION_REQUIRED si los vínculos de proyecto no están
+  *   habilitados, INVALID_INPUT si `directory` o `name` están vacíos, o PROJECT_BINDING_REQUIRED
+- *   si hace falta vincular a mano (nombre repetido o carpetas registradas ausentes).
++ *   si hace falta vincular a mano (nombre repetido sin remoto coincidente, o carpetas registradas ausentes).
+  */
+-export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
++export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean,
++    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } {
+   requireProjectBindings(db);
+   const path = required(directory,"directory"), displayName = required(name,"name");
+-  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable);
++  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable,origin);
+   // Solo cuando puede crear hace falta transacción: crear el proyecto y su vínculo son dos
+   // escrituras que deben quedar juntas; una simple búsqueda no escribe nada y no la necesita.
+   return create ? db.transaction(operation).immediate() : operation();
+@@ -127,14 +130,16 @@ export function endSession(db: Database, projectId: string, sessionId: string):
+  * @param runtimeDirectory carpeta desde la que corre la sesión.
+  * @param sessionId identificador de la sesión a abrir.
+  * @param bindingAvailable ver resolveProjectDirectory.
++ * @param origin ver resolveProjectDirectory (D6, T3b).
+  * @returns la sesión abierta.
+  * @throws MemoryError con los mismos códigos que resolveProjectDirectory y startRuntimeSession.
+  */
+-export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string, bindingAvailable?: (directory:string)=>boolean): Session {
++export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string,
++    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): Session {
+     requireSessions(db);
+     const id = sessionIdentity(sessionId); const runtime = required(runtimeDirectory,"runtimeDirectory");
+     return db.transaction(() => {
+-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
++      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+       return startRuntimeSession(db,context.project!.projectId,id,runtime);
+     }).immediate();
+   }
+@@ -208,13 +213,15 @@ export function rebindProjectDirectory(db: Database, directory: string, projectI
+  * @param name nombre a usar si hay que crear el proyecto.
+  * @param input datos del recuerdo a guardar (sin projectId ni scope, que los pone esta función).
+  * @param bindingAvailable ver resolveProjectDirectory.
++ * @param origin ver resolveProjectDirectory (D6, T3b).
+  * @returns la versión del recuerdo guardado.
+  * @throws MemoryError con los códigos de resolveProjectDirectory y de saveCore.
+  */
+-export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion {
++export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">,
++    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): MemoryVersion {
+     requireProjectBindings(db);
+     return db.transaction(() => {
+-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
++      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },{},new Date().toISOString()).memory;
+     }).immediate();
+   }
+@@ -229,14 +236,16 @@ export function saveForProjectDirectory(db: Database, directory: string, name: s
+  * @param input datos del recuerdo a guardar.
+  * @param options opciones de asociación con la sesión (sessionId explícito, modo, etc).
+  * @param bindingAvailable ver resolveProjectDirectory.
++ * @param origin ver resolveProjectDirectory (D6, T3b).
+  * @returns el recuerdo guardado junto con la sesión asociada.
+  * @throws MemoryError con los códigos de resolveProjectDirectory y de saveCore.
+  */
+-export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean): SessionSaveResult {
++export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">,
++    options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): SessionSaveResult {
+     requireProjectBindings(db);
+     const runtime = required(runtimeDirectory,"runtimeDirectory");
+     return db.transaction(() => {
+-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
++      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },
+         { ...options, runtimeDirectory:runtime },new Date().toISOString());
+     }).immediate();
+diff --git a/src/modules/projects/index.ts b/src/modules/projects/index.ts
+index 1869aa4..56cce2c 100644
+--- a/src/modules/projects/index.ts
++++ b/src/modules/projects/index.ts
+@@ -1,3 +1,6 @@
+-/** Punto de entrada del módulo `projects`: reexporta el tipo `Project` y la validación de identidad de proyecto. */
++/** Punto de entrada del módulo `projects`: reexporta el tipo `Project`, la validación de identidad de
++ * proyecto y la identidad de proyecto por remoto de Git (D6: normalización y coincidencia). No se
++ * reexporta desde `src/index.ts`: es un detalle interno, no entra al SDK público. */
+ export type { Project } from "./types";
+ export { projectIdentity } from "./identity";
++export { normalizeRemote, matchProjectByRemote } from "./remote";
+diff --git a/src/modules/projects/remote.test.ts b/src/modules/projects/remote.test.ts
+new file mode 100644
+index 0000000..e0b1556
+--- /dev/null
++++ b/src/modules/projects/remote.test.ts
+@@ -0,0 +1,95 @@
++/**
++ * Prueba `normalizeRemote` con un banco de pares de remotos equivalentes y distintos (Review Focus
++ * #5), y `matchProjectByRemote` con las combinaciones de coincidencia (ninguna, una, dos) que decide
++ * si una carpeta se liga a un proyecto ya conocido.
++ */
++import { expect, test } from "bun:test";
++import { matchProjectByRemote, normalizeRemote } from "./remote";
++
++// Todas estas formas del mismo remoto (https, con ".git", forma scp, ssh://, con puerto explícito, con
++// credenciales embebidas, y con protocolo y host en mayúsculas y "/" final) deben normalizar igual.
++const EQUIVALENT_REMOTES = [
++  "https://github.com/org/repo",
++  "https://github.com/org/repo.git",
++  "git@github.com:org/repo.git",
++  "ssh://git@github.com/org/repo",
++  "https://github.com:443/org/repo",
++  "https://user:token@github.com/org/repo.git",
++  "HTTPS://GitHub.com/org/repo/",
++];
++
++// Verifica que las siete formas equivalentes de la lista de arriba normalizan exactamente a la misma cadena.
++test("equivalent remote forms (scheme, .git, scp, port, embedded credentials, case) normalize identically", () => {
++  const normalized = EQUIVALENT_REMOTES.map(normalizeRemote);
++  for (const value of normalized) expect(value).toBe("github.com/org/repo");
++});
++
++// Verifica que ninguna forma normalizada conserva credenciales ni el usuario embebido, aunque la entrada los traía.
++test("normalized remotes never contain '@' or the embedded credential value", () => {
++  for (const value of EQUIVALENT_REMOTES.map(normalizeRemote)) {
++    expect(value).not.toContain("@");
++    expect(value).not.toContain("token");
++  }
++});
++
++// Verifica que dos rutas distintas bajo el mismo host no se confunden entre sí.
++test("different repository paths under the same host normalize differently", () => {
++  expect(normalizeRemote("https://github.com/org/repo")).not.toBe(normalizeRemote("https://github.com/org/repo2"));
++});
++
++// Verifica que el mismo dueño y nombre de repositorio bajo hosts distintos no se confunden entre sí.
++test("same owner and repo name under different hosts normalize differently", () => {
++  expect(normalizeRemote("https://github.com/org/repo")).not.toBe(normalizeRemote("https://gitlab.com/org/repo"));
++});
++
++// Verifica que la ruta conserva las mayúsculas: solo el host se pasa a minúsculas, así que dos remotos
++// que solo difieren en la mayúscula de la ruta siguen siendo remotos distintos.
++test("path casing is preserved, so it still distinguishes otherwise-equal remotes", () => {
++  expect(normalizeRemote("https://github.com/Org/Repo")).not.toBe(normalizeRemote("https://github.com/org/repo"));
++  expect(normalizeRemote("https://github.com/Org/Repo")).toBe("github.com/Org/Repo");
++});
++
++// Verifica que algo sin forma reconocible de remoto (una ruta local, o un texto vacío) se devuelve
++// solo recortado, sin inventar una identidad de host/ruta que no tiene.
++test("text without remote shape (local path, empty text) is returned only trimmed", () => {
++  expect(normalizeRemote("  /Users/dev/project  ")).toBe("/Users/dev/project");
++  expect(normalizeRemote("   ")).toBe("");
++  expect(normalizeRemote("")).toBe("");
++});
++
++// Verifica que, con exactamente un proyecto conocido cuyo remoto (ya normalizado o no) coincide, se
++// devuelve su id.
++test("matchProjectByRemote returns the single matching project's id", () => {
++  const known = [
++    { projectId: "p1", origin: "https://github.com/org/repo.git" },
++    { projectId: "p2", origin: "https://gitlab.com/org/other" },
++  ];
++  expect(matchProjectByRemote("git@github.com:org/repo.git", known)).toBe("p1");
++});
++
++// Verifica que, sin ningún proyecto conocido cuyo remoto coincida, no se devuelve ninguno (nunca se adivina).
++test("matchProjectByRemote returns null when no known project matches", () => {
++  const known = [{ projectId: "p1", origin: "https://gitlab.com/org/other" }];
++  expect(matchProjectByRemote("https://github.com/org/repo", known)).toBeNull();
++});
++
++// Verifica que, con dos proyectos distintos que comparten el mismo remoto, no se devuelve ninguno: la
++// ambigüedad nunca se resuelve adivinando cuál de los dos es.
++test("matchProjectByRemote returns null when two known projects share the same remote", () => {
++  const known = [
++    { projectId: "p1", origin: "https://github.com/org/repo" },
++    { projectId: "p2", origin: "git@github.com:org/repo.git" },
++  ];
++  expect(matchProjectByRemote("https://github.com/org/repo.git", known)).toBeNull();
++});
++
++// Verifica que un proyecto sin remoto anotado (origin null) nunca participa en la comparación, ni
++// siquiera como coincidencia accidental de "null" contra "null".
++test("matchProjectByRemote ignores known projects with a null origin", () => {
++  const known = [
++    { projectId: "p1", origin: null },
++    { projectId: "p2", origin: "https://github.com/org/repo" },
++  ];
++  expect(matchProjectByRemote("https://github.com/org/repo", known)).toBe("p2");
++  expect(matchProjectByRemote("https://gitlab.com/org/unrelated", [{ projectId: "p3", origin: null }])).toBeNull();
++});
+diff --git a/src/modules/projects/remote.ts b/src/modules/projects/remote.ts
+new file mode 100644
+index 0000000..0ceb479
+--- /dev/null
++++ b/src/modules/projects/remote.ts
+@@ -0,0 +1,72 @@
++/**
++ * Identidad de proyecto por remoto de Git (D6): normaliza la URL de un remoto `origin` a una forma
++ * comparable entre protocolos (https, ssh, forma scp) y hosts distintos en mayúsculas o minúsculas,
++ * y decide a qué proyecto ya conocido corresponde un remoto entrante, sin adivinar cuando hay
++ * ambigüedad. La usa `src/infrastructure/sqlite/projects.ts` al resolver, con escritura, la carpeta
++ * de un proyecto que todavía no tiene archivo de identidad (`.forge614/project.json`): así una
++ * carpeta clonada en otra Mac se liga al proyecto que ya llegó de la nube en vez de crear uno nuevo.
++ */
++
++// Reconoce si el texto trae esquema (protocolo, la parte antes de "://"): https://, http://, ssh://,
++// git:// o git+ssh://. Sin esquema y con ":" antes de la primera "/", es la forma scp de Git
++// (usuario@host:ruta), que se reescribe a host/ruta antes de seguir.
++const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//iu;
++const SCP_FORM = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/u;
++
++/**
++ * Normaliza la URL de un remoto de Git a la forma `host/ruta`, para que dos formas distintas del
++ * mismo remoto (con o sin `.git`, `https://` o `ssh://`/scp, con o sin credenciales embebidas, con o
++ * sin puerto, host en mayúsculas o minúsculas) comparen iguales.
++ * @param url Texto del remoto, tal como aparece en `git remote -v` o en la línea `url` del archivo
++ * `config` de Git.
++ * @returns La forma normalizada `host/ruta` (p. ej. `github.com/org/repo`), sin esquema, sin
++ * credenciales ni usuario, sin puerto, sin `/` final ni `.git` final, con el host en minúsculas y la
++ * ruta tal cual (conserva mayúsculas). Si `url` no tiene forma reconocible de remoto (una ruta local,
++ * un texto vacío), se devuelve solo recortado (trim), sin inventar una identidad.
++ */
++export function normalizeRemote(url: string): string {
++  // Se recorta antes que nada: los espacios sobrantes no son parte de la identidad del remoto.
++  let value = url.trim();
++  if (!value) return value;
++  const scp = SCP_FORM.exec(value);
++  if (SCHEME.test(value)) {
++    // Con esquema (https://, ssh://, git://, git+ssh://, ...): se quita, queda solo la autoridad y la ruta.
++    value = value.replace(SCHEME, "");
++  } else if (scp) {
++    // Sin esquema pero con la forma scp (usuario@host:ruta): se reescribe a host/ruta, como si trajera ssh://.
++    value = `${scp[1]}/${scp[2]}`;
++  }
++  // A partir de aquí, "autoridad" es todo antes de la primera "/" (host, usuario y puerto); "resto" es
++  // la ruta con esa primera "/" incluida (o vacío si no había ninguna, p. ej. una ruta local sin "/").
++  const firstSlash = value.indexOf("/");
++  let authority = firstSlash === -1 ? value : value.slice(0, firstSlash);
++  let rest = firstSlash === -1 ? "" : value.slice(firstSlash);
++  // Credenciales o usuario: todo lo que va antes de la última "@" de la autoridad se descarta.
++  const at = authority.lastIndexOf("@");
++  if (at !== -1) authority = authority.slice(at + 1);
++  // Puerto (":443", ":22", cualquiera): se quita del final de la autoridad.
++  authority = authority.replace(/:\d+$/u, "");
++  // El host se guarda en minúsculas (dos hosts que difieren solo en mayúsculas son el mismo remoto).
++  authority = authority.toLowerCase();
++  // "/" final, luego ".git" final, y de nuevo un "/" final si queda uno (en ese orden, como pide D6).
++  rest = rest.replace(/\/+$/u, "").replace(/\.git$/iu, "").replace(/\/+$/u, "");
++  return `${authority}${rest}`;
++}
++
++/**
++ * Decide a qué proyecto ya conocido corresponde un remoto entrante, comparando su forma normalizada
++ * contra la de cada proyecto con remoto anotado. Nunca adivina: si ningún proyecto coincide, o si más
++ * de uno coincide (dos proyectos con el mismo remoto, algo que D6 nunca debe ligar a ciegas), no
++ * devuelve ninguno.
++ * @param remote Remoto entrante, en cualquier forma (se normaliza aquí, no hace falta normalizarlo antes).
++ * @param knownProjects Proyectos ya conocidos con su remoto anotado (`origin`), o `null` si ese
++ * proyecto todavía no tiene uno anotado; los `null` no participan en la comparación.
++ * @returns El `projectId` del único proyecto cuyo remoto normalizado coincide con `remote`, o `null`
++ * si no hay ninguna coincidencia o hay más de una.
++ */
++export function matchProjectByRemote(remote: string, knownProjects: { projectId: string; origin: string | null }[]): string | null {
++  const normalized = normalizeRemote(remote);
++  // Los proyectos sin remoto anotado (origin null) no cuentan como coincidencia posible.
++  const matches = knownProjects.filter(project => project.origin !== null && normalizeRemote(project.origin) === normalized);
++  return matches.length === 1 ? matches[0]!.projectId : null;
++}
+diff --git a/tests/fixtures/sdk-contract.ts b/tests/fixtures/sdk-contract.ts
+index f39c12f..f6db7b8 100644
+--- a/tests/fixtures/sdk-contract.ts
++++ b/tests/fixtures/sdk-contract.ts
+@@ -24,13 +24,14 @@ type _SearchScope = Assert<Equal<SearchScope, MemoryScope | "all">>;
+ type _MemoryType = Assert<Equal<MemoryType, "fact" | "decision" | "procedure" | "warning" | "preference">>;
+ type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string;installationId?:string}>>;
+ interface ExpectedStore {
++  // D6 (T3b): las cuatro firmas de abajo con "origin" ganaron ese parámetro opcional al final (identidad de proyecto por remoto de Git); ningún nombre cambió.
+   createProject(name:string):Project;getProject(projectId:string):Project|null;listProjects():Project[];renameProject(projectId:string,name:string):Project;
+   sessionsEnabled():boolean;reinforcementEnabled():boolean;enableSessions():void;enableSearchReinforcement():void;startSession(projectId:string,sessionId:string,runtimeDirectory?:string):Session;endSession(projectId:string,sessionId:string):Session;getSession(projectId:string,sessionId:string):Session|null;
+-  startSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,sessionId:string,bindingAvailable?:(directory:string)=>boolean):Session;
++  startSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,sessionId:string,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):Session;
+   projectForDirectory(directory:string):Project|null;bindProjectDirectory(directory:string,projectId:string):Project;
+-  resolveProjectDirectory(directory:string,name:string,create:boolean,bindingAvailable?:(directory:string)=>boolean):{project:Project|null;created:boolean};
+-  saveForProjectDirectory(directory:string,name:string,input:Omit<SaveInput,"projectId"|"scope">,bindingAvailable?:(directory:string)=>boolean):MemoryVersion;
+-  saveWithSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,input:Omit<SaveInput,"projectId"|"scope">,options?:SessionSaveOptions,bindingAvailable?:(directory:string)=>boolean):SessionSaveResult;
++  resolveProjectDirectory(directory:string,name:string,create:boolean,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):{project:Project|null;created:boolean};
++  saveForProjectDirectory(directory:string,name:string,input:Omit<SaveInput,"projectId"|"scope">,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):MemoryVersion;
++  saveWithSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,input:Omit<SaveInput,"projectId"|"scope">,options?:SessionSaveOptions,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):SessionSaveResult;
+   save(input:SaveInput):MemoryVersion;saveWithSession(input:SaveInput,options?:SessionSaveOptions):SessionSaveResult;
+   saveSessionSummary(projectId:string,sessionId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
+   get(projectId:string|null,id:string):Memory|null;getByTopic(projectId:string|null,topicKey:string):Memory|null;history(projectId:string|null,id:string):MemoryVersion[];
