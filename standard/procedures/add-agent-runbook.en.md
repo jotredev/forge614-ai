@@ -88,6 +88,7 @@ Repository: `forge614-shell`. Today it requires touching five places (until the 
 | What | Where |
 |---|---|
 | Own session: subscription login (never API key), model catalog, send/cancel, resume, `getStartupContext` with sanitization | `src/engines/opencode/session.ts` (+ `auth.ts` if applicable) |
+| Memory only once: if the agent's own startup hook already delivers Engram's block, Shell does not paste its own (rule §4 of Shell's `AGENTS.md`, since 1.12.0) | `createMemoryHookProbe` (`src/infrastructure/memory-hook.ts`) injected from the chat's composition root (`src/app/native-chat.ts` or `src/ui/basic/claude.ts`) |
 | Chat adapter allowlist | `src/infrastructure/forge614-engines.ts` (`supportedShellAdapters`) |
 | Engine union type | `src/contracts/available-engine.ts` |
 | `--engine` parsing | `src/app/options.ts` |

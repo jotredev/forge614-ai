@@ -541,6 +541,29 @@ del delimitador antes de envolver el bloque — nunca confiar en una sola capa d
       una función que resuelva la ruta de un binario de Engines/Engram debe recibir el `env` real —
       nunca asumir que el valor por defecto (`homedir()`) es suficiente.
 
+**Novedad (Shell 1.12.0, S5, commit `44219a6`): la memoria llega una sola vez.** Si el agente ya recibe
+el bloque de Engram por su propio hook de arranque (el que instala Engines), Shell **no** pega su bloque
+`<forge614-engram-memory>`: sigue leyendo `startup-context` solo para que los avisos de Engram lleguen a
+la persona. La detección es `createMemoryHookProbe` (`src/infrastructure/memory-hook.ts`): un solo
+`forge614-engines verify memory-integration --agent <id> --json` por corrida de Shell y por agente, que
+cuenta el hook como activo si está presente, su simulación pasa y su estado no es `unsupported`,
+`absent` ni `needs-user-trust`; se inyecta en la sesión desde su punto de composición
+(`src/app/native-chat.ts` para Codex, `src/ui/basic/claude.ts` para Claude Code). Con Codex se exige además que `hooks/list` de la sesión muestre un hook
+`sessionStart` de tipo comando que corre `memory-hook-run`, habilitado y confiado (o administrado). Una
+comprobación que falla, tarda más de 8 s o no se puede leer cuenta como «no activo»: Shell pega su bloque
+(mejor dos veces que ninguna). Es la regla §4 de `AGENTS.md` de Shell.
+
+- [ ] Para el agente nuevo, decidir cómo sabe Shell que su hook de arranque entrega la memoria: como
+      mínimo `createMemoryHookProbe` con su id de Engines; si el agente puede listar sus hooks en vivo
+      (como `hooks/list` de Codex), sumarlo. Sin hook de memoria para ese agente, Shell pega su bloque
+      siempre.
+- [ ] Probar el adaptador con un `startup-context` de forma real (con `ecosystem` y texto hostil) **con
+      el hook activo y sin él**: con el hook, el agente no recibe el bloque pero los avisos de Engram sí
+      llegan a la persona; sin él (o con la comprobación fallida o lenta), recibe el bloque una vez.
+- [ ] Con la cuenta real: el bloque aparece una sola vez en lo que recibe el agente (medido en su
+      registro de sesión; con Claude Code y Codex medido el 2026-09-29), y, si el agente tiene `/status`
+      conectado en Shell, dice quién la entrega (con Codex: «Memoria: la entrega el asistente al arrancar»).
+
 - [ ] Si el agente nuevo expone un catálogo de modelos con nombres amigables (`displayName` o
       equivalente), verificar **con datos reales** que el id que reporta el evento en vivo del motor
       coincide con el campo usado para resolver ese nombre — no asumir que van a coincidir limpio. Con
