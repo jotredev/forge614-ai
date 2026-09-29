@@ -88,6 +88,7 @@ Repo: `forge614-shell`. Hoy exige tocar cinco sitios (hasta que la alineación l
 | Qué | Dónde |
 |---|---|
 | Sesión propia: login por suscripción (nunca API key), catálogo de modelos, envío/cancelación, resume, `getStartupContext` con saneamiento | `src/engines/opencode/session.ts` (+ `auth.ts` si aplica) |
+| Memoria una sola vez: si el hook de arranque del agente ya entrega el bloque de Engram, Shell no pega el suyo (regla §4 de `AGENTS.md` de Shell, desde 1.12.0) | `createMemoryHookProbe` (`src/infrastructure/memory-hook.ts`) inyectado desde el punto de composición del chat (`src/app/native-chat.ts` o `src/ui/basic/claude.ts`) |
 | Allowlist de adaptadores de chat | `src/infrastructure/forge614-engines.ts` (`supportedShellAdapters`) |
 | Union type del motor | `src/contracts/available-engine.ts` |
 | Parseo de `--engine` | `src/app/options.ts` |
