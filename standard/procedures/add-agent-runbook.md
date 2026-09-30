@@ -97,7 +97,7 @@ Repo: `forge614-shell`. Hoy exige tocar cinco sitios (hasta que la alineación l
 | Textos en el catálogo i18n es/en | `src/i18n/` |
 | Tests con dobles de sesión; revisión visual PTY; docs es/en; `notion-map` | según checklist |
 
-**Puerta:** chat real con `opencode` desde Shell, `/login` por suscripción, memoria compartida visible desde `~`. Revisión. Release.
+**Puerta:** chat real con `opencode` desde Shell, inicio de sesión por suscripción con el comando nativo del asistente si lo tiene (`/login` en Claude Code) o con `/f614:login` si no lo tiene (Codex), memoria compartida visible desde `~`. Revisión. Release.
 
 ## Paso 6 — Cierre en `forge614-ai`
 
