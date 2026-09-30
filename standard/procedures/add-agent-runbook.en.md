@@ -97,7 +97,7 @@ Repository: `forge614-shell`. Today it requires touching five places (until the 
 | Texts in the es/en i18n catalog | `src/i18n/` |
 | Tests with session doubles; visual PTY review; es/en docs; `notion-map` | per checklist |
 
-**Gate:** real chat with `opencode` from Shell, `/login` by subscription, shared memory visible from `~`. Review. Release.
+**Gate:** real chat with `opencode` from Shell, subscription sign-in with the assistant's native command when it has one (`/login` in Claude Code) or with `/f614:login` when it does not (Codex), shared memory visible from `~`. Review. Release.
 
 ## Step 6 — Closure in `forge614-ai`
 
