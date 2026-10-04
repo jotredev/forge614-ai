@@ -231,12 +231,11 @@ proceso (eso es de Workers).
 **Validaciones a investigar para un agente nuevo:**
 
 - [ ] ¿Qué modelo(s) de este agente corresponden a cada nivel de la tabla ya fija de Atlas
-      (Ligero / Estándar / Profundo)? Agregar la fila correspondiente a la tabla de
-      "Modelo/razonamiento por nivel" en `STATE.md`.
+      (Ligero / Estándar / Profundo)? Agregar la fila correspondiente a la tabla
+      `MODEL_TABLE` de `src/modules/cli/task-config.ts` en forge614-atlas.
 - [ ] ¿Este agente soporta nivel de razonamiento configurable? Si no, dejar anotado que Atlas **nunca**
       debe pedirle `--reasoning-level` a este agente al armar una tarea — debe consultar
-      `capabilities`/`agents list` de Engines antes de construir la tarea, igual que ya hace para
-      Claude Code.
+      `capabilities`/`agents list` de Engines (`supportsReasoningLevel`) antes de construir la tarea.
 - [ ] Confirmar que el flujo de selección de motor (Shell, cuando hay ambigüedad) puede mostrar este
       agente nuevo como opción sin cambios adicionales de código en Atlas.
 
