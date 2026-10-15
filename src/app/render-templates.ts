@@ -3,10 +3,11 @@ import { read, type FileTree } from "../modules/standard/file-tree";
 import { renderTemplate } from "../modules/standard/template";
 
 export interface NodeVars {
-  NODE_NAME: string;
+  pointer: {
+    node: string;
+    install: { repository: string };
+  };
   NODE_TITLE: string;
-  REPO: string;
-  ASSET_PREFIX: string;
   STANDARD_VERSION: string;
 }
 
@@ -15,6 +16,8 @@ export interface NodeVars {
 const DESTINATIONS: ReadonlyArray<readonly [string, string]> = [
   ["install.sh", "install.sh"],
   ["install.ps1", "install.ps1"],
+  ["install.mjs", "install.mjs"],
+  ["prepare-release-assets.mjs", "scripts/prepare-release-assets.mjs"],
   ["verify.yml", ".github/workflows/verify.yml"],
   ["release.yml", ".github/workflows/release.yml"],
   ["CONTRACT.md", "CONTRACT.md"],
@@ -39,12 +42,17 @@ export function readTemplatesTree(root: string): FileTree {
 }
 
 export function renderNodeFiles(templates: FileTree, vars: NodeVars): Record<string, string> {
-  const varsRecord: Record<string, string> = { ...vars };
+  const varsRecord: Record<string, string> = {
+    NODE_NAME: vars.pointer.node,
+    NODE_TITLE: vars.NODE_TITLE,
+    REPO: vars.pointer.install.repository,
+    STANDARD_VERSION: vars.STANDARD_VERSION,
+  };
   const out: Record<string, string> = {};
   for (const [src, dest] of DESTINATIONS) {
     const content = read(templates, src);
     if (content === undefined) throw new Error(`template missing: ${src}`);
-    out[dest] = renderTemplate(content, varsRecord);
+    out[dest] = src === "install.mjs" || src === "prepare-release-assets.mjs" ? content : renderTemplate(content, varsRecord);
   }
   return out;
 }

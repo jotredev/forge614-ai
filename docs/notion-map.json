@@ -5,8 +5,8 @@
     {
       "es": "docs/es/00-resumen-y-guia-rapida.md",
       "en": "docs/en/00-summary-and-quickstart.md",
-      "sha256Es": "3ed8b9653eda740caa2b4082c8002d4e86ed8c69127e5888c32ba93136207640",
-      "sha256En": "e9acba13fde627f453a9b524e45fbfb329abc646c49d673235660f867fb83672",
+      "sha256Es": "adf78fc9c99f9da44a92a74b2470fdd731ec226bb07cef5c58a2a57e45b6e1c9",
+      "sha256En": "8bfbc5841284f05b878c90726796448bed3ba00c158e7de83bd89aeeddf89505",
       "notionPageId": null
     },
     {
@@ -26,8 +26,8 @@
     {
       "es": "docs/es/03-plantillas-y-render.md",
       "en": "docs/en/03-templates-and-rendering.md",
-      "sha256Es": "f8312cf750ee8f2ae310864e227f801e360146d920c4f16c6ba225454a8c7421",
-      "sha256En": "3bf920cd5a47b316e22b5d0bc109282784c3e7e94efc8473f13745511ca0d797",
+      "sha256Es": "22e6ccb124bf8307cfea79ddacc8bb96e294e6a5c465bd61be3fa6be5ca3069d",
+      "sha256En": "113a4892b8001ba00408a32a8e1f41b3ba01ad53a6139f376e653937e14ac163",
       "notionPageId": null
     },
     {
@@ -40,8 +40,8 @@
     {
       "es": "docs/es/05-workflows.md",
       "en": "docs/en/05-workflows.md",
-      "sha256Es": "3d1f7d83fdf48df5ec8885de8f09c2e02546e339ff19372a06c40438f673e7c6",
-      "sha256En": "9fbd3506614a8cdf7b103781fdd4f17029a3fd34776b09ebc46dc51025557d97",
+      "sha256Es": "b49e06edc25ed8d4903da3806ced54936bf08a5f4a608a655304bc3b5685e431",
+      "sha256En": "ef2480f6329e42d9651259035c541df3d4af2446585acb703df97edead8fbc56",
       "notionPageId": null
     }
   ]

@@ -16,7 +16,7 @@ Think of a workshop's rulebook: a single copy on the wall, and every station con
 ```bash
 bun install --frozen-lockfile
 bun run verify              # typecheck + tests + standard validators over this repo
-bun run standard:render --node engram --out /tmp/engram-files
+bun run standard:render --out /tmp/engram-files --pointer ../forge614-engram/forge614.node.json
 bun run standard:pack       # dist/standard-<VERSION>.tar.gz + SHA256SUMS
 ```
 

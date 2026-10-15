@@ -6,7 +6,7 @@
 
 `forge614-ai` es el núcleo del ecosistema Forge614, una familia de herramientas para trabajar con asistentes de IA. Cada herramienta es un **nodo**: un repositorio propio con un contrato público. Hoy este repositorio publica tres cosas:
 
-- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.1.2`): la norma que todo nodo cumple. Se explica en el documento 01.
+- El **Estándar de Nodo** (`standard/STANDARD.md`, versión `1.2.0`): la norma que todo nodo cumple. Se explica en el documento 01.
 - Las **reglas** como paquetes y el **pack** `forge614-pack-ecosystem-node` que las agrupa. Documento 02.
 - Las **plantillas** desde las que un nodo genera sus instaladores, workflows y contratos, y el **verificador** (`bun run verify`) que comprueba el estándar sobre este mismo repositorio. Documentos 03 y 04.
 
@@ -19,7 +19,7 @@ Todos los comandos se ejecutan con Bun (el gestor de paquetes y ejecutor de desa
 | Comando | Qué hace | Documento |
 | --- | --- | --- |
 | `bun run verify [--locale es\|en] [--today YYYY-MM-DD]` | typecheck, tests, comprobaciones de deriva y validadores del estándar sobre este repositorio | 04 |
-| `bun run standard:render --node <name> --out <dir> [--repo owner/repo] [--title Title]` | genera desde `standard/templates/` los archivos que un nodo adopta | 03 |
+| `bun run standard:render --out <dir> [--pointer <forge614.node.json>] [--title Title]` | genera desde `standard/templates/` los archivos del nodo indicado por su ficha | 03 |
 | `bun run standard:pack [--update-pointer] [--check]` | empaqueta `standard/` de forma reproducible en `dist/` y calcula su huella | 04 |
 | `bun run workflows:check` | valida los workflows de `.github/workflows/` contra el estándar | 05 |
 | `bun run workflows:run [--workflow <name>]` | ejecuta en local los pasos de un workflow (por defecto `verify`) | 05 |
