@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { checkStandardPack } from "../../app/check-standard-pack";
+import { checkStandardVersionLock } from "../../app/check-standard-version-lock";
 import { packStandard } from "../../app/pack-standard";
 import { readRepoTree, repoRoot } from "../../app/repo";
 import { runValidators } from "../../app/run-validators";
@@ -46,6 +47,11 @@ function main(argv: string[]): number {
   }
 
   if (parsed.data.check) {
+    const versionLock = checkStandardVersionLock({ root: repoRoot, standardVersion });
+    if (!versionLock.ok) {
+      printError(versionLock.code, versionLock.error);
+      return 1;
+    }
     const result = checkStandardPack({ root: repoRoot, pointerPath: POINTER_PATH, sumsPath: resolve(repoRoot, "dist/SHA256SUMS") });
     if (!result.ok) {
       printError("STANDARD_PACK_DRIFT", result.error);
