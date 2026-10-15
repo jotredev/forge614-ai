@@ -9,7 +9,7 @@
       "status": "supported",
       "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
-      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
+      "notes": "Sí soporta nivel de razonamiento (`--effort`, 5 niveles) desde Engines 1.16.0. Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
     },
     {
       "node": "workers",

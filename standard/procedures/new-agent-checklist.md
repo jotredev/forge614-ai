@@ -63,10 +63,9 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
       binario real, no contra la doc — el comportamiento real de un CLI puede no estar bien documentado
       (así pasó con el modo stdin de Codex).
 - [ ] ¿Soporta nivel de razonamiento configurable en modo headless? Si sí, documentar el flag/sintaxis
-      exacta (Codex no usa un flag directo: usa `-c model_reasoning_effort=<level>`). Si no, el
+      exacta (Claude Code usa `--effort`; Codex usa `-c model_reasoning_effort=<level>`). Si no, el
       `headlessCommand()` debe lanzar `ReasoningLevelUnsupportedError` cuando `opts.reasoningLevel` esté
-      presente — nunca ignorarlo en silencio (así lo hace Claude Code, que no tiene flag público y
-      estable para esto).
+      presente — nunca ignorarlo en silencio.
 - [ ] ¿El CLI candidato tiene algún flag para dar acceso de lectura a una carpeta adicional del proyecto
       sin romper el aislamiento normal (equivalente a `--add-dir`)? Ya existe el mecanismo genérico para
       esto: `HeadlessOptions.readableDir` (`src/modules/agents/types.ts`), expuesto públicamente como
