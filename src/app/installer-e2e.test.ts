@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { gzipSync } from "node:zlib";
 import { zipSync } from "fflate";
@@ -37,7 +37,7 @@ function sum(name: string, bytes: Buffer): string {
 }
 
 /** Build a minimal USTAR file for the real tar.gz extraction path. */
-function tarEntry(name: string, bytes: Buffer): Buffer {
+function tarEntry(name: string, bytes: Buffer, type = 48, end = true): Buffer {
   const header = Buffer.alloc(512);
   header.write(name, 0, 100, "utf8");
   header.write("0000755\0", 100, 8, "ascii");
@@ -46,17 +46,25 @@ function tarEntry(name: string, bytes: Buffer): Buffer {
   header.write(`${bytes.length.toString(8).padStart(11, "0")}\0`, 124, 12, "ascii");
   header.write("00000000000\0", 136, 12, "ascii");
   header.fill(0x20, 148, 156);
-  header[156] = 48;
+  header[156] = type;
   header.write("ustar\0", 257, 6, "ascii");
   header.write("00", 263, 2, "ascii");
   const checksum = header.reduce((total, byte) => total + byte, 0);
   header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
   const padding = Buffer.alloc((512 - (bytes.length % 512)) % 512);
-  return Buffer.concat([header, bytes, padding, Buffer.alloc(1024)]);
+  return Buffer.concat([header, bytes, padding, end ? Buffer.alloc(1024) : Buffer.alloc(0)]);
+}
+
+/** Replace one published release asset and keep the fake GNU manifest consistent. */
+function replaceAsset(release: ReturnType<typeof fakeRelease>, bytes: Buffer): void {
+  const oldSums = release.files.get("SHA256SUMS")!.toString("utf8").split(/\r?\n/).filter(Boolean);
+  const otherEntries = oldSums.filter((line) => !line.endsWith(`  ${release.asset}`));
+  release.files.set(release.asset, bytes);
+  release.files.set("SHA256SUMS", Buffer.from([sum(release.asset, bytes).trimEnd(), ...otherEntries].join("\n") + "\n"));
 }
 
 /** Build one fake release containing a platform launcher, pointer, and GNU checksum manifest. */
-function fakeRelease(version: string, options: { badHash?: boolean; failSmoke?: boolean; pathModify?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip-or-zip" } = {}, nodeName = NODE, repository = REPO) {
+function fakeRelease(version: string, options: { badHash?: boolean; badInstallerHash?: boolean; failSmoke?: boolean; wrongSmokeOutput?: boolean; failPublishedSmoke?: boolean; failUninstall?: boolean; pathModify?: boolean; unsupportedSystem?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip-or-zip" } = {}, nodeName = NODE, repository = REPO) {
   const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   const assetType = options.assetType ?? "raw-binary";
@@ -64,8 +72,8 @@ function fakeRelease(version: string, options: { badHash?: boolean; failSmoke?: 
   const asset = `forge614-${nodeName}-${os}-${arch}${assetType === "raw-binary" ? ".cmd" : archiveSuffix}`;
   const executable = Buffer.from(
     process.platform === "win32"
-      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" echo called>"%FORGE614_TEST_UNINSTALL_MARKER%"\r\n${options.failSmoke ? "exit /b 1" : `echo forge614-${nodeName} ${version}`}\r\n`
-      : options.failSmoke ? "#!/bin/sh\nexit 1\n" : `#!/bin/sh\nif [ "$1" = uninstall ] && [ "$2" = --self ]; then printf called > "$FORGE614_TEST_UNINSTALL_MARKER"; exit 0; fi\nprintf '%s\\n' 'forge614-${nodeName} ${version}'\n`,
+      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" ${options.failUninstall ? "exit /b 1" : "echo called>\"%FORGE614_TEST_UNINSTALL_MARKER%\""}\r\nif "%1"=="capabilities" if "%2"=="--agent" echo {"schemaVersion":1,"id":"claude-code","label":"Claude Code","supportsMcp":true,"supportsHooks":true,"supportsHeadlessExec":true,"supportsReasoningLevel":true,"supportsReadOnly":true,"fullySupported":true}\r\n${options.failSmoke ? "exit /b 1" : options.failPublishedSmoke ? `echo %~dp0 | findstr /i "bin" >nul && exit /b 1` : `echo forge614-${nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}`}\r\n`
+      : options.failSmoke ? "#!/bin/sh\nexit 1\n" : `#!/bin/sh\nif [ "$1" = uninstall ] && [ "$2" = --self ]; then ${options.failUninstall ? "exit 1" : 'printf called > "$FORGE614_TEST_UNINSTALL_MARKER"; exit 0'}; fi\nif [ "$1" = capabilities ] && [ "$2" = --agent ]; then printf '%s\\n' '{"schemaVersion":1,"id":"claude-code","label":"Claude Code","supportsMcp":true,"supportsHooks":true,"supportsHeadlessExec":true,"supportsReasoningLevel":true,"supportsReadOnly":true,"fullySupported":true}'; exit 0; fi\n${options.failPublishedSmoke ? 'case "$0" in */bin/*) exit 1;; esac\n' : ""}printf '%s\\n' 'forge614-${nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}'\n`,
     "utf8",
   );
   const pointer = Buffer.from(
@@ -75,7 +83,7 @@ function fakeRelease(version: string, options: { badHash?: boolean; failSmoke?: 
       install: {
         repository,
         minimumNodeVersion: options.minimumVersion ?? "22.19.0",
-        systems: [
+        systems: options.unsupportedSystem ? [] : [
           { os: "darwin", architectures: ["arm64", "x64"] },
           { os: "linux", architectures: ["arm64", "x64"] },
           { os: "windows", architectures: ["x64"] },
@@ -88,7 +96,8 @@ function fakeRelease(version: string, options: { badHash?: boolean; failSmoke?: 
       },
     }),
   );
-  const installer = readFileSync(join(root, "standard/templates/install.mjs"));
+  const installerSource = readFileSync(join(root, "standard/templates/install.mjs"));
+  const installer = options.badInstallerHash ? Buffer.concat([installerSource, Buffer.from("tampered")]) : installerSource;
   const rendered = renderNodeFiles(readTree(join(root, "standard/templates")), {
     pointer: { node: nodeName, install: { repository } },
     NODE_TITLE: nodeName,
@@ -111,7 +120,8 @@ function fakeRelease(version: string, options: { badHash?: boolean; failSmoke?: 
     ["install.sh", installSh],
     ["install.ps1", installPs1],
   ]) as Map<string, Buffer>;
-  const sums = Buffer.from(`${options.badHash ? badAssetSum : assetSum}${sum("forge614.node.json", pointer)}${sum("install.mjs", installer)}${sum("install.sh", installSh)}${sum("install.ps1", installPs1)}`);
+  const installerSum = options.badInstallerHash ? `${sum("install.mjs", installer)[0] === "0" ? "1" : "0"}${sum("install.mjs", installer).slice(1)}` : sum("install.mjs", installer);
+  const sums = Buffer.from(`${options.badHash ? badAssetSum : assetSum}${sum("forge614.node.json", pointer)}${installerSum}${sum("install.sh", installSh)}${sum("install.ps1", installPs1)}`);
   files.set("SHA256SUMS", sums);
   return { files, asset };
 }
@@ -157,7 +167,7 @@ async function fakeReleaseServer(): Promise<{ baseUrl: string; publish: typeof f
 }
 
 /** Run install.mjs with the real Node executable and an isolated Forge home. */
-async function runInstaller(home: string, baseUrl: string, args: string[] = [], overrides: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+async function runInstaller(home: string, baseUrl: string, args: string[] = [], overrides: Record<string, string> = {}, cwd = process.cwd()): Promise<{ code: number | null; stdout: string; stderr: string }> {
   if (!nodeBinary) throw new Error("Node.js is required for installer end-to-end tests");
   const script = join(root, "standard/templates/install.mjs");
   return await new Promise((resolve, reject) => {
@@ -171,6 +181,7 @@ async function runInstaller(home: string, baseUrl: string, args: string[] = [], 
         FORGE614_INSTALL_NODE: NODE,
         ...overrides,
       },
+      cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -188,8 +199,13 @@ async function runInstaller(home: string, baseUrl: string, args: string[] = [], 
 
 /** Run a gatekeeper process asynchronously and enforce a per-case timeout. */
 async function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = 20_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const isolatedHome = env.HOME || tempDir("forge614-command-home-");
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(command, args, {
+      env: { ...env, HOME: env.HOME ?? isolatedHome, FORGE614_HOME: env.FORGE614_HOME ?? join(isolatedHome, ".forge614") },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
     let stdout = "";
     let stderr = "";
     const timeout = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
@@ -264,6 +280,44 @@ installerCase("a platform archive resolves and installs from tar.gz or ZIP", asy
   expect(readFileSync(join(home, ".forge614", NODE, VERSION, launcher), "utf8")).toContain("forge614-demo 1.0.0");
 });
 
+installerCase("--archive installs a checksum verified local archive", async () => {
+  const server = await fakeReleaseServer();
+  const release = server.publish("1.0.0", { assetType: "binary-tar-gzip-or-zip" });
+  const home = tempDir("forge614-install-archive-option-");
+  const archive = join(home, release.asset);
+  writeFileSync(archive, release.files.get(release.asset)!);
+  const result = await runInstaller(home, server.baseUrl, ["--archive", archive]);
+  expect(result.code, result.stderr).toBe(0);
+  expect(readFileSync(join(home, ".forge614", NODE, ".active-version"), "utf8").trim()).toBe("1.0.0");
+});
+
+installerCase("tar archives reject parent traversal, absolute paths and symlinks", async () => {
+  const cases = [
+    { name: "nested/../escape", type: 48 },
+    { name: "/tmp/forge614-absolute-escape", type: 48 },
+    { name: "forge614-link", type: 50 },
+  ];
+  for (const entry of cases) {
+    const server = await fakeReleaseServer();
+    const release = server.publish("1.0.0", { assetType: "binary-tar-gzip-or-zip" });
+    const launcher = tarEntry("forge614-demo", Buffer.from("#!/bin/sh\necho 'forge614-demo 1.0.0'\n"), 48, false);
+    const unsafe = tarEntry(entry.name, Buffer.from("forge614-demo"), entry.type, false);
+    replaceAsset(release, gzipSync(Buffer.concat([launcher, unsafe, Buffer.alloc(1024)])));
+    const home = tempDir("forge614-install-unsafe-tar-");
+    const result = await runInstaller(home, server.baseUrl);
+    expect(result.code, entry.name).toBe(66);
+  }
+});
+
+installerCase("a system absent from install.systems returns 65", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { unsupportedSystem: true });
+  const home = tempDir("forge614-install-unsupported-system-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(65);
+  expect(existsSync(join(home, ".forge614", NODE))).toBe(false);
+});
+
 installerCase("the same version is a no-op unless --force is supplied", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-repeat-");
@@ -281,6 +335,18 @@ installerCase("the same version is a no-op unless --force is supplied", async ()
   expect(server.requests.get(assetName)).toBe((downloadsBefore ?? 0) + 1);
 });
 
+installerCase("--force on the active version publishes into a unique version directory", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-force-same-version-");
+  expect((await runInstaller(home, server.baseUrl)).code).toBe(0);
+  const nodeHome = join(home, ".forge614", NODE);
+  const activeVersionDir = join(nodeHome, VERSION);
+  const result = await runInstaller(home, server.baseUrl, ["--force"]);
+  expect(result.code, result.stderr).toBe(0);
+  expect(existsSync(activeVersionDir)).toBe(true);
+  expect(readdirSync(nodeHome).some((entry) => entry.startsWith(`${VERSION}.install-`))).toBe(true);
+});
+
 installerCase("an update activates the new version and retains the previous version", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-update-");
@@ -294,6 +360,7 @@ installerCase("an update activates the new version and retains the previous vers
   expect(readFileSync(join(nodeHome, ".active-version"), "utf8").trim()).toBe("1.1.0");
   expect(existsSync(join(nodeHome, "1.0.0"))).toBe(true);
   expect(existsSync(join(nodeHome, "1.1.0"))).toBe(true);
+  expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-")).length).toBe(0);
 });
 
 installerCase("a bad active checksum returns 66 before creating the node directory", async () => {
@@ -304,6 +371,20 @@ installerCase("a bad active checksum returns 66 before creating the node directo
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code).toBe(66);
   expect(existsSync(join(home, ".forge614", NODE))).toBe(false);
+});
+
+installerCase("an invalid requesting asset checksum does not install its dependencies", async () => {
+  const server = await fakeReleaseServer();
+  const shellRepo = "jotredev/forge614-shell";
+  server.publish("1.0.0", {}, shellRepo, "shell");
+  server.publish("1.0.0", {
+    badHash: true,
+    dependencies: [{ node: "shell", minimumVersion: "1.0.0", requiredCapabilities: [], compatibility: "version" }],
+  });
+  const home = tempDir("forge614-install-dependency-order-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(66);
+  expect(existsSync(join(home, ".forge614", "shell"))).toBe(false);
 });
 
 installerCase("a failing smoke test restores the previous version and removes the staged version", async () => {
@@ -320,25 +401,105 @@ installerCase("a failing smoke test restores the previous version and removes th
   expect(existsSync(join(nodeHome, "1.1.0"))).toBe(false);
 });
 
+installerCase("a published launcher smoke failure rolls back the first installation", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { failPublishedSmoke: true });
+  server.setLatest("1.0.0");
+  const home = tempDir("forge614-install-published-smoke-");
+  const result = await runInstaller(home, server.baseUrl);
+  const nodeHome = join(home, ".forge614", NODE);
+  expect(result.code).toBe(65);
+  expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
+  expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
+  expect(existsSync(join(nodeHome, VERSION))).toBe(false);
+});
+
+installerCase("smoke testing requires the exact node name and version output", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { wrongSmokeOutput: true });
+  const home = tempDir("forge614-install-wrong-smoke-output-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(65);
+  expect(existsSync(join(home, ".forge614", NODE, ".active-version"))).toBe(false);
+});
+
+installerCase("a PATH failure rolls back a first activation without an active pointer", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-path-rollback-");
+  mkdirSync(join(home, ".profile"));
+  const result = await runInstaller(home, server.baseUrl);
+  const nodeHome = join(home, ".forge614", NODE);
+  expect(result.code).toBe(65);
+  expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
+  expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
+  expect(existsSync(join(nodeHome, VERSION))).toBe(false);
+});
+
 installerCase("PATH modification is idempotent when enabled and absent when disabled", async () => {
   const enabled = await fakeReleaseServer();
   enabled.publish("1.0.0", { pathModify: true });
   const home = tempDir("forge614-install-path-");
-  expect((await runInstaller(home, enabled.baseUrl)).code).toBe(0);
-  const profile = process.platform === "win32"
-    ? join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1")
-    : join(home, ".profile");
+  expect((await runInstaller(home, enabled.baseUrl, [], { SHELL: "/bin/sh" })).code).toBe(0);
+  const profile = join(home, ".profile");
   expect(readFileSync(profile, "utf8").match(/>>> forge614-demo PATH >>>/g)?.length).toBe(1);
-  expect((await runInstaller(home, enabled.baseUrl, ["--force"])).code).toBe(0);
+  expect((await runInstaller(home, enabled.baseUrl, ["--force"], { SHELL: "/bin/sh" })).code).toBe(0);
   expect(readFileSync(profile, "utf8").match(/>>> forge614-demo PATH >>>/g)?.length).toBe(1);
 
   const disabled = await fakeReleaseServer();
   const otherHome = tempDir("forge614-install-no-path-");
   expect((await runInstaller(otherHome, disabled.baseUrl)).code).toBe(0);
-  const disabledProfile = process.platform === "win32"
-    ? join(otherHome, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1")
-    : join(otherHome, ".profile");
+  const disabledProfile = join(otherHome, ".profile");
   expect(existsSync(disabledProfile)).toBe(false);
+});
+
+installerCase("PATH creates only the selected profile, preserves symlinks and retires old markers", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-path-profile-");
+  const target = join(home, "zshrc-target");
+  writeFileSync(target, "# user profile\n", { mode: 0o644 });
+  symlinkSync(target, join(home, ".zshrc"));
+  writeFileSync(join(home, ".profile"), [
+    "# >>> forge614-engram PATH >>>", "export PATH=old", "# <<< forge614-engram PATH <<<",
+    "# >>> forge614-atlas PATH >>>", "export PATH=old", "# <<< forge614-atlas PATH <<<",
+    "# Forge614 Shell", "export PATH=old", "",
+  ].join("\n"));
+  const result = await runInstaller(home, server.baseUrl, [], { SHELL: "/bin/zsh" });
+  expect(result.code, result.stderr).toBe(0);
+  expect(lstatSync(join(home, ".zshrc")).isSymbolicLink()).toBe(true);
+  expect(readFileSync(target, "utf8")).toContain(">>> forge614-demo PATH >>>");
+  expect((lstatSync(target).mode & 0o777).toString(8)).toBe("644");
+  expect(existsSync(join(home, ".bash_profile"))).toBe(false);
+  const oldProfile = readFileSync(join(home, ".profile"), "utf8");
+  expect(oldProfile).not.toContain("forge614-engram PATH");
+  expect(oldProfile).not.toContain("forge614-atlas PATH");
+  expect(oldProfile).not.toContain("# Forge614 Shell");
+});
+
+installerCase("PATH creates one profile from SHELL when none exists", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-path-create-");
+  const result = await runInstaller(home, server.baseUrl, [], { SHELL: "/bin/zsh" });
+  expect(result.code, result.stderr).toBe(0);
+  expect(existsSync(join(home, ".zshrc"))).toBe(true);
+  expect(existsSync(join(home, ".bash_profile"))).toBe(false);
+  expect(existsSync(join(home, ".bashrc"))).toBe(false);
+  expect(existsSync(join(home, ".profile"))).toBe(false);
+});
+
+installerCase("PATH warns and skips profiles without HOME or USERPROFILE", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-no-home-");
+  const cwd = tempDir("forge614-install-no-home-cwd-");
+  const result = await runInstaller(home, server.baseUrl, [], {
+    HOME: "", USERPROFILE: "", FORGE614_HOME: join(home, "forge-home"), SHELL: "/bin/zsh",
+  }, cwd);
+  expect(result.code, result.stderr).toBe(0);
+  expect(result.stderr).toContain("no hay HOME ni USERPROFILE");
+  for (const profile of [".zshrc", ".bashrc", ".profile", ".bash_profile"]) expect(existsSync(join(cwd, profile))).toBe(false);
 });
 
 installerCase("a flat launcher is retained in a legacy folder during migration", async () => {
@@ -353,6 +514,33 @@ installerCase("a flat launcher is retained in a legacy folder during migration",
   const legacyDir = readdirSync(nodeHome).find((entry) => entry.startsWith("legacy-"));
   expect(legacyDir).toBeDefined();
   expect(existsSync(join(nodeHome, legacyDir ?? "", oldLauncher.split(/[\\/]/).at(-1) ?? ""))).toBe(true);
+});
+
+installerCase("an empty active-version file prevents flat-install migration", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-empty-active-pointer-");
+  const nodeHome = join(home, ".forge614", NODE);
+  mkdirSync(join(nodeHome, "bin"), { recursive: true });
+  writeFileSync(join(nodeHome, ".active-version"), "");
+  writeFileSync(join(nodeHome, "bin", "forge614-demo"), "#!/bin/sh\necho flat\n", { mode: 0o755 });
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+  expect(readdirSync(nodeHome).some((entry) => entry.startsWith("legacy-"))).toBe(false);
+  expect(readFileSync(join(nodeHome, ".active-version"), "utf8").trim()).toBe("1.0.0");
+});
+
+installerCase("a failed activation restores a flat legacy launcher", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-flat-rollback-");
+  const oldLauncher = join(home, ".forge614", NODE, "bin", "forge614-demo");
+  mkdirSync(join(home, ".forge614", NODE, "bin"), { recursive: true });
+  writeFileSync(oldLauncher, "#!/bin/sh\nprintf legacy\n", { mode: 0o755 });
+  mkdirSync(join(home, ".profile"));
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(65);
+  expect(readFileSync(oldLauncher, "utf8")).toContain("legacy");
+  expect(existsSync(join(home, ".forge614", NODE, ".active-version"))).toBe(false);
 });
 
 installerCase("--uninstall removes only the node home after its self-uninstall hook", async () => {
@@ -383,13 +571,13 @@ installerCase("empty and relative FORGE614_HOME values return 64", async () => {
 installerCase("messages honor FORGE614_LOCALE and the legacy locale fallback", async () => {
   const english = await fakeReleaseServer();
   const englishHome = tempDir("forge614-install-locale-en-");
-  const resultEn = await runInstaller(englishHome, english.baseUrl, [], { FORGE614_LOCALE: "en" });
+  const resultEn = await runInstaller(englishHome, english.baseUrl, [], { FORGE614_LOCALE: "en", FORGE614_SHELL_LOCALE: "" });
   expect(resultEn.code).toBe(0);
   expect(resultEn.stdout).toContain("was installed at");
 
   const legacy = await fakeReleaseServer();
   const legacyHome = tempDir("forge614-install-locale-legacy-");
-  const resultLegacy = await runInstaller(legacyHome, legacy.baseUrl, [], { FORGE614_SHELL_LOCALE: "en" });
+  const resultLegacy = await runInstaller(legacyHome, legacy.baseUrl, [], { FORGE614_LOCALE: "", FORGE614_SHELL_LOCALE: "en" });
   expect(resultLegacy.code).toBe(0);
   expect(resultLegacy.stdout).toContain("was installed at");
 });
@@ -406,6 +594,35 @@ installerCase("a missing dependency installs from its own verified release befor
   expect(result.code, result.stderr).toBe(0);
   expect(readFileSync(join(home, ".forge614", "shell", ".active-version"), "utf8").trim()).toBe("1.0.0");
   expect(readFileSync(join(home, ".forge614", NODE, ".active-version"), "utf8").trim()).toBe("1.0.0");
+});
+
+installerCase("dependency capabilities use the Engines CLI JSON schema", async () => {
+  const server = await fakeReleaseServer();
+  const enginesRepo = "jotredev/forge614-engines";
+  server.publish("1.0.0", {}, enginesRepo, "engines");
+  server.publish("1.0.0", {
+    dependencies: [{ node: "engines", minimumVersion: "1.0.0", requiredCapabilities: [{ agent: "claude-code", field: "supportsReadOnly" }], compatibility: "version-and-capabilities" }],
+  });
+  const home = tempDir("forge614-install-dependency-capabilities-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+  expect(readFileSync(join(home, ".forge614", "engines", ".active-version"), "utf8").trim()).toBe("1.0.0");
+});
+
+installerCase("a broken dependency launcher is treated as incompatible and repaired", async () => {
+  const server = await fakeReleaseServer();
+  const enginesRepo = "jotredev/forge614-engines";
+  server.publish("1.0.0", {}, enginesRepo, "engines");
+  server.publish("1.0.0", {
+    dependencies: [{ node: "engines", minimumVersion: "1.0.0", requiredCapabilities: [{ agent: "claude-code", field: "supportsReadOnly" }], compatibility: "version-and-capabilities" }],
+  });
+  const home = tempDir("forge614-install-broken-dependency-");
+  const broken = join(home, ".forge614", "engines", "bin", "forge614-engines");
+  mkdirSync(join(home, ".forge614", "engines", "bin"), { recursive: true });
+  symlinkSync(join(home, "missing-engine"), broken);
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+  expect(readFileSync(join(home, ".forge614", "engines", ".active-version"), "utf8").trim()).toBe("1.0.0");
 });
 
 installerCase("--help prints localized usage without contacting a release", async () => {
@@ -429,6 +646,32 @@ installerCase("a dependency asset with a bad checksum returns 66 without activat
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code).toBe(66);
   expect(existsSync(join(home, ".forge614", NODE))).toBe(false);
+});
+
+installerCase("a dependency installer with a bad checksum returns 66", async () => {
+  const server = await fakeReleaseServer();
+  const shellRepo = "jotredev/forge614-shell";
+  server.publish("1.0.0", { badInstallerHash: true }, shellRepo, "shell");
+  server.publish("1.0.0", {
+    dependencies: [{ node: "shell", minimumVersion: "1.0.0", requiredCapabilities: [], compatibility: "version" }],
+  });
+  const home = tempDir("forge614-install-dependency-installer-hash-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(66);
+  expect(existsSync(join(home, ".forge614", "shell"))).toBe(false);
+});
+
+installerCase("an installer with an altered gatekeeper checksum returns 66", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { badInstallerHash: true });
+  const home = tempDir("forge614-install-gatekeeper-hash-");
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script], {
+    ...process.env, HOME: home, FORGE614_HOME: join(home, ".forge614"), PATH: `${dirname(nodeBinary ?? "")}:${process.env.PATH ?? ""}`,
+    FORGE614_INSTALL_TEST_BASE_URL: server.baseUrl,
+  });
+  expect(result.code).toBe(66);
+  expect(existsSync(join(home, ".forge614"))).toBe(false);
 });
 
 installerCase("a dependency below the declared minimum returns 69 without activating the requester", async () => {
@@ -468,12 +711,142 @@ installerCase("POSIX gatekeeper verifies a local release and forwards arguments"
   expect(readFileSync(join(home, ".forge614", NODE, ".active-version"), "utf8").trim()).toBe("1.0.0");
 }, onWindows);
 
+installerCase("POSIX gatekeeper rejects a missing version value with 64", async () => {
+  const home = tempDir("forge614-gatekeeper-missing-version-");
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script, "--version"], { ...process.env, HOME: home, PATH: process.env.PATH ?? "" });
+  expect(result.code).toBe(64);
+});
+
+installerCase("POSIX gatekeeper rejects invalid version tags with 64", async () => {
+  const home = tempDir("forge614-gatekeeper-invalid-version-");
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script, "--version", "bad/tag"], { ...process.env, HOME: home, PATH: process.env.PATH ?? "" });
+  expect(result.code).toBe(64);
+});
+
+installerCase("the POSIX gatekeeper rejects altered install.mjs bytes with 66", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { badInstallerHash: true });
+  const home = tempDir("forge614-gatekeeper-installer-hash-");
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script, "--version", "1.0.0"], {
+    ...process.env, HOME: home, FORGE614_HOME: join(home, ".forge614"), FORGE614_INSTALL_TEST_BASE_URL: server.baseUrl,
+  });
+  expect(result.code).toBe(66);
+  expect(existsSync(join(home, ".forge614"))).toBe(false);
+});
+
+installerCase("the POSIX gatekeeper pins remote curl to HTTPS and cleans interrupt temporaries", () => {
+  const shell = readFileSync(join(root, "standard/templates/install.sh"), "utf8");
+  const installer = readFileSync(join(root, "standard/templates/install.mjs"), "utf8");
+  expect(shell).toContain("--proto '=https' --tlsv1.2");
+  expect(shell).toContain("trap 'exit 130' INT");
+  expect(shell).toContain(".install-XXXXXX");
+  expect(installer).toContain('process.once(signal,');
+  expect(installer).toContain('"SIGINT"');
+  expect(installer).toContain('"SIGTERM"');
+});
+
+installerCase("install.mjs rejects a non-SemVer version tag with 64", async () => {
+  const home = tempDir("forge614-install-invalid-version-");
+  const result = await runInstaller(home, "http://127.0.0.1:1", ["--version", "bad/tag"]);
+  expect(result.code).toBe(64);
+});
+
+installerCase("empty FORGE614_LOCALE falls back to the legacy locale", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-locale-empty-");
+  const result = await runInstaller(home, server.baseUrl, [], { FORGE614_LOCALE: "", FORGE614_SHELL_LOCALE: "en" });
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("was installed at");
+});
+
+installerCase("FORGE614_LOCALE takes precedence over the legacy locale", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-locale-precedence-");
+  const result = await runInstaller(home, server.baseUrl, [], { FORGE614_LOCALE: "es", FORGE614_SHELL_LOCALE: "en" });
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("quedó instalado");
+});
+
+installerCase("uninstall uses the downloaded node identity without release network access", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-uninstall-offline-");
+  const nodeHome = join(home, ".forge614", NODE);
+  mkdirSync(nodeHome, { recursive: true });
+  writeFileSync(join(nodeHome, ".active-version"), "1.0.0\n");
+  const before = server.requests.size;
+  const result = await runInstaller(home, server.baseUrl, ["--uninstall"]);
+  expect(result.code, result.stderr).toBe(0);
+  expect(server.requests.size).toBe(before);
+  expect(existsSync(nodeHome)).toBe(false);
+});
+
+installerCase("uninstall continues after a failing hook and removes an external launcher", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-uninstall-hook-failure-");
+  const externalBin = join(home, "external bin");
+  mkdirSync(externalBin);
+  const launcher = join(externalBin, "forge614-demo");
+  writeFileSync(launcher, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const profile = join(home, ".profile");
+  writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
+  const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
+    FORGE614_INSTALL_NODE: NODE, FORGE614_INSTALL_REPOSITORY: REPO,
+  });
+  expect(result.code).toBe(0);
+  expect(result.stderr).toContain("uninstall");
+  expect(existsSync(launcher)).toBe(false);
+  expect(readFileSync(profile, "utf8")).not.toContain("forge614-demo PATH");
+});
+
+installerCase("the PowerShell template includes a UTF-8 BOM for Windows PowerShell 5.1", () => {
+  const files = renderNodeFiles(readTree("standard/templates"), {
+    pointer: { node: NODE, install: { repository: REPO } }, NODE_TITLE: "Demo", STANDARD_VERSION: "1.2.0",
+  });
+  expect(Buffer.from(files["install.ps1"] ?? "").subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(true);
+});
+
+installerCase("the shell gatekeeper returns a nonzero install.mjs exit code unchanged", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-gatekeeper-forward-exit-");
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script, "--archive", join(home, "missing-archive")], {
+    ...process.env, HOME: home, FORGE614_HOME: join(home, ".forge614"), FORGE614_INSTALL_TEST_BASE_URL: server.baseUrl,
+  });
+  expect(result.code).toBe(66);
+});
+
+installerCase("the shell gatekeeper rejects simulated Node 22.18 with the full localized message", async () => {
+  const home = tempDir("forge614-gatekeeper-old-node-");
+  const bin = join(home, "fake-bin");
+  mkdirSync(bin);
+  const fakeNode = join(bin, "node");
+  writeFileSync(fakeNode, "#!/bin/sh\nif [ \"$1\" = --version ]; then echo v22.18.0; exit 0; fi\nexit 1\n", { mode: 0o755 });
+  const script = renderedShellGatekeeper(home);
+  const result = await runCommand("/bin/sh", [script], {
+    ...process.env, HOME: home, PATH: bin, FORGE614_LOCALE: "es", FORGE614_SHELL_LOCALE: "",
+  });
+  expect(result.code).toBe(65);
+  expect(result.stderr.trim()).toBe("Forge614 necesita Node.js 22.19.0 o posterior para instalarse. Instálalo con Homebrew: brew install node; en Linux, con el gestor de paquetes de tu distribución o desde https://nodejs.org; en Windows, con winget install OpenJS.NodeJS.LTS o desde https://nodejs.org. Después vuelve a ejecutar este instalador.");
+});
+
+installerCase("a Windows installation home with spaces reaches the launcher smoke test", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614 install with spaces ");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+  expect(existsSync(join(home, ".forge614", NODE, ".active-version"))).toBe(true);
+}, !onWindows);
+
 const powershell51 = Bun.which("powershell.exe");
 const pwsh = Bun.which("pwsh");
 const powershell51Reason = powershell51 === null ? " (skipped: Windows PowerShell 5.1 is unavailable)" : "";
 const pwshReason = pwsh === null ? " (skipped: pwsh is unavailable)" : "";
 
 test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 gatekeeper verifies a release and forwards arguments${powershell51Reason}`, async () => {
+  process.stdout.write("[installer-e2e] Windows PowerShell 5.1 gatekeeper verifies a release and forwards arguments\n");
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-gatekeeper-ps51-");
   const script = renderedPowerShellGatekeeper(home);
@@ -485,6 +858,7 @@ test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 gatekeeper verifies a
 }, 60_000);
 
 test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 gatekeeper without Node returns 65 without changing files${powershell51Reason}`, async () => {
+  process.stdout.write("[installer-e2e] Windows PowerShell 5.1 gatekeeper without Node returns 65 without changing files\n");
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-gatekeeper-ps51-no-node-");
   const script = renderedPowerShellGatekeeper(home);
@@ -492,11 +866,43 @@ test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 gatekeeper without No
     ...process.env, HOME: home, USERPROFILE: home, FORGE614_HOME: join(home, ".forge614"), PATH: "", FORGE614_INSTALL_TEST_BASE_URL: server.baseUrl,
   }, 60_000);
   expect(result.code).toBe(65);
-  expect(result.stderr).toContain("Forge614 necesita Node.js 22.19.0 o posterior");
+  expect(result.stderr.trim()).toBe("Forge614 necesita Node.js 22.19.0 o posterior para instalarse. Instálalo con Homebrew: brew install node; en Linux, con el gestor de paquetes de tu distribución o desde https://nodejs.org; en Windows, con winget install OpenJS.NodeJS.LTS o desde https://nodejs.org. Después vuelve a ejecutar este instalador.");
   expect(existsSync(join(home, ".forge614"))).toBe(false);
 }, 60_000);
 
+test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 rejects a test URL without an explicit port${powershell51Reason}`, async () => {
+  process.stdout.write("[installer-e2e] Windows PowerShell 5.1 rejects a test URL without an explicit port\n");
+  const home = tempDir("forge614-gatekeeper-ps51-port-");
+  const script = renderedPowerShellGatekeeper(home);
+  const result = await runCommand(powershell51 as string, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], {
+    ...process.env, HOME: home, USERPROFILE: home, FORGE614_INSTALL_TEST_BASE_URL: "http://127.0.0.1",
+  }, 60_000);
+  expect(result.code).toBe(64);
+}, 60_000);
+
+test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 rejects an invalid version tag with 64${powershell51Reason}`, async () => {
+  process.stdout.write("[installer-e2e] Windows PowerShell 5.1 rejects an invalid version tag with 64\n");
+  const home = tempDir("forge614-gatekeeper-ps51-invalid-tag-");
+  const script = renderedPowerShellGatekeeper(home);
+  const result = await runCommand(powershell51 as string, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "--version", "bad/tag"], {
+    ...process.env, HOME: home, USERPROFILE: home,
+  }, 60_000);
+  expect(result.code).toBe(64);
+}, 60_000);
+
+test.skipIf(powershell51 === null)(`Windows PowerShell 5.1 treats an empty current locale as unset${powershell51Reason}`, async () => {
+  process.stdout.write("[installer-e2e] Windows PowerShell 5.1 treats an empty current locale as unset\n");
+  const home = tempDir("forge614-gatekeeper-ps51-empty-locale-");
+  const script = renderedPowerShellGatekeeper(home);
+  const result = await runCommand(powershell51 as string, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], {
+    ...process.env, HOME: home, USERPROFILE: home, PATH: "", FORGE614_LOCALE: "", FORGE614_SHELL_LOCALE: "en",
+  }, 60_000);
+  expect(result.code).toBe(65);
+  expect(result.stderr.trim()).toBe("Forge614 requires Node.js 22.19.0 or later to install. Install it with Homebrew: brew install node; on Linux, use your distribution's package manager or https://nodejs.org; on Windows, use winget install OpenJS.NodeJS.LTS or https://nodejs.org. Then run this installer again.");
+}, 60_000);
+
 test.skipIf(pwsh === null)(`pwsh gatekeeper verifies a release and forwards arguments${pwshReason}`, async () => {
+  process.stdout.write("[installer-e2e] pwsh gatekeeper verifies a release and forwards arguments\n");
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-gatekeeper-pwsh-");
   const script = renderedPowerShellGatekeeper(home);
