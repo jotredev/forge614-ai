@@ -29,7 +29,7 @@ Si falta Node, imprime:
 | Español | `Forge614 necesita Node.js 22.19.0 o posterior para instalarse. Instálalo con Homebrew: brew install node; en Linux, con el gestor de paquetes de tu distribución o desde https://nodejs.org; en Windows, con winget install OpenJS.NodeJS.LTS o desde https://nodejs.org. Después vuelve a ejecutar este instalador.` |
 | English | `Forge614 requires Node.js 22.19.0 or later to install. Install it with Homebrew: brew install node; on Linux, use your distribution's package manager or https://nodejs.org; on Windows, use winget install OpenJS.NodeJS.LTS or https://nodejs.org. Then run this installer again.` |
 
-El portero de PowerShell usa .NET para SHA-256, compatible con Windows PowerShell 5.1; no depende de módulos ni de `Get-FileHash`. El manifiesto de la misma release protege contra descargas incompletas o alteradas en tránsito, pero no frente a una release comprometida.
+El portero de PowerShell usa .NET para SHA-256, compatible con Windows PowerShell 5.1; no depende de módulos ni de `Get-FileHash`. Cuando stdout o stderr están redirigidos, fija la codificación de salida de .NET a UTF-8 para conservar los acentos del mensaje. El manifiesto de la misma release protege contra descargas incompletas o alteradas en tránsito, pero no frente a una release comprometida.
 
 ### 2. Instalador común `install.mjs`
 
@@ -43,7 +43,7 @@ El archivo es idéntico byte a byte en los seis nodos y no incluye datos de nodo
 6. Para cada dependencia, comprueba compatibilidad. Si falta o no alcanza el mínimo, descarga su `install.mjs` y ficha, verifica ambas huellas con el `SHA256SUMS` de esa release y ejecuta su instalación. Si falla, no activa el nodo solicitante.
 7. Prepara el nodo en `FORGE614_HOME/<nodo>/.install-*`, dentro del mismo padre. Rechaza entradas de archivo absolutas, con `..` o enlaces simbólicos.
 8. Prueba el ejecutable preparado; exige código 0 y la salida exacta `forge614-<nodo> <versión>`.
-9. Migra una instalación plana solo cuando no existe `.active-version`, conservando la ruta canónica del lanzador (`forge614-engram:scripts/install.sh:180,213,324-333`; `forge614-atlas:scripts/install.sh:55-90,374-392`).
+9. Migra una instalación plana solo cuando no existe `.active-version`, conservando en `legacy-*` todos los lanzadores regulares `forge614-<nodo>`, `forge614-<nodo>.exe` y `forge614-<nodo>.cmd`. Esto evita que en Windows un `.exe` plano antiguo tenga precedencia sobre un `.cmd` nuevo por `PATHEXT` (`forge614-engram:scripts/install.sh:180,213,324-333`; `forge614-atlas:scripts/install.sh:55-90,374-392`).
 10. Publica el lanzador y actualiza PATH según la ficha. Reemplaza el enlace Unix con un `rename` atómico y conserva los perfiles y sus permisos. En `--force` de la versión activa prepara una carpeta de versión única.
 11. Escribe `.active-version` al final y prueba de nuevo el lanzador publicado. Si PATH, el puntero o esta segunda prueba fallan, restaura perfiles, lanzador, puntero y migración.
 
@@ -51,7 +51,7 @@ La única puerta de red para pruebas es `FORGE614_INSTALL_TEST_BASE_URL`, exclus
 
 No confirma `.active-version` hasta que el contenido y la prueba de humo estén listos. Una falla previa deja activa la versión anterior; una posterior revierte el puntero y elimina la carpeta nueva.
 
-El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; cada capacidad requerida es `{ "agent": "claude-code", "field": "supportsReadOnly" }`. El instalador ejecuta `<lanzador> capabilities --agent <agent>` y exige `schemaVersion === 1` y que el campo solicitado sea `true`. Engines registra esa orden en `forge614-engines:src/interfaces/cli/main.ts:169` y `src/interfaces/cli/commands.ts:63-66`; su JSON y campos están definidos en `forge614-engines:src/app/capabilities.ts:4-41`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.
+El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; cada capacidad requerida es `{ "agent": "claude-code", "field": "supportsReadOnly" }`. El instalador ejecuta `<lanzador> capabilities --agent <agent>` y exige `schemaVersion === 1` y que el campo solicitado sea `true`. Si la comprobación falla, el error 69 identifica la dependencia y la razón en español o inglés. Engines registra esa orden en `forge614-engines:src/interfaces/cli/main.ts:169` y `src/interfaces/cli/commands.ts:63-66`; su JSON y campos están definidos en `forge614-engines:src/app/capabilities.ts:4-41`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.
 
 ### 3. Bloque `install` de `forge614.node.json`
 

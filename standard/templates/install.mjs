@@ -263,7 +263,7 @@ function run(command, args, options = {}) {
   });
 }
 
-/** Check a dependency's installed version and required capabilities. */
+/** Check a dependency's installed version and required capabilities, including a diagnostic reason. */
 async function dependencyCompatible(dependency, home) {
   const dir = join(home, dependency.node);
   const candidates = [`forge614-${dependency.node}`, `forge614-${dependency.node}.exe`, `forge614-${dependency.node}.cmd`];
@@ -275,39 +275,60 @@ async function dependencyCompatible(dependency, home) {
       break;
     } catch {}
   }
-  if (!launcher) return false;
+  if (!launcher) return { compatible: false, reason: "launcher-missing" };
   const version = await installedVersion(launcher);
-  if (!version) return false;
-  if (dependency.minimumVersion && compareVersions(version, dependency.minimumVersion) < 0) return false;
+  if (!version) return { compatible: false, reason: "version-unavailable" };
+  if (dependency.minimumVersion && compareVersions(version, dependency.minimumVersion) < 0) return { compatible: false, reason: "version-below-minimum" };
   if (Array.isArray(dependency.requiredCapabilities) && dependency.requiredCapabilities.length > 0) {
     for (const requirement of dependency.requiredCapabilities) {
-      if (!requirement || typeof requirement.agent !== "string" || typeof requirement.field !== "string") return false;
+      if (!requirement || typeof requirement.agent !== "string" || typeof requirement.field !== "string") return { compatible: false, reason: "invalid-capability-requirement" };
     }
     const agents = [...new Set(dependency.requiredCapabilities.map((requirement) => requirement.agent))];
     for (const agent of agents) {
       const result = await run(launcher, ["capabilities", "--agent", agent], { allowFailure: true });
-      if (result.code !== 0) return false;
+      if (result.code !== 0) return { compatible: false, reason: "capabilities-command-failed" };
       try {
         const capabilities = JSON.parse(result.stdout);
-        if (capabilities.schemaVersion !== 1 || !dependency.requiredCapabilities
-          .filter((requirement) => requirement.agent === agent)
-          .every((requirement) => capabilities[requirement.field] === true)) return false;
+        if (capabilities.schemaVersion !== 1) return { compatible: false, reason: "capabilities-schema-unsupported" };
+        const missing = dependency.requiredCapabilities
+          .filter((requirement) => requirement.agent === agent && capabilities[requirement.field] !== true)
+          .map((requirement) => requirement.field);
+        if (missing.length > 0) return { compatible: false, reason: "capability-missing", fields: missing };
       } catch {
-        return false;
+        return { compatible: false, reason: "capabilities-invalid-json" };
       }
     }
   }
-  return true;
+  return { compatible: true };
+}
+
+/** Describe why a dependency failed compatibility in the selected language. */
+function dependencyDiagnostic(dependency, result) {
+  const subject = `dependency ${dependency.node}`;
+  const subjectEs = `dependencia ${dependency.node}`;
+  const field = result.fields?.join(", ");
+  const reason = {
+    "launcher-missing": ["no se encontró el lanzador instalado", "installed launcher was not found"],
+    "version-unavailable": ["no se pudo leer la versión", "version could not be read"],
+    "version-below-minimum": ["la versión instalada está debajo del mínimo", "installed version is below the minimum"],
+    "invalid-capability-requirement": ["la ficha pide una capacidad inválida", "the pointer requests an invalid capability"],
+    "capabilities-command-failed": ["falló `capabilities --agent`", "`capabilities --agent` failed"],
+    "capabilities-invalid-json": ["la salida de capabilities no es JSON válido", "capabilities output is not valid JSON"],
+    "capabilities-schema-unsupported": ["el esquema de capabilities no es compatible", "capabilities schema is unsupported"],
+    "capability-missing": [`supports ${field} no es true`, `supports ${field} is not true`],
+    "installation-failed": [`la instalación terminó con código ${result.exitCode}`, `installation exited with code ${result.exitCode}`],
+  }[result.reason] ?? ["no cumple el contrato", "does not meet the contract"];
+  return locale() === "es" ? `${subjectEs}: ${reason[0]}.` : `${subject}: ${reason[1]}.`;
 }
 
 /** Download and run a dependency's verified common installer if it is incompatible. */
 async function ensureDependencies(install, home, testBase) {
   if (install.dependencies.length > 0) await mkdir(home, { recursive: true });
   for (const dependency of install.dependencies) {
-    if (await dependencyCompatible(dependency, home)) continue;
+    if ((await dependencyCompatible(dependency, home)).compatible) continue;
     if (dependency.compatibility === "installed" && !dependency.minimumVersion && !dependency.requiredCapabilities?.length) {
       // An absent node still needs its release metadata, fetched below.
-    } else if (dependency.minimumVersion && !dependency.requiredCapabilities?.length && await dependencyCompatible(dependency, home)) continue;
+    } else if (dependency.minimumVersion && !dependency.requiredCapabilities?.length && (await dependencyCompatible(dependency, home)).compatible) continue;
     const repository = `jotredev/forge614-${dependency.node}`;
     const dependencyTag = await latestTag(repository, testBase);
     const sums = await download(assetUrl(repository, dependencyTag, "SHA256SUMS", testBase));
@@ -324,12 +345,17 @@ async function ensureDependencies(install, home, testBase) {
         allowFailure: true,
       });
       if (child.code === EXIT.DOWNLOAD) throw new InstallerError(EXIT.DOWNLOAD, child.stderr || `dependency ${dependency.node} download failed`);
-      if (child.code !== 0 || !(await dependencyCompatible(dependency, home))) {
-        throw new InstallerError(EXIT.DEPENDENCY, `dependency ${dependency.node} is incompatible`);
+      const compatibility = await dependencyCompatible(dependency, home);
+      if (child.code !== 0 || !compatibility.compatible) {
+        throw new InstallerError(EXIT.DEPENDENCY, compatibility.compatible
+          ? dependencyDiagnostic(dependency, { reason: "installation-failed", exitCode: child.code })
+          : dependencyDiagnostic(dependency, compatibility));
       }
     } catch (error) {
       if (error instanceof InstallerError) throw error;
-      throw new InstallerError(EXIT.DEPENDENCY, `dependency ${dependency.node} could not be installed`);
+      throw new InstallerError(EXIT.DEPENDENCY, locale() === "es"
+        ? `dependencia ${dependency.node}: no se pudo completar la instalación.`
+        : `dependency ${dependency.node}: installation could not be completed.`);
     } finally {
       await rm(temp, { force: true });
     }
@@ -535,15 +561,29 @@ async function findFile(directory, names) {
 }
 
 /** Move a regular flat launcher to a retained legacy folder only before versioned activation. */
-async function migrateFlatInstall(nodeHome, launcher, hasActiveVersion) {
-  if (hasActiveVersion || !(await pathExists(launcher))) return undefined;
-  const info = await lstat(launcher);
-  if (info.isSymbolicLink()) return undefined;
-  const legacyDir = join(nodeHome, `legacy-${Date.now()}-${randomUUID()}`);
-  await mkdir(legacyDir, { recursive: true });
-  const legacyLauncher = join(legacyDir, info.isFile() ? launcher.split(/[\\/]/).at(-1) : "launcher");
-  await rename(launcher, legacyLauncher);
-  return { launcher, legacyLauncher };
+async function migrateFlatInstall(nodeHome, launchers, hasActiveVersion) {
+  if (hasActiveVersion) return [];
+  const migrations = [];
+  let legacyDir;
+  try {
+    for (const launcher of launchers) {
+      if (!(await pathExists(launcher))) continue;
+      const info = await lstat(launcher);
+      if (info.isSymbolicLink() || !info.isFile()) continue;
+      legacyDir ??= join(nodeHome, `legacy-${Date.now()}-${randomUUID()}`);
+      await mkdir(legacyDir, { recursive: true });
+      const legacyLauncher = join(legacyDir, launcher.split(/[\\/]/).at(-1) ?? "launcher");
+      await rename(launcher, legacyLauncher);
+      migrations.push({ launcher, legacyLauncher });
+    }
+  } catch (error) {
+    for (const migration of migrations) {
+      await rename(migration.legacyLauncher, migration.launcher).catch(() => {});
+    }
+    if (legacyDir) await rm(legacyDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+  return migrations;
 }
 
 /** Atomically replace the Unix launcher from a temporary sibling and handle cross-device fallback. */
@@ -594,11 +634,14 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
   }
   await mkdir(nodeHome, { recursive: true });
   await mkdir(binDir, { recursive: true });
-  let migration;
+  let migrations = [];
   let pathSnapshots = [];
   let pointerWritten = false;
   try {
-    migration = await migrateFlatInstall(nodeHome, join(nodeHome, "bin", launcherName), hadActivePointer);
+    const flatLaunchers = platform.os === "windows"
+      ? ["", ".exe", ".cmd"].map((extension) => join(nodeHome, "bin", `forge614-${nodeName}${extension}`))
+      : [join(nodeHome, "bin", `forge614-${nodeName}`)];
+    migrations = await migrateFlatInstall(nodeHome, flatLaunchers, hadActivePointer);
     if (versionBackup) await rename(versionDir, versionBackup);
     await rename(stagedDir, publishDir);
     const relativeTarget = stagedLauncher.slice(stagedDir.length + 1);
@@ -634,10 +677,10 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     } else if (launcherBackup && await pathExists(launcherBackup)) {
       await rename(launcherBackup, launcher).catch(() => {});
     }
-    if (migration && await pathExists(migration.legacyLauncher)) {
-      await rename(migration.legacyLauncher, migration.launcher).catch(() => {});
-      await rm(dirname(migration.legacyLauncher), { recursive: true, force: true }).catch(() => {});
+    for (const migration of migrations) {
+      if (await pathExists(migration.legacyLauncher)) await rename(migration.legacyLauncher, migration.launcher).catch(() => {});
     }
+    for (const migration of migrations) await rm(dirname(migration.legacyLauncher), { recursive: true, force: true }).catch(() => {});
     await rm(publishDir, { recursive: true, force: true }).catch(() => {});
     if (versionBackup && await pathExists(versionBackup)) await rename(versionBackup, versionDir).catch(() => {});
     throw error;
@@ -725,11 +768,11 @@ async function uninstallNode(node, home, binDirOverride) {
 function reportError(error) {
   const known = error instanceof InstallerError ? error : new InstallerError(EXIT.REQUIREMENT, error instanceof Error ? error.message : "installation failed");
   let text = known.message;
-  if (locale() === "es" && text !== "INVALID_FORGE614_HOME") {
+  if (locale() === "es" && text !== "INVALID_FORGE614_HOME" && known.code !== EXIT.DEPENDENCY) {
     text = known.code === EXIT.USAGE ? "Uso inválido del instalador Forge614." :
       known.code === EXIT.REQUIREMENT ? "No se cumple un requisito local para instalar Forge614." :
         known.code === EXIT.DOWNLOAD ? "No se pudo descargar o verificar la release de Forge614." :
-          known.code === EXIT.DEPENDENCY ? "Una dependencia de Forge614 no es compatible." : text;
+          text;
   }
   process.stderr.write(`${text}\n`);
   return known.code;
