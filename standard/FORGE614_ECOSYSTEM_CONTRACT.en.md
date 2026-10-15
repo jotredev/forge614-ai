@@ -1,7 +1,7 @@
 # Forge614 Ecosystem Contract
 
 > **Status:** Contract v2 — approved product direction; supersedes v1 copies; distributed by pointer (`forge614.node.json`), no longer copied by hand.
-> **Version:** 2.0.0
+> **Version:** 2.0.1
 > **Purpose:** Keep independent projects coordinated without one silently taking on another's responsibility.
 
 ## 1. The product hierarchy
@@ -166,7 +166,7 @@ All products live under one shared directory, but each owns only its own:
 |---|---|
 | `forge614-shell` | Engines |
 | `forge614-engram` | Shell, Engines |
-| `forge614-atlas` | Engram, Engines, Shell (+ Workers when it runs tasks) |
+| `forge614-atlas` | Engram and Workers; checks that Engines is compatible but does not install it |
 | `forge614-hub` | Engines |
 | `forge614-sentinel` | — (deterministic verification does not depend on another product) |
 | `forge614-ai` | All products and implementation packages (meta-package) |
