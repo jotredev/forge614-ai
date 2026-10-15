@@ -270,6 +270,15 @@
       "date": "2026-09-27",
       "session": "forge614-ai-orquestador-2026-09-27-engram-1-8-0",
       "file": "0030-engram-1-8-0-la-misma-memoria-en-otra-mac.md"
+    },
+    {
+      "number": "0031",
+      "slug": "instalador-unico-install-mjs",
+      "title": "Instalador único `install.mjs`",
+      "status": "aceptada",
+      "date": "2026-10-15",
+      "session": "forge614-ai-2026-10-15-t45-orquestador",
+      "file": "0031-instalador-unico-install-mjs.md"
     }
   ]
 }
