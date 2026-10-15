@@ -1,7 +1,7 @@
 # Contrato del Ecosistema Forge614
 
 > **Estado:** Contrato v2 — dirección de producto aprobada; sustituye a las copias divergentes de la v1; se distribuye por puntero (`forge614.node.json`), ya no se copia a mano.
-> **Versión:** 2.0.0
+> **Versión:** 2.0.1
 > **Propósito:** Mantener coordinados a proyectos independientes sin que uno asuma en silencio la responsabilidad de otro.
 
 ## 1. La jerarquía del producto
@@ -166,7 +166,7 @@ Todos los productos viven bajo un mismo directorio compartido, pero cada uno pos
 |---|---|
 | `forge614-shell` | Engines |
 | `forge614-engram` | Shell, Engines |
-| `forge614-atlas` | Engram, Engines, Shell (+ Workers cuando ejecuta tareas) |
+| `forge614-atlas` | Engram y Workers; comprueba que Engines sea compatible, pero no lo instala |
 | `forge614-hub` | Engines |
 | `forge614-sentinel` | — (la verificación determinista no depende de otro producto) |
 | `forge614-ai` | Todos los productos y paquetes de implementación (meta-paquete) |
