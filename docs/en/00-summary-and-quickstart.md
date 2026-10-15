@@ -6,7 +6,7 @@
 
 `forge614-ai` is the core of the Forge614 ecosystem, a family of tools for working with AI assistants. Each tool is a **node**: its own repository with a public contract. Today this repository publishes three things:
 
-- The **Node Standard** (`standard/STANDARD.md`, version `1.1.2`): the norm every node complies with. Explained in document 01.
+- The **Node Standard** (`standard/STANDARD.md`, version `1.2.0`): the norm every node complies with. Explained in document 01.
 - The **rules** as packages and the **pack** `forge614-pack-ecosystem-node` that groups them. Document 02.
 - The **templates** from which a node generates its installers, workflows and contracts, and the **verifier** (`bun run verify`) that checks the standard against this very repository. Documents 03 and 04.
 
@@ -19,7 +19,7 @@ Every command runs with Bun (the ecosystem's package manager and development run
 | Command | What it does | Document |
 | --- | --- | --- |
 | `bun run verify [--locale es\|en] [--today YYYY-MM-DD]` | typecheck, tests, drift checks and standard validators over this repository | 04 |
-| `bun run standard:render --node <name> --out <dir> [--repo owner/repo] [--title Title]` | generates from `standard/templates/` the files a node adopts | 03 |
+| `bun run standard:render --out <dir> [--pointer <forge614.node.json>] [--title Title]` | generates files from `standard/templates/` for the node described by its pointer | 03 |
 | `bun run standard:pack [--update-pointer] [--check]` | packs `standard/` reproducibly into `dist/` and computes its fingerprint | 04 |
 | `bun run workflows:check` | validates the workflows in `.github/workflows/` against the standard | 05 |
 | `bun run workflows:run [--workflow <name>]` | runs a workflow's steps locally (`verify` by default) | 05 |

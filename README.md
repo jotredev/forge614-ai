@@ -16,7 +16,7 @@ Piensa en el reglamento de un taller: una sola copia en la pared, y cada estaci√
 ```bash
 bun install --frozen-lockfile
 bun run verify              # typecheck + tests + validadores del est√°ndar sobre este repo
-bun run standard:render --node engram --out /tmp/engram-files
+bun run standard:render --out /tmp/engram-files --pointer ../forge614-engram/forge614.node.json
 bun run standard:pack       # dist/standard-<VERSION>.tar.gz + SHA256SUMS
 ```
 

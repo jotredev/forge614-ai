@@ -7,7 +7,7 @@ const DEFAULT_IGNORE = ["node_modules", "dist", ".git", ".superpowers", ".claude
 // Extensions treated as text. A file with no extension (or a dotfile such as
 // `.gitignore`) is treated as text too, so tooling artifacts without a suffix
 // (e.g. `hooks/pre-push`) are still readable as part of the tree.
-const TEXT_EXTENSIONS = new Set(["md", "json", "ts", "yml", "yaml", "sh", "ps1", "txt"]);
+const TEXT_EXTENSIONS = new Set(["md", "json", "ts", "mjs", "yml", "yaml", "sh", "ps1", "txt"]);
 
 function isTextFile(name: string): boolean {
   const dot = name.lastIndexOf(".");
