@@ -227,6 +227,11 @@ Su trabajo: decidir qué analizar, con qué nivel de profundidad, y qué modelo/
 tarea. No le importa cómo se invoca el motor por dentro (eso es de Engines) ni cómo se aísla el
 proceso (eso es de Workers).
 
+- [ ] El motor nuevo declara `supportsReadOnly` en las capacidades que Engines publica y acepta
+      `--read-only`; si no puede garantizarlo, Atlas rechaza el lanzamiento con
+      `READ_ONLY_UNSUPPORTED`. Confirmar el campo en `forge614-engines:src/app/capabilities.ts:16,35`
+      y el rechazo en `forge614-atlas:src/modules/cli/requirements.ts:84-85`.
+
 **Validaciones a investigar para un agente nuevo:**
 
 - [ ] ¿Qué modelo(s) de este agente corresponden a cada nivel de la tabla ya fija de Atlas
