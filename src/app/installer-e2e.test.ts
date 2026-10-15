@@ -819,22 +819,31 @@ installerCase("uninstall uses the downloaded node identity without release netwo
   expect(existsSync(nodeHome)).toBe(false);
 });
 
-installerCase("uninstall continues after a failing hook and removes an external launcher", async () => {
-  const server = await fakeReleaseServer();
-  const home = tempDir("forge614-install-uninstall-hook-failure-");
-  const externalBin = join(home, "external bin");
-  mkdirSync(externalBin);
-  const launcher = join(externalBin, "forge614-demo");
-  writeFileSync(launcher, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'forge614-demo 1.0.0\\n'; exit 0; fi\nexit 1\n", { mode: 0o755 });
-  const profile = join(home, ".profile");
-  writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
-  const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
-    FORGE614_INSTALL_NODE: NODE, FORGE614_INSTALL_REPOSITORY: REPO,
-  });
-  expect(result.code).toBe(0);
-  expect(result.stderr).toContain("uninstall");
-  expect(existsSync(launcher)).toBe(false);
-  expect(readFileSync(profile, "utf8")).not.toContain("forge614-demo PATH");
+installerCase("uninstall continues after a failing hook in both locales and removes an external launcher", async () => {
+  for (const { locale, warning } of [
+    { locale: "es", warning: "Aviso: falló forge614-demo uninstall --self; se sigue con la limpieza del instalador." },
+    { locale: "en", warning: "Warning: forge614-demo uninstall --self failed; continuing with installer cleanup." },
+  ]) {
+    const server = await fakeReleaseServer();
+    const home = tempDir(`forge614-install-uninstall-hook-failure-${locale}-`);
+    const externalBin = join(home, "external bin");
+    mkdirSync(externalBin);
+    const launcher = join(externalBin, `forge614-demo${onWindows ? ".cmd" : ""}`);
+    if (onWindows) {
+      writeFileSync(launcher, "@echo off\r\nif \"%1\"==\"--version\" (echo forge614-demo 1.0.0& exit /b 0)\r\nexit /b 1\r\n");
+    } else {
+      writeFileSync(launcher, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'forge614-demo 1.0.0\\n'; exit 0; fi\nexit 1\n", { mode: 0o755 });
+    }
+    const profile = join(home, ".profile");
+    writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
+    const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
+      FORGE614_INSTALL_NODE: NODE, FORGE614_INSTALL_REPOSITORY: REPO, FORGE614_LOCALE: locale,
+    });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stderr).toContain(warning);
+    expect(existsSync(launcher)).toBe(false);
+    expect(readFileSync(profile, "utf8")).not.toContain("forge614-demo PATH");
+  }
 });
 
 installerCase("the PowerShell template includes a UTF-8 BOM for Windows PowerShell 5.1", () => {
