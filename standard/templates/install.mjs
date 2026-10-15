@@ -263,21 +263,32 @@ function run(command, args, options = {}) {
   });
 }
 
+/** Find a working launcher for the active version, then the system's stable launcher names. */
+async function findLauncher(nodeHome, node, platform, binDir = join(nodeHome, "bin")) {
+  const names = platform.os === "windows"
+    ? [`forge614-${node}.exe`, `forge614-${node}.cmd`]
+    : [`forge614-${node}`];
+  const activeVersion = await readFile(join(nodeHome, ".active-version"), "utf8").then((value) => value.trim()).catch(() => "");
+  const validVersion = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(activeVersion);
+  const directories = validVersion
+    ? [join(nodeHome, activeVersion, "bin"), binDir]
+    : [binDir];
+  for (const directory of directories) {
+    for (const name of names) {
+      const launcher = join(directory, name);
+      if (!(await pathExists(launcher))) continue;
+      const version = await installedVersion(launcher);
+      if (version) return { launcher, version };
+    }
+  }
+  return undefined;
+}
+
 /** Check a dependency's installed version and required capabilities, including a diagnostic reason. */
 async function dependencyCompatible(dependency, home) {
-  const dir = join(home, dependency.node);
-  const candidates = [`forge614-${dependency.node}`, `forge614-${dependency.node}.exe`, `forge614-${dependency.node}.cmd`];
-  let launcher;
-  for (const candidate of candidates) {
-    try {
-      await lstat(join(dir, "bin", candidate));
-      launcher = join(dir, "bin", candidate);
-      break;
-    } catch {}
-  }
-  if (!launcher) return { compatible: false, reason: "launcher-missing" };
-  const version = await installedVersion(launcher);
-  if (!version) return { compatible: false, reason: "version-unavailable" };
+  const found = await findLauncher(join(home, dependency.node), dependency.node, currentPlatform());
+  if (!found) return { compatible: false, reason: "launcher-missing" };
+  const { launcher, version } = found;
   if (dependency.minimumVersion && compareVersions(version, dependency.minimumVersion) < 0) return { compatible: false, reason: "version-below-minimum" };
   if (Array.isArray(dependency.requiredCapabilities) && dependency.requiredCapabilities.length > 0) {
     for (const requirement of dependency.requiredCapabilities) {
@@ -560,7 +571,7 @@ async function findFile(directory, names) {
   return undefined;
 }
 
-/** Move a regular flat launcher to a retained legacy folder only before versioned activation. */
+/** Move every flat launcher entry, including broken symbolic links, to a retained legacy folder. */
 async function migrateFlatInstall(nodeHome, launchers, hasActiveVersion) {
   if (hasActiveVersion) return [];
   const migrations = [];
@@ -568,8 +579,6 @@ async function migrateFlatInstall(nodeHome, launchers, hasActiveVersion) {
   try {
     for (const launcher of launchers) {
       if (!(await pathExists(launcher))) continue;
-      const info = await lstat(launcher);
-      if (info.isSymbolicLink() || !info.isFile()) continue;
       legacyDir ??= join(nodeHome, `legacy-${Date.now()}-${randomUUID()}`);
       await mkdir(legacyDir, { recursive: true });
       const legacyLauncher = join(legacyDir, launcher.split(/[\\/]/).at(-1) ?? "launcher");
@@ -748,15 +757,15 @@ async function main(argv) {
 async function uninstallNode(node, home, binDirOverride) {
   const nodeHome = join(home, node);
   const binDir = binDirOverride ? resolve(binDirOverride) : join(nodeHome, "bin");
-  const launcherCandidates = [`forge614-${node}`, `forge614-${node}.exe`, `forge614-${node}.cmd`];
-  for (const name of launcherCandidates) {
-    const launcher = join(binDir, name);
-    if (!(await pathExists(launcher))) continue;
-    const result = await run(launcher, ["uninstall", "--self"], { allowFailure: true });
-    if (result.code !== 0) process.stderr.write(`Warning: forge614-${node} uninstall --self failed; continuing with installer cleanup.\n`);
-    break;
-  }
   const platform = currentPlatform();
+  const launcherCandidates = platform.os === "windows"
+    ? [`forge614-${node}.exe`, `forge614-${node}.cmd`]
+    : [`forge614-${node}`];
+  const found = await findLauncher(nodeHome, node, platform, binDir);
+  if (found) {
+    const result = await run(found.launcher, ["uninstall", "--self"], { allowFailure: true });
+    if (result.code !== 0) process.stderr.write(`Warning: forge614-${node} uninstall --self failed; continuing with installer cleanup.\n`);
+  }
   await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
   if (binDirOverride) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
   await rm(nodeHome, { recursive: true, force: true });
