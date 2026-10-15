@@ -70,7 +70,8 @@ Repo: `forge614-atlas`.
 
 | Qué | Dónde |
 |---|---|
-| Modelos de `opencode` por nivel (ligero/estándar/profundo) y si acepta razonamiento | hoy `src/.../task-config.ts`; con el Hub, la política de modelos (`forge614-policy-*`) |
+| Modelos de `opencode` por nivel (ligero/estándar/profundo) y si acepta razonamiento | hoy `src/modules/cli/task-config.ts` (`MODEL_TABLE`) de forge614-atlas; con el Hub, la política de modelos (`forge614-policy-*`) |
+| Solo lectura de los Workers que lanza Atlas | El motor declara `supportsReadOnly` y acepta `--read-only`; si no puede garantizarlo, Atlas rechaza el lanzamiento con `READ_ONLY_UNSUPPORTED` |
 | Confirmar que aparece como opción sin cambios de código en el selector | evidencia |
 
 **Puerta:** `forge614-atlas init --engine opencode` produce un plan válido y una corrida corta real escribe en Engram. Revisión. Release.

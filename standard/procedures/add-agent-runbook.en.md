@@ -70,7 +70,8 @@ Repository: `forge614-atlas`.
 
 | What | Where |
 |---|---|
-| `opencode` models per tier (light/standard/deep) and whether it accepts reasoning | today `src/.../task-config.ts`; with the Hub, the model policy (`forge614-policy-*`) |
+| `opencode` models per tier (light/standard/deep) and whether it accepts reasoning | today `src/modules/cli/task-config.ts` (`MODEL_TABLE`) in forge614-atlas; with the Hub, the model policy (`forge614-policy-*`) |
+| Read-only execution for Workers launched by Atlas | The engine declares `supportsReadOnly` and accepts `--read-only`; Atlas rejects the launch with `READ_ONLY_UNSUPPORTED` when it cannot guarantee the lock |
 | Confirm it appears as an option with no code changes in the selector | evidence |
 
 **Gate:** `forge614-atlas init --engine opencode` produces a valid plan and a short real run writes to Engram. Review. Release.
