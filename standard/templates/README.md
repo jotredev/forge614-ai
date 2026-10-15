@@ -1,5 +1,7 @@
 # {{NODE_TITLE}} (`forge614-{{NODE_NAME}}`)
 
+Las plantillas del instalador cambian en Standard 1.2.0 según el acta [0031](../../docs/decisions/0031-instalador-unico-install-mjs.md).
+
 > Analogía en una frase: <completar>.
 
 ## Qué es

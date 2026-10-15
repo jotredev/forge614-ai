@@ -1,4 +1,4 @@
-# Forge614 Node Standard — version 1.1.3
+# Forge614 Node Standard — version 1.2.0
 
 > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
 
@@ -48,7 +48,7 @@
 - TypeScript `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. No `any`, no `@ts-ignore`, no `as` over external data.
 - Bun as the development package manager and runner; `bun.lock` as the only lockfile; `bun install --frozen-lockfile` in CI.
 - **Zod at every boundary**: CLI arguments, stdin, configuration files, responses from other nodes, MCP payloads, network responses. `.strict()` schemas; unknown fields are an error. Inside the boundary, everything is typed and trusted.
-- Distribution runtime: compiled binary (`bun build --compile`) per platform. A node that today requires Node at runtime (Shell) documents the exception in its contract with a retirement date.
+- Distribution runtime: compiled binary (`bun build --compile`) per platform. Node 22.19+ is required to install every node; each node documents its runtime requirement separately in its contract (record 0031).
 
 ## 4. Machine contracts
 
@@ -58,7 +58,8 @@ Single convention (record 0013): it changes the format Shell used to read from E
 - All errors go to **stderr** as `{ "schemaVersion": n, "code": "STABLE_CODE", "error": "message for people in the configured language" }`, with no raw paths, no stack traces, no secrets.
 - Exit codes: `0` success; `1` error; `2` invalid input; `75` recoverable pause (quota); others only if the node's contract documents them.
 - Event streams: NDJSON on stdout, one object per line, each with `schemaVersion` and `event`; a terminal event is guaranteed.
-- `--help` and `--version` always available and never blocking.
+- `--version` prints `forge614-<node> X.Y.Z`; `--version --json` prints `{"schemaVersion":1,"name":"forge614-<node>","version":"X.Y.Z"}`. Both and `--help` write to stdout and exit 0; errors go to stderr in the machine error format (record 0031).
+- `<node> update` writes its JSON result with `schemaVersion: 1`, `updated`, `previousVersion` and `installedVersion` to stdout; `<node> uninstall` and `<node> uninstall --self` write the JSON results defined in record 0031 to stdout. CLI errors go to stderr; exit codes are 0 on success, 1 on error and 2 on invalid input (record 0031).
 - Incompatible changes bump `schemaVersion`; the consumer rejects versions it does not know with `SCHEMA_UNSUPPORTED`.
 - The `code` is a stable identifier in `UPPERCASE_WITH_UNDERSCORES` (regex `^[A-Z][A-Z0-9_]+$`), listed in the node's `CONTRACT.md`. Nodes with a human interface derive the text from the same `code` through a typed catalog per language (8).
 
@@ -82,15 +83,19 @@ They are named by problem. An abstraction that does not answer a listed problem 
 ## 6. Installation
 
 - **Three operating systems, always** (record 0018): every node publishes binaries and an installer for macOS (arm64 and x64), Linux (arm64 and x64) and Windows (x64). There are no exceptions and no "pending"; a node missing one of the three is not released.
-- A single `install.sh` and a single `install.ps1`, **generated from the template** in `forge614-ai/standard/templates/`, parameterized by node name, repository and assets. No node writes its own.
-- Destination `~/.forge614/<node>/<version>/` with a stable launcher `~/.forge614/<node>/bin/<node>` and an `.active-version` file. `FORGE614_HOME` replaces `~/.forge614` in every node, without exception.
+- Minimal `install.sh` and `install.ps1` bootstraps plus one shared `install.mjs`, from `standard/templates/`. Only two data lines in each bootstrap vary: node name and repository. `install.mjs` is byte-identical and reads node data from the `install` block in the release's pointer (record 0031).
+- Node 22.19+ is required to install every node; Python is not required. Each node documents its runtime separately (record 0031).
+- Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. Activation is atomic, migrates flat installs and ends with a `--version` smoke test; `FORGE614_HOME` replaces `~/.forge614` (record 0031).
 - Download over HTTPS only; mandatory SHA-256 verification against the same release's `SHA256SUMS`; the installer never executes remote scripts without verifying their fingerprint.
-- No dependency on Node or Python on the target machine: the installer resolves the release with system tools or with a published auxiliary binary.
-- No node edits the user's `PATH` or profile files. Only `forge614-ai` creates the global `forge614` command, and it asks first.
+- No other language runtime is required for installation: Node 22.19+ is the minimum; Python is not required (record 0031).
+- Engram, Shell and Atlas add the current marked block to `PATH` until `forge614 init` manages that configuration. Engines, Workers and Sentinel do not modify it (record 0031).
 - Symmetric uninstallation: first removes its integrations in assistants (hooks, MCP, instructions) through the public contracts, then deletes only its own directory. Never the whole `~/.forge614/`.
 - Update (`<node> update`): downloads and verifies the installer **of the target release**, allows `--version`, and records the previous version for rollback.
 
 ## 7. Release, versioning and workflows
+
+- Node release tags use `vX.Y.Z`. Each release publishes the program, `SHA256SUMS`, `install.sh`, `install.ps1`, `install.mjs` and `forge614.node.json`. `SHA256SUMS` uses one GNU-format line per file, with its SHA-256 and two spaces before the exact filename (record 0031).
+- Installer exit codes are `0` success, `64` invalid usage, `65` missing Node/requirement or unsupported platform, `66` failed download/fingerprint and `69` incompatible dependency (record 0031).
 
 - `bun release` is a shared package published by `forge614-ai` (origin: the proven Engines script), not a copy per repository: it suggests a version from conventional commits, validates against tags, syncs `productVersion` in `notion-map.json`, runs tests and typecheck, runs the verifier, applies the agent-procedure gate (12), tags, pushes and follows the CI run.
 - Strict SemVer. Conventional commits are mandatory (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `ci`; `!` or `BREAKING CHANGE` for major).
