@@ -365,7 +365,8 @@ installerCase("--uninstall removes only the node home after its self-uninstall h
   const marker = join(home, "uninstall-hook-called");
   const result = await runInstaller(home, server.baseUrl, ["--uninstall"], { FORGE614_TEST_UNINSTALL_MARKER: marker });
   expect(result.code, result.stderr).toBe(0);
-  expect(readFileSync(marker, "utf8")).toBe("called");
+  // cmd.exe echo always appends \r\n.
+  expect(readFileSync(marker, "utf8").trimEnd()).toBe("called");
   expect(existsSync(join(home, ".forge614", NODE))).toBe(false);
   expect(readFileSync(protectedFile, "utf8")).toBe("keep");
 });
