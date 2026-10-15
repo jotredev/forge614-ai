@@ -641,6 +641,9 @@ installerCase("a broken dependency launcher is treated as incompatible and repai
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code, result.stderr).toBe(0);
   expect(readFileSync(join(home, ".forge614", "engines", ".active-version"), "utf8").trim()).toBe("1.0.0");
+  const legacyDir = readdirSync(join(home, ".forge614", "engines")).find((entry) => entry.startsWith("legacy-"));
+  expect(legacyDir).toBeDefined();
+  expect(lstatSync(join(home, ".forge614", "engines", legacyDir ?? "", "forge614-engines")).isSymbolicLink()).toBe(true);
 });
 
 installerCase("a rejected dependency capability reports the node and reason in both locales", async () => {
@@ -822,7 +825,7 @@ installerCase("uninstall continues after a failing hook and removes an external 
   const externalBin = join(home, "external bin");
   mkdirSync(externalBin);
   const launcher = join(externalBin, "forge614-demo");
-  writeFileSync(launcher, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  writeFileSync(launcher, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'forge614-demo 1.0.0\\n'; exit 0; fi\nexit 1\n", { mode: 0o755 });
   const profile = join(home, ".profile");
   writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
   const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
