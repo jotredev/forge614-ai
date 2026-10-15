@@ -39,6 +39,165 @@
     "ecosystem": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "install": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+        },
+        "minimumNodeVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "systems": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "os": {
+                "type": "string",
+                "enum": [
+                  "darwin",
+                  "linux",
+                  "windows"
+                ]
+              },
+              "architectures": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "arm64",
+                    "x64"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "os",
+              "architectures"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "tagFormat": {
+          "type": "string",
+          "const": "vX.Y.Z"
+        },
+        "asset": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "binary-tar-gzip",
+                "raw-binary",
+                "node-package-tar-gzip",
+                "binary-tar-gzip-or-zip"
+              ]
+            },
+            "pattern": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checksumFile": {
+              "type": "string",
+              "const": "SHA256SUMS"
+            }
+          },
+          "required": [
+            "type",
+            "pattern",
+            "checksumFile"
+          ],
+          "additionalProperties": false
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "minimumVersion": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requiredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "compatibility": {
+                "type": "string",
+                "enum": [
+                  "installed",
+                  "version",
+                  "capabilities",
+                  "version-and-capabilities"
+                ]
+              }
+            },
+            "required": [
+              "node",
+              "minimumVersion",
+              "requiredCapabilities",
+              "compatibility"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "path": {
+          "type": "object",
+          "properties": {
+            "modify": {
+              "type": "boolean"
+            },
+            "retireWhen": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "modify",
+            "retireWhen"
+          ],
+          "additionalProperties": false
+        },
+        "smokeTest": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "repository",
+        "minimumNodeVersion",
+        "systems",
+        "tagFormat",
+        "asset",
+        "dependencies",
+        "path",
+        "smokeTest"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
