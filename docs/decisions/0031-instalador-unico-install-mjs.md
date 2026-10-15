@@ -35,23 +35,23 @@ El portero de PowerShell usa .NET para SHA-256, compatible con Windows PowerShel
 
 El archivo es idéntico byte a byte en los seis nodos y no incluye datos de nodo. Sus pasos son:
 
-1. Analiza argumentos y determina `latest`, la etiqueta indicada o el archivo local de `--archive`.
-2. Resuelve `FORGE614_HOME`; una ruta vacía o relativa da `INVALID_FORGE614_HOME`.
-3. Lee y valida el bloque `install` de la ficha de la release.
-4. Detecta macOS, Linux o Windows y `arm64` o `x64`; rechaza combinaciones no declaradas con código 65.
-5. Obtiene la release por HTTPS y resuelve el activo y su `SHA256SUMS`.
-6. Verifica el SHA-256 del activo antes de extraerlo o ejecutarlo.
-7. Para cada dependencia, comprueba compatibilidad. Si falta o no alcanza el mínimo, descarga el `install.mjs` de la release de esa dependencia, verifica su SHA-256 con el `SHA256SUMS` de esa release y ejecuta su instalación. Si falla, no activa cambios parciales del nodo solicitante.
-8. Prepara el nodo en `~/.forge614/<nodo>/<versión>/` (o bajo `FORGE614_HOME`) en un directorio temporal dentro del mismo padre. Valida su contenido y construye el lanzador.
-9. En Unix publica `bin/forge614-<nodo>` como enlace; en Windows, una copia o `.cmd` según el activo. Cambia `.active-version` y el lanzador atómicamente. Si falla, restaura la versión previa y elimina el temporal de esta operación.
-10. Migra las instalaciones planas de Engram y Atlas al esquema versionado, conservando la ruta canónica del lanzador (`forge614-engram:scripts/install.sh:180,213,324-333`; `forge614-atlas:scripts/install.sh:55-90,374-392`). Retira los bloques PATH viejos al reemplazarlos por el bloque marcado vigente.
-11. Ejecuta `<lanzador> --version`; confirma éxito solo con salida y código válidos. `--uninstall` llama primero a `<lanzador> uninstall --self` y después borra solo `~/.forge614/<nodo>/`.
+1. Analiza argumentos y resuelve `FORGE614_HOME`; una ruta vacía o relativa da `INVALID_FORGE614_HOME`.
+2. Para `--uninstall`, usa la identidad de nodo entregada por el portero y no consulta la red. Llama a `<lanzador> uninstall --self`, avisa si falla, retira el lanzador externo y los bloques PATH del nodo, y borra solo `FORGE614_HOME/<nodo>/`.
+3. Lee y valida el bloque `install` de la ficha de la release. Detecta macOS, Linux o Windows y `arm64` o `x64`; rechaza combinaciones no declaradas con código 65.
+4. Resuelve la etiqueta indicada o `latest` y la versión activa. Si ya está al día y no se indicó `--force`, avisa y termina sin instalar dependencias ni descargar el activo.
+5. Descarga el activo o lee `--archive`, y verifica su SHA-256 con el `SHA256SUMS` de esa release antes de instalar dependencias.
+6. Para cada dependencia, comprueba compatibilidad. Si falta o no alcanza el mínimo, descarga su `install.mjs` y ficha, verifica ambas huellas con el `SHA256SUMS` de esa release y ejecuta su instalación. Si falla, no activa el nodo solicitante.
+7. Prepara el nodo en `FORGE614_HOME/<nodo>/.install-*`, dentro del mismo padre. Rechaza entradas de archivo absolutas, con `..` o enlaces simbólicos.
+8. Prueba el ejecutable preparado; exige código 0 y la salida exacta `forge614-<nodo> <versión>`.
+9. Migra una instalación plana solo cuando no existe `.active-version`, conservando la ruta canónica del lanzador (`forge614-engram:scripts/install.sh:180,213,324-333`; `forge614-atlas:scripts/install.sh:55-90,374-392`).
+10. Publica el lanzador y actualiza PATH según la ficha. Reemplaza el enlace Unix con un `rename` atómico y conserva los perfiles y sus permisos. En `--force` de la versión activa prepara una carpeta de versión única.
+11. Escribe `.active-version` al final y prueba de nuevo el lanzador publicado. Si PATH, el puntero o esta segunda prueba fallan, restaura perfiles, lanzador, puntero y migración.
 
 La única puerta de red para pruebas es `FORGE614_INSTALL_TEST_BASE_URL`, exclusiva de pruebas. Acepta únicamente `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS.
 
 No confirma `.active-version` hasta que el contenido y la prueba de humo estén listos. Una falla previa deja activa la versión anterior; una posterior revierte el puntero y elimina la carpeta nueva.
 
-El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; las capacidades declaradas deben aparecer en `capabilities`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.
+El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; cada capacidad requerida es `{ "agent": "claude-code", "field": "supportsReadOnly" }`. El instalador ejecuta `<lanzador> capabilities --agent <agent>` y exige `schemaVersion === 1` y que el campo solicitado sea `true`. Engines registra esa orden en `forge614-engines:src/interfaces/cli/main.ts:169` y `src/interfaces/cli/commands.ts:63-66`; su JSON y campos están definidos en `forge614-engines:src/app/capabilities.ts:4-41`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.
 
 ### 3. Bloque `install` de `forge614.node.json`
 
@@ -64,9 +64,9 @@ El objeto raíz `install` es opcional mientras las fichas actuales sigan usando 
 | `systems` | array de objetos | `os` (`darwin`, `linux`, `windows`) y `architectures` (`arm64`, `x64`) admitidas. |
 | `tagFormat` | string | Formato de etiqueta: `vX.Y.Z`. |
 | `asset` | objeto | `type`, `pattern` y `checksumFile` (`SHA256SUMS`). Tipos: `binary-tar-gzip`, `raw-binary`, `node-package-tar-gzip`, `binary-tar-gzip-or-zip`. |
-| `dependencies` | array | `node`, `minimumVersion` (SemVer o `null`), `requiredCapabilities` (array de strings), `compatibility` (`installed`, `version`, `capabilities`, `version-and-capabilities`). |
+| `dependencies` | array | `node`, `minimumVersion` (SemVer o `null`), `requiredCapabilities` (array de `{agent, field}` del JSON de `capabilities --agent` de Engines), `compatibility` (`installed`, `version`, `capabilities`, `version-and-capabilities`). |
 | `path` | objeto | `modify` booleano; `retireWhen` string o `null`. Si modifica PATH, se retira cuando `forge614 init` lo gestione. |
-| `smokeTest` | array de strings | Argumentos de la prueba posterior a instalar; inicialmente `--version`. |
+| `smokeTest` | array de strings | Argumentos de dos pruebas, al ejecutable preparado y al lanzador publicado; inicialmente `--version`, con salida exacta `forge614-<nodo> <versión>`. |
 
 Ejemplos completos según los datos reales de R2, §3.3 y §5. Las combinaciones de plataforma representan el soporte exigido por el reglamento y la llegada de Windows para Atlas y Workers (sin arm64); cada nodo publica los activos declarados por sus fuentes.
 
@@ -87,21 +87,21 @@ Datos: `forge614-engram:scripts/install.sh:127,152,317-318,335`; Windows x64: `f
 **Shell**
 
 ```json
-{"install":{"repository":"jotredev/forge614-shell","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"node-package-tar-gzip","pattern":"forge614-shell-<ver>.tar.gz","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engines","minimumVersion":null,"requiredCapabilities":["fullySupported"],"compatibility":"capabilities"}],"path":{"modify":true,"retireWhen":"cuando forge614 init gestione el PATH"},"smokeTest":["--version"]}}
+{"install":{"repository":"jotredev/forge614-shell","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"node-package-tar-gzip","pattern":"forge614-shell-<ver>.tar.gz","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engines","minimumVersion":null,"requiredCapabilities":[{"agent":"claude-code","field":"fullySupported"}],"compatibility":"capabilities"}],"path":{"modify":true,"retireWhen":"cuando forge614 init gestione el PATH"},"smokeTest":["--version"]}}
 ```
-Datos: `forge614-shell:scripts/install.sh:106-140,199-221`; Windows x64 y `.cmd`: `forge614-shell:scripts/install.ps1:528`.
+Datos: `forge614-shell:scripts/install.sh:106-124` comprueba el lanzador de Engines, el JSON `detect` con `schemaVersion: 1` y agentes, y `capabilities --agent claude-code` con `fullySupported: true`; `forge614-shell:scripts/install.sh:202-221` gestiona su línea PATH antigua. Windows x64 y `.cmd`: `forge614-shell:scripts/install.ps1:528`.
 
 **Atlas**
 
 ```json
-{"install":{"repository":"jotredev/forge614-atlas","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"raw-binary","pattern":"forge614-atlas-<plat>-<arch>","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engram","minimumVersion":"1.8.7","requiredCapabilities":[],"compatibility":"version"},{"node":"workers","minimumVersion":"1.0.0","requiredCapabilities":[],"compatibility":"version"},{"node":"engines","minimumVersion":"1.17.0","requiredCapabilities":["supportsReadOnly"],"compatibility":"version-and-capabilities"}],"path":{"modify":true,"retireWhen":"cuando forge614 init gestione el PATH"},"smokeTest":["--version"]}}
+{"install":{"repository":"jotredev/forge614-atlas","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"raw-binary","pattern":"forge614-atlas-<plat>-<arch>","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engram","minimumVersion":"1.8.7","requiredCapabilities":[],"compatibility":"version"},{"node":"workers","minimumVersion":"1.0.0","requiredCapabilities":[],"compatibility":"version"},{"node":"engines","minimumVersion":"1.17.0","requiredCapabilities":[{"agent":"claude-code","field":"supportsReadOnly"}],"compatibility":"version-and-capabilities"}],"path":{"modify":true,"retireWhen":"cuando forge614 init gestione el PATH"},"smokeTest":["--version"]}}
 ```
 Datos: `forge614-atlas:scripts/install.sh:30-33,229-247,478-492`; Windows actual pendiente: `forge614-atlas:docs/en/10-installer-and-release.md:16`.
 
 **Workers**
 
 ```json
-{"install":{"repository":"jotredev/forge614-workers","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"raw-binary","pattern":"forge614-workers-<plat>-<arch>","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engines","minimumVersion":"1.17.0","requiredCapabilities":["supportsReadOnly"],"compatibility":"version-and-capabilities"}],"path":{"modify":false,"retireWhen":null},"smokeTest":["--version"]}}
+{"install":{"repository":"jotredev/forge614-workers","minimumNodeVersion":"22.19.0","systems":[{"os":"darwin","architectures":["arm64","x64"]},{"os":"linux","architectures":["arm64","x64"]},{"os":"windows","architectures":["x64"]}],"tagFormat":"vX.Y.Z","asset":{"type":"raw-binary","pattern":"forge614-workers-<plat>-<arch>","checksumFile":"SHA256SUMS"},"dependencies":[{"node":"engines","minimumVersion":"1.17.0","requiredCapabilities":[{"agent":"claude-code","field":"supportsReadOnly"}],"compatibility":"version-and-capabilities"}],"path":{"modify":false,"retireWhen":null},"smokeTest":["--version"]}}
 ```
 Datos: `forge614-workers:scripts/install.sh:46-68,252-272,293-304`; Windows pendiente: `forge614-workers:CONTRACT.en.md:76`.
 
@@ -148,7 +148,7 @@ Los porteros reenvían el código de salida de `install.mjs`.
 
 ### 5. Idioma y PATH
 
-Los mensajes del instalador tienen catálogos en español e inglés. `FORGE614_LOCALE` acepta `es` y `en`. `FORGE614_SHELL_LOCALE` se acepta durante la transición solo si no se definió `FORGE614_LOCALE`. Engines, Workers y Sentinel no modifican PATH (`forge614-engines:scripts/install.sh:115`; `forge614-workers:scripts/install.sh:304`; `forge614-sentinel:install.sh:94-99`); Engram, Shell y Atlas conservan el bloque marcado actual hasta que `forge614 init` gestione esa configuración, momento de retiro indicado en la ficha (`forge614-engram:scripts/install.sh:14-114,335`; `forge614-shell:scripts/install.sh:202-221`; `forge614-atlas:scripts/install.sh:39-186`).
+Los mensajes del instalador tienen catálogos en español e inglés. `FORGE614_LOCALE` acepta `es` y `en`; si está vacío se usa `FORGE614_SHELL_LOCALE`, que sirve de respaldo durante la transición. Engines, Workers y Sentinel no modifican PATH (`forge614-engines:scripts/install.sh:115`; `forge614-workers:scripts/install.sh:304`; `forge614-sentinel:install.sh:94-99`). Engram, Shell y Atlas modifican solo perfiles que ya existen; si no hay ninguno, crean un perfil según `$SHELL`: `.zshrc` para zsh, `.bashrc` para bash y `.profile` para los demás. Nunca crean `.bash_profile`. Si el perfil es enlace simbólico, escriben en su destino y conservan sus permisos. Si faltan `HOME` y `USERPROFILE`, avisan y omiten PATH. Al editar perfiles retiran también los marcadores antiguos de Engram y Atlas (`forge614-engram:scripts/install.sh:14-114`; `forge614-atlas:scripts/install.sh:39-186`) y la línea `# Forge614 Shell` junto con su asignación PATH (`forge614-shell:scripts/install.sh:202-221`). El bloque vigente se retira cuando `forge614 init` gestione PATH, según la ficha.
 
 ### 6. Compatibilidad y adopción
 

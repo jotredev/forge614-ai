@@ -85,12 +85,12 @@ They are named by problem. An abstraction that does not answer a listed problem 
 - **Three operating systems, always** (record 0018): every node publishes binaries and an installer for macOS (arm64 and x64), Linux (arm64 and x64) and Windows (x64). There are no exceptions and no "pending"; a node missing one of the three is not released.
 - Minimal `install.sh` and `install.ps1` bootstraps plus one shared `install.mjs`, from `standard/templates/`. Only two data lines in each bootstrap vary: node name and repository. `install.mjs` is byte-identical and reads node data from the `install` block in the release's pointer (record 0031).
 - Node 22.19+ is required to install every node; Python is not required. Each node documents its runtime separately (record 0031).
-- Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. Activation is atomic, migrates flat installs and ends with a `--version` smoke test; `FORGE614_HOME` replaces `~/.forge614` (record 0031).
+- Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. It checks twice that `--version` returns exactly `forge614-<node> <version>`; `.active-version` is written last and failures roll back PATH, launcher, pointer and migration (record 0031).
 - Download over HTTPS only; mandatory SHA-256 verification against the same release's `SHA256SUMS`; the installer never executes remote scripts without verifying their fingerprint.
 - `FORGE614_INSTALL_TEST_BASE_URL` is for tests only and accepts only `http://127.0.0.1:<port>` or `http://[::1]:<port>`; every other address requires HTTPS (record 0031).
 - No other language runtime is required for installation: Node 22.19+ is the minimum; Python is not required (record 0031).
-- Engram, Shell and Atlas add the current marked block to `PATH` until `forge614 init` manages that configuration. Engines, Workers and Sentinel do not modify it (record 0031).
-- Symmetric uninstallation: first removes its integrations in assistants (hooks, MCP, instructions) through the public contracts, then deletes only its own directory. Never the whole `~/.forge614/`.
+- Engram, Shell and Atlas edit existing profiles or create one based on `$SHELL` (`.zshrc`, `.bashrc` or `.profile`); they preserve symlinks and permissions. Engines, Workers and Sentinel do not modify PATH (record 0031).
+- `--uninstall` uses the node identity from the bootstrap and needs no network. It warns if `uninstall --self` fails, removes the external launcher and the node's PATH blocks, then deletes only `FORGE614_HOME/<node>/`. It never deletes all of `~/.forge614/`.
 - Update (`<node> update`): downloads and verifies the installer **of the target release**, allows `--version`, and records the previous version for rollback.
 
 ## 7. Release, versioning and workflows
