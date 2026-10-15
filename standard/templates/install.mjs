@@ -51,6 +51,7 @@ function message(key, values = {}) {
     current: { es: "forge614-{node} ya está al día ({version}).", en: "forge614-{node} is already up to date ({version})." },
     updated: { es: "forge614-{node} se actualizó de {previous} a {version}.", en: "forge614-{node} was updated from {previous} to {version}." },
     removed: { es: "forge614-{node} se desinstaló.", en: "forge614-{node} was uninstalled." },
+    uninstallHookFailed: { es: "Aviso: falló forge614-{node} uninstall --self; se sigue con la limpieza del instalador.", en: "Warning: forge614-{node} uninstall --self failed; continuing with installer cleanup." },
     help: { es: "Uso: install.mjs [--latest] [--force] [--version ETIQUETA] [--archive RUTA] [--uninstall] [--bin-dir RUTA]", en: "Usage: install.mjs [--latest] [--force] [--version TAG] [--archive PATH] [--uninstall] [--bin-dir PATH]" },
   };
   let text = messages[key]?.[locale()] ?? key;
@@ -764,7 +765,7 @@ async function uninstallNode(node, home, binDirOverride) {
   const found = await findLauncher(nodeHome, node, platform, binDir);
   if (found) {
     const result = await run(found.launcher, ["uninstall", "--self"], { allowFailure: true });
-    if (result.code !== 0) process.stderr.write(`Warning: forge614-${node} uninstall --self failed; continuing with installer cleanup.\n`);
+    if (result.code !== 0) process.stderr.write(`${message("uninstallHookFailed", { node })}\n`);
   }
   await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
   if (binDirOverride) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
