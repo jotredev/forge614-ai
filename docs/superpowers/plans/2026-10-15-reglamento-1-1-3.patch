@@ -1,0 +1,624 @@
+diff --git a/.github/workflows/standard-release.yml b/.github/workflows/standard-release.yml
+index bddb5df..505d459 100644
+--- a/.github/workflows/standard-release.yml
++++ b/.github/workflows/standard-release.yml
+@@ -8,6 +8,7 @@ jobs:
+     permissions: { contents: write }
+     steps:
+       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
++        with: { fetch-depth: 0 }
+       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+         with: { bun-version: "1.4.2" }
+       - run: bun install --frozen-lockfile
+diff --git a/.github/workflows/verify.yml b/.github/workflows/verify.yml
+index 7e66378..0f974d6 100644
+--- a/.github/workflows/verify.yml
++++ b/.github/workflows/verify.yml
+@@ -8,6 +8,7 @@ jobs:
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
++        with: { fetch-depth: 0 }
+       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+         with: { bun-version: "1.4.2" }
+       - run: bun install --frozen-lockfile
+@@ -21,6 +22,7 @@ jobs:
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
++        with: { fetch-depth: 0 }
+       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+         with: { bun-version: "1.4.2" }
+       - run: bun install --frozen-lockfile
+diff --git a/CONTRACT.en.md b/CONTRACT.en.md
+index 9709293..4ea7292 100644
+--- a/CONTRACT.en.md
++++ b/CONTRACT.en.md
+@@ -63,6 +63,8 @@ Every data output is a single JSON object on stdout with `schemaVersion: 1`; eve
+ | `SCHEMAS_DRIFT` | `schemas:generate --check`: `standard/schemas/` does not match the Zod schemas |
+ | `STANDARD_INVALID` | `standard:pack`: some standard validator fails, nothing is packed |
+ | `STANDARD_PACK_DRIFT` | `standard:pack --check`: the fresh fingerprint does not match `forge614.node.json` or `dist/SHA256SUMS` |
++| `STANDARD_VERSION_NOT_BUMPED` | `standard:check`: `standard/` changed since its version tag; bump `standard/VERSION` |
++| `STANDARD_TAGS_UNAVAILABLE` | `standard:check`: tag history is unavailable; run `git fetch --tags` |
+ | `STANDARD_PACK_FAILED` | `standard:pack`: unexpected read or write error |
+ | `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: the tag does not name `standard/VERSION`'s version |
+ | `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` could not run or the release was not created (for example, it already existed) |
+diff --git a/CONTRACT.md b/CONTRACT.md
+index be7da2b..8246375 100644
+--- a/CONTRACT.md
++++ b/CONTRACT.md
+@@ -63,6 +63,8 @@ Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; to
+ | `SCHEMAS_DRIFT` | `schemas:generate --check`: `standard/schemas/` no coincide con los esquemas Zod |
+ | `STANDARD_INVALID` | `standard:pack`: algún validador del estándar falla, no se empaqueta |
+ | `STANDARD_PACK_DRIFT` | `standard:pack --check`: la huella fresca no coincide con `forge614.node.json` o con `dist/SHA256SUMS` |
++| `STANDARD_VERSION_NOT_BUMPED` | `standard:check`: cambió `standard/` desde la etiqueta de su versión; sube `standard/VERSION` |
++| `STANDARD_TAGS_UNAVAILABLE` | `standard:check`: no hay historial de etiquetas disponible; ejecuta `git fetch --tags` |
+ | `STANDARD_PACK_FAILED` | `standard:pack`: error inesperado de lectura o escritura |
+ | `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: el tag no nombra la versión de `standard/VERSION` |
+ | `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` no pudo ejecutarse o la release no se creó (por ejemplo, ya existía) |
+diff --git a/docs/superpowers/plans/2026-10-15-reglamento-1-1-3.md b/docs/superpowers/plans/2026-10-15-reglamento-1-1-3.md
+new file mode 100644
+index 0000000..a266af9
+--- /dev/null
++++ b/docs/superpowers/plans/2026-10-15-reglamento-1-1-3.md
+@@ -0,0 +1,37 @@
++# Reglamento 1.1.3 — correcciones y candado de versión
++
++**Objetivo:** publicar `standard/VERSION` 1.1.3 con correcciones del reglamento y un candado que impida modificar `standard/` sin subir su versión. Se conserva el alcance aprobado para 1.1.3; `install.mjs`, `--version`, `update` y `uninstall --self` quedan para 1.2.0.
++
++**Origen:** decisión D1 del tablero del ecosistema (`de875cce-a20e-4647-860c-7eb11b21aaa3`) y prompt R1 en `~/.forge614/orquestador/forge614-ai/prompts/reglamento-1.1.3/R1.md`. La etiqueta 1.1.2 no coincide con la huella actual del estándar porque hubo cambios posteriores sin subir `VERSION`.
++
++## Cambios previstos
++
++1. Corregir soporte de razonamiento de Claude Code a `--effort` (5 niveles desde Engines 1.16.0) y alinear el checklist con `--effort` y `-c model_reasoning_effort=<level>`.
++2. Agregar al checklist la capacidad `supportsReadOnly`, la aceptación de `--read-only` y el rechazo de Atlas con `READ_ONLY_UNSUPPORTED`; documentar la misma regla en el runbook en español e inglés. Fijar la ruta de `MODEL_TABLE` de Atlas.
++3. Retirar de `standard/` las referencias al asistente excluido y su fila de la matriz; la lista queda en `claude-code` y `codex`.
++4. Corregir la tabla §8 del contrato bilingüe: Atlas instala Engram y Workers y comprueba Engines compatible. Subir la versión del contrato de 2.0.0 a 2.0.1.
++5. Añadir `checkStandardVersionLock`: compara el paquete actual con el paquete de `standard-v<VERSION>` usando `packStandard`; si cambió, emite `STANDARD_VERSION_NOT_BUMPED`. Si falta la etiqueta de la versión, pasa. Si no hay etiquetas o Git no puede leerlas, emite `STANDARD_TAGS_UNAVAILABLE` y pide `git fetch --tags`.
++6. Conectar el candado a `standard:check`, registrar ambos errores en `CONTRACT.md` y `CONTRACT.en.md`, y pedir historial completo en los workflows que ejecutan la comprobación.
++7. Fijar `standard/VERSION`, los títulos ES/EN y `forge614.node.json` a 1.1.3, actualizando la huella con `standard:pack --update-pointer`.
++8. Mantener intactos `STANDARD.md` §4, §5 y §8 señalados para 1.2.0, así como `standard/templates/`.
++
++## Verificación
++
++En esta ronda: prueba de repo Git temporal con etiqueta 9.9.9 (falla si cambia `standard/` sin bump); versión 9.9.10 (pasa); versión sin etiqueta con historial disponible (pasa); repo sin etiquetas (error claro). Luego, en orden, `bun run typecheck`, `bun test`, `bun run verify`, `bun run standard:check` y `git diff --check`. Reproducir el fallo sobre `git archive origin/main` en `/tmp`. Tras el push, esperar checks verdes y hasta 20 minutos a CodeRabbit; detenerse ante fallos o hallazgos.
++
++## Commits previstos
++
++1. `docs(standard): Claude Code accepts a reasoning level`
++2. `docs(standard): Atlas workers are read-only`
++3. `docs(standard): remove Cursor`
++4. `docs(standard): Atlas installs Engram and Workers`
++5. `feat(standard): standard:check fails when standard/ changes without a new VERSION`
++6. `release(standard): prepare 1.1.3`
++
++## Impacto en el procedimiento de agentes
++
++**Sí.** Se actualizan reglas de la checklist general de agentes, las evidencias de razonamiento y la seguridad de solo lectura de los workers de Atlas. El runbook ES/EN recibe la misma información; la tabla de agentes evaluados queda alineada con los dos asistentes soportados.
++
++## Estado
++
++En curso. La publicación se detiene después de revisar checks y CodeRabbit; no se fusiona en esta tarea.
+diff --git a/forge614.node.json b/forge614.node.json
+index f6f57b4..31000b5 100644
+--- a/forge614.node.json
++++ b/forge614.node.json
+@@ -3,8 +3,8 @@
+   "node": "ai",
+   "kind": "product",
+   "standard": {
+-    "version": "1.1.2",
+-    "sha256": "84ce071c5d8a4ca7d24f9bfaa2fd5cec63c9e0282815bd238c78d66bc1b21033"
++    "version": "1.1.3",
++    "sha256": "770a6292b97a158e218ddf58e25e23f994b8f89e6a674e76a8e04a9ac4695242"
+   },
+   "ecosystem": "forge614"
+ }
+diff --git a/src/app/check-standard-version-lock.test.ts b/src/app/check-standard-version-lock.test.ts
+new file mode 100644
+index 0000000..5996b04
+--- /dev/null
++++ b/src/app/check-standard-version-lock.test.ts
+@@ -0,0 +1,106 @@
++import { expect, test } from "bun:test";
++import { execFileSync } from "node:child_process";
++import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join, resolve } from "node:path";
++import { checkStandardVersionLock } from "./check-standard-version-lock";
++
++const REPO_ROOT = resolve(import.meta.dir, "../..");
++
++function git(root: string, ...args: string[]): void {
++  execFileSync("git", args, { cwd: root, stdio: "ignore" });
++}
++
++function fixture(): string {
++  const root = mkdtempSync(join(tmpdir(), "standard-version-lock-"));
++  cpSync(join(REPO_ROOT, "standard"), join(root, "standard"), { recursive: true });
++  writeFileSync(join(root, "standard/VERSION"), "9.9.9\n");
++  git(root, "init", "--quiet");
++  git(root, "config", "user.name", "Forge614 test");
++  git(root, "config", "user.email", "test@example.invalid");
++  git(root, "add", "standard");
++  git(root, "commit", "--quiet", "-m", "baseline");
++  git(root, "tag", "standard-v9.9.9");
++  return root;
++}
++
++/**
++ * Confirms a tagged standard cannot change while its VERSION remains fixed.
++ * A temporary Git repository gives the test a real standard tree and tag lookup.
++ */
++test("fails with STANDARD_VERSION_NOT_BUMPED when standard changes under its version tag", () => {
++  const root = fixture();
++  try {
++    writeFileSync(join(root, "standard/STANDARD.md"), "changed\n");
++    const result = checkStandardVersionLock({ root, standardVersion: "9.9.9" });
++    expect(result).toMatchObject({ ok: false, code: "STANDARD_VERSION_NOT_BUMPED" });
++    if (result.ok) return;
++    expect(result.error).toBe("standard/ cambió desde standard-v9.9.9; sube standard/VERSION");
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++/**
++ * Confirms a release check succeeds when the tagged standard matches the current tree byte for byte.
++ * This is the success path used by the standard-release workflow after publishing a version tag.
++ */
++test("passes when the tagged standard matches the current tree", () => {
++  const root = fixture();
++  try {
++    expect(checkStandardVersionLock({ root, standardVersion: "9.9.9" })).toEqual({ ok: true });
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++/**
++ * Confirms raising VERSION makes the current tree a new, unpublished release and allows it through.
++ * The fixture keeps the previous release tag so the check also proves tag availability.
++ */
++test("passes with a new VERSION that has no release tag yet", () => {
++  const root = fixture();
++  try {
++    writeFileSync(join(root, "standard/VERSION"), "9.9.10\n");
++    writeFileSync(join(root, "standard/STANDARD.md"), "changed\n");
++    expect(checkStandardVersionLock({ root, standardVersion: "9.9.10" })).toEqual({ ok: true });
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++/**
++ * Confirms an unpublished version passes when another standard tag proves the clone has tag history.
++ * This distinguishes a genuinely new version from a shallow clone with no tags available at all.
++ */
++test("passes when the current VERSION has no tag and other tags are available", () => {
++  const root = fixture();
++  try {
++    expect(checkStandardVersionLock({ root, standardVersion: "9.9.10" })).toEqual({ ok: true });
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++/**
++ * Confirms a tagless clone fails clearly instead of silently skipping the version lock.
++ * The error directs the caller to fetch the full tag history before checking the standard.
++ */
++test("fails clearly when the repository has no tags", () => {
++  const root = mkdtempSync(join(tmpdir(), "standard-version-lock-no-tags-"));
++  cpSync(join(REPO_ROOT, "standard"), join(root, "standard"), { recursive: true });
++  writeFileSync(join(root, "standard/VERSION"), "9.9.9\n");
++  git(root, "init", "--quiet");
++  git(root, "config", "user.name", "Forge614 test");
++  git(root, "config", "user.email", "test@example.invalid");
++  git(root, "add", "standard");
++  git(root, "commit", "--quiet", "-m", "baseline");
++  try {
++    const result = checkStandardVersionLock({ root, standardVersion: "9.9.9" });
++    expect(result).toMatchObject({ ok: false, code: "STANDARD_TAGS_UNAVAILABLE" });
++    if (result.ok) return;
++    expect(result.error).toContain("git fetch --tags");
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
+diff --git a/src/app/check-standard-version-lock.ts b/src/app/check-standard-version-lock.ts
+new file mode 100644
+index 0000000..c15d501
+--- /dev/null
++++ b/src/app/check-standard-version-lock.ts
+@@ -0,0 +1,92 @@
++import { execFileSync } from "node:child_process";
++import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { dirname, join } from "node:path";
++import { packStandard } from "./pack-standard";
++
++export interface CheckStandardVersionLockOptions {
++  root: string;
++  standardVersion: string;
++}
++
++export type CheckStandardVersionLockResult =
++  | { ok: true }
++  | { ok: false; code: "STANDARD_VERSION_NOT_BUMPED" | "STANDARD_TAGS_UNAVAILABLE"; error: string };
++
++/** Runs Git in the target repository and returns its stdout bytes. */
++function git(root: string, ...args: string[]): Buffer {
++  return execFileSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
++}
++
++/** Writes the regular files from a tagged standard tree into a temporary directory. */
++function snapshotStandardFromTag(root: string, tag: string, standardDir: string): void {
++  const entries = git(root, "ls-tree", "-r", "-z", "--full-tree", tag, "--", "standard").toString("utf8");
++  for (const entry of entries.split("\0")) {
++    if (!entry) continue;
++    const tab = entry.indexOf("\t");
++    const metadata = entry.slice(0, tab);
++    const relativePath = entry.slice(tab + 1);
++    const [mode, kind, object] = metadata.split(" ");
++    if (!object || kind !== "blob" || (mode !== "100644" && mode !== "100755")) continue;
++    const target = join(standardDir, relativePath.slice("standard/".length));
++    mkdirSync(dirname(target), { recursive: true });
++    writeFileSync(target, git(root, "cat-file", "blob", object));
++  }
++}
++
++/**
++ * Compares the current standard package with the package at its release tag.
++ * @param options Repository root and current standard version.
++ * @returns Success, a missing-version-bump error, or an explicit missing-tag-history error.
++ */
++export function checkStandardVersionLock(options: CheckStandardVersionLockOptions): CheckStandardVersionLockResult {
++  let tags: string;
++  try {
++    tags = git(options.root, "tag", "--list").toString("utf8").trim();
++  } catch {
++    return {
++      ok: false,
++      code: "STANDARD_TAGS_UNAVAILABLE",
++      error: "No se pudieron leer las etiquetas de Git; trae el historial completo con `git fetch --tags` antes de ejecutar standard:check. Git tags are unavailable; fetch them with `git fetch --tags` before running standard:check.",
++    };
++  }
++  if (!tags) {
++    return {
++      ok: false,
++      code: "STANDARD_TAGS_UNAVAILABLE",
++      error: "El repositorio no tiene etiquetas; trae el historial completo con `git fetch --tags` antes de ejecutar standard:check. The repository has no tags; fetch them with `git fetch --tags` before running standard:check.",
++    };
++  }
++
++  const tag = `standard-v${options.standardVersion}`;
++  try {
++    git(options.root, "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`);
++  } catch {
++    return { ok: true };
++  }
++
++  const snapshotRoot = mkdtempSync(join(tmpdir(), "standard-version-lock-snapshot-"));
++  const packRoot = mkdtempSync(join(tmpdir(), "standard-version-lock-pack-"));
++  try {
++    snapshotStandardFromTag(options.root, tag, join(snapshotRoot, "standard"));
++    const taggedPack = packStandard(snapshotRoot, packRoot);
++    const currentPack = packStandard(options.root, packRoot);
++    if (taggedPack.sha256 !== currentPack.sha256) {
++      return {
++        ok: false,
++        code: "STANDARD_VERSION_NOT_BUMPED",
++        error: `standard/ cambió desde ${tag}; sube standard/VERSION`,
++      };
++    }
++    return { ok: true };
++  } catch {
++    return {
++      ok: false,
++      code: "STANDARD_TAGS_UNAVAILABLE",
++      error: `No se pudo leer ${tag}; trae el historial completo con git fetch --tags antes de ejecutar standard:check. Could not read ${tag}; fetch the full history with git fetch --tags before running standard:check.`,
++    };
++  } finally {
++    rmSync(snapshotRoot, { recursive: true, force: true });
++    rmSync(packRoot, { recursive: true, force: true });
++  }
++}
+diff --git a/src/interfaces/cli/standard-pack.ts b/src/interfaces/cli/standard-pack.ts
+index 7b1cb5b..b294f30 100644
+--- a/src/interfaces/cli/standard-pack.ts
++++ b/src/interfaces/cli/standard-pack.ts
+@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
+ import { resolve } from "node:path";
+ import { z } from "zod";
+ import { checkStandardPack } from "../../app/check-standard-pack";
++import { checkStandardVersionLock } from "../../app/check-standard-version-lock";
+ import { packStandard } from "../../app/pack-standard";
+ import { readRepoTree, repoRoot } from "../../app/repo";
+ import { runValidators } from "../../app/run-validators";
+@@ -46,6 +47,11 @@ function main(argv: string[]): number {
+   }
+ 
+   if (parsed.data.check) {
++    const versionLock = checkStandardVersionLock({ root: repoRoot, standardVersion });
++    if (!versionLock.ok) {
++      printError(versionLock.code, versionLock.error);
++      return 1;
++    }
+     const result = checkStandardPack({ root: repoRoot, pointerPath: POINTER_PATH, sumsPath: resolve(repoRoot, "dist/SHA256SUMS") });
+     if (!result.ok) {
+       printError("STANDARD_PACK_DRIFT", result.error);
+diff --git a/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md b/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
+index 07c1c2c..ccd2627 100644
+--- a/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
++++ b/standard/FORGE614_ECOSYSTEM_CONTRACT.en.md
+@@ -1,7 +1,7 @@
+ # Forge614 Ecosystem Contract
+ 
+ > **Status:** Contract v2 — approved product direction; supersedes v1 copies; distributed by pointer (`forge614.node.json`), no longer copied by hand.
+-> **Version:** 2.0.0
++> **Version:** 2.0.1
+ > **Purpose:** Keep independent projects coordinated without one silently taking on another's responsibility.
+ 
+ ## 1. The product hierarchy
+@@ -166,7 +166,7 @@ All products live under one shared directory, but each owns only its own:
+ |---|---|
+ | `forge614-shell` | Engines |
+ | `forge614-engram` | Shell, Engines |
+-| `forge614-atlas` | Engram, Engines, Shell (+ Workers when it runs tasks) |
++| `forge614-atlas` | Engram and Workers; checks that Engines is compatible but does not install it |
+ | `forge614-hub` | Engines |
+ | `forge614-sentinel` | — (deterministic verification does not depend on another product) |
+ | `forge614-ai` | All products and implementation packages (meta-package) |
+diff --git a/standard/FORGE614_ECOSYSTEM_CONTRACT.md b/standard/FORGE614_ECOSYSTEM_CONTRACT.md
+index 7462605..6dd14f9 100644
+--- a/standard/FORGE614_ECOSYSTEM_CONTRACT.md
++++ b/standard/FORGE614_ECOSYSTEM_CONTRACT.md
+@@ -1,7 +1,7 @@
+ # Contrato del Ecosistema Forge614
+ 
+ > **Estado:** Contrato v2 — dirección de producto aprobada; sustituye a las copias divergentes de la v1; se distribuye por puntero (`forge614.node.json`), ya no se copia a mano.
+-> **Versión:** 2.0.0
++> **Versión:** 2.0.1
+ > **Propósito:** Mantener coordinados a proyectos independientes sin que uno asuma en silencio la responsabilidad de otro.
+ 
+ ## 1. La jerarquía del producto
+@@ -166,7 +166,7 @@ Todos los productos viven bajo un mismo directorio compartido, pero cada uno pos
+ |---|---|
+ | `forge614-shell` | Engines |
+ | `forge614-engram` | Shell, Engines |
+-| `forge614-atlas` | Engram, Engines, Shell (+ Workers cuando ejecuta tareas) |
++| `forge614-atlas` | Engram y Workers; comprueba que Engines sea compatible, pero no lo instala |
+ | `forge614-hub` | Engines |
+ | `forge614-sentinel` | — (la verificación determinista no depende de otro producto) |
+ | `forge614-ai` | Todos los productos y paquetes de implementación (meta-paquete) |
+diff --git a/standard/STANDARD.en.md b/standard/STANDARD.en.md
+index 541950b..10d0710 100644
+--- a/standard/STANDARD.en.md
++++ b/standard/STANDARD.en.md
+@@ -1,4 +1,4 @@
+-# Forge614 Node Standard — version 1.1.2
++# Forge614 Node Standard — version 1.1.3
+ 
+ > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
+ 
+diff --git a/standard/STANDARD.md b/standard/STANDARD.md
+index 30aef3e..661f666 100644
+--- a/standard/STANDARD.md
++++ b/standard/STANDARD.md
+@@ -1,4 +1,4 @@
+-# Estándar de Nodo Forge614 — versión 1.1.2
++# Estándar de Nodo Forge614 — versión 1.1.3
+ 
+ > Norma vinculante para todo repositorio del ecosistema Forge614. "Debe" significa que el verificador lo comprueba o que la revisión humana lo exige antes de fusionar. Las decisiones que lo originan están en `docs/decisions/` de `forge614-ai`.
+ 
+diff --git a/standard/VERSION b/standard/VERSION
+index 45a1b3f..781dcb0 100644
+--- a/standard/VERSION
++++ b/standard/VERSION
+@@ -1 +1 @@
+-1.1.2
++1.1.3
+diff --git a/standard/procedures/add-agent-runbook.en.md b/standard/procedures/add-agent-runbook.en.md
+index b81a1cc..e60b829 100644
+--- a/standard/procedures/add-agent-runbook.en.md
++++ b/standard/procedures/add-agent-runbook.en.md
+@@ -70,7 +70,8 @@ Repository: `forge614-atlas`.
+ 
+ | What | Where |
+ |---|---|
+-| `opencode` models per tier (light/standard/deep) and whether it accepts reasoning | today `src/.../task-config.ts`; with the Hub, the model policy (`forge614-policy-*`) |
++| `opencode` models per tier (light/standard/deep) and whether it accepts reasoning | today `src/modules/cli/task-config.ts` (`MODEL_TABLE`) in forge614-atlas; with the Hub, the model policy (`forge614-policy-*`) |
++| Read-only execution for Workers launched by Atlas | The engine declares `supportsReadOnly` and accepts `--read-only`; Atlas rejects the launch with `READ_ONLY_UNSUPPORTED` when it cannot guarantee the lock |
+ | Confirm it appears as an option with no code changes in the selector | evidence |
+ 
+ **Gate:** `forge614-atlas init --engine opencode` produces a valid plan and a short real run writes to Engram. Review. Release.
+diff --git a/standard/procedures/add-agent-runbook.md b/standard/procedures/add-agent-runbook.md
+index 5644760..8128d53 100644
+--- a/standard/procedures/add-agent-runbook.md
++++ b/standard/procedures/add-agent-runbook.md
+@@ -70,7 +70,8 @@ Repo: `forge614-atlas`.
+ 
+ | Qué | Dónde |
+ |---|---|
+-| Modelos de `opencode` por nivel (ligero/estándar/profundo) y si acepta razonamiento | hoy `src/.../task-config.ts`; con el Hub, la política de modelos (`forge614-policy-*`) |
++| Modelos de `opencode` por nivel (ligero/estándar/profundo) y si acepta razonamiento | hoy `src/modules/cli/task-config.ts` (`MODEL_TABLE`) de forge614-atlas; con el Hub, la política de modelos (`forge614-policy-*`) |
++| Solo lectura de los Workers que lanza Atlas | El motor declara `supportsReadOnly` y acepta `--read-only`; si no puede garantizarlo, Atlas rechaza el lanzamiento con `READ_ONLY_UNSUPPORTED` |
+ | Confirmar que aparece como opción sin cambios de código en el selector | evidencia |
+ 
+ **Puerta:** `forge614-atlas init --engine opencode` produce un plan válido y una corrida corta real escribe en Engram. Revisión. Release.
+diff --git a/standard/procedures/new-agent-checklist.md b/standard/procedures/new-agent-checklist.md
+index f36febc..af37dc7 100644
+--- a/standard/procedures/new-agent-checklist.md
++++ b/standard/procedures/new-agent-checklist.md
+@@ -51,7 +51,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+ - [ ] ¿El CLI candidato tiene un modo headless/no interactivo real (`--help`, `exec --help`, etc.)?
+       Si sí, `capabilities.supportsHeadlessExec = true` y hay que implementar `headlessCommand()`.
+       Si no, se deja `false` y **no** se implementa `headlessCommand` — mismo patrón que el adapter
+-      de Cursor (`src/infrastructure/agents/cursor.ts`), que no tiene esa función.
++      de un agente que no ofrece ejecución headless, que no tiene esa función.
+ - [ ] ¿Cómo recibe el prompt en modo headless: como argumento posicional, o puede leerlo por stdin?
+       Confirmarlo ejecutando el binario real (ej. `echo "..." | <cmd> <flag>`), como ya se hizo con
+       Claude Code (`-p` sin prompt posicional lee de stdin) y Codex (`exec` sin `PROMPT` posicional lee
+@@ -63,10 +63,9 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+       binario real, no contra la doc — el comportamiento real de un CLI puede no estar bien documentado
+       (así pasó con el modo stdin de Codex).
+ - [ ] ¿Soporta nivel de razonamiento configurable en modo headless? Si sí, documentar el flag/sintaxis
+-      exacta (Codex no usa un flag directo: usa `-c model_reasoning_effort=<level>`). Si no, el
++      exacta (Claude Code usa `--effort`; Codex usa `-c model_reasoning_effort=<level>`). Si no, el
+       `headlessCommand()` debe lanzar `ReasoningLevelUnsupportedError` cuando `opts.reasoningLevel` esté
+-      presente — nunca ignorarlo en silencio (así lo hace Claude Code, que no tiene flag público y
+-      estable para esto).
++      presente — nunca ignorarlo en silencio.
+ - [ ] ¿El CLI candidato tiene algún flag para dar acceso de lectura a una carpeta adicional del proyecto
+       sin romper el aislamiento normal (equivalente a `--add-dir`)? Ya existe el mecanismo genérico para
+       esto: `HeadlessOptions.readableDir` (`src/modules/agents/types.ts`), expuesto públicamente como
+@@ -84,7 +83,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+ **Registro del agente en el código:**
+ 
+ - [ ] Agregar el id nuevo al union type `AgentId` en `src/modules/agents/types.ts` (única fuente de
+-      verdad del tipo — hoy es `"claude-code" | "codex" | "cursor"`).
++      verdad del tipo — hoy es `"claude-code" | "codex"`).
+ - [ ] Crear `src/infrastructure/agents/<agente>.ts` implementando `AgentAdapter` completo:
+       - `capabilities` (`supportsMcp`, `supportsHooks`, `supportsHeadlessExec`) con los valores reales
+         confirmados arriba.
+@@ -98,7 +97,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+       - `configDir(home)` / `configFile(home)`: rutas reales de configuración del agente.
+       - `instructions` (opcional): solo si el agente tiene un mecanismo de archivo estable y
+         oficialmente soportado para cargar instrucciones globales en cada sesión nueva. Si no lo tiene
+-        documentado y estable (como Cursor, cuyas "User Rules" solo se configuran desde su UI), se deja
++        documentado y estable (si solo se configura desde una interfaz gráfica), se deja
+         sin definir — no inventar un archivo que no está garantizado.
+ - [ ] Registrar el adapter nuevo en `buildDefaultRegistry()` (`src/app/default-registry.ts`).
+ - [ ] Confirmar que pasa `validateCapabilityManifest` (se corre automáticamente al `register()`): si
+@@ -107,8 +106,8 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
+ 
+ **Pruebas y verificación:**
+ 
+-- [ ] Agregar tests unitarios del adapter nuevo (paralelos a `claude-code.test.ts` / `codex.test.ts` /
+-      `cursor.test.ts`), cubriendo `headlessCommand()` con y sin `stdinPrompt`, y con y sin
++- [ ] Agregar tests unitarios del adapter nuevo (paralelos a `claude-code.test.ts` / `codex.test.ts`),
++      cubriendo `headlessCommand()` con y sin `stdinPrompt`, y con y sin
+       `reasoningLevel`.
+ - [ ] Confirmar que `agents list` y `capabilities --agent <id>` (comandos CLI genéricos sobre el
+       registry, en `src/interfaces/cli/commands.ts`) exponen el agente nuevo sin cambios adicionales de
+@@ -179,8 +178,7 @@ reales ya aprendidas del aislamiento de autenticación (con Claude Code y Codex)
+ **Validaciones a investigar para un agente nuevo:**
+ 
+ - [ ] Confirmar con `forge614-engines agents list` que el agente tiene `supportsHeadlessExec: true`.
+-      Si es `false`, Workers no necesita adapter — nunca podrá invocarlo headless (caso ya visto con
+-      Cursor).
++      Si es `false`, Workers no necesita adapter — nunca podrá invocarlo headless.
+ - [ ] Detectar el patrón real de "cuota/sesión agotada" de este motor **forzando un error real** con
+       el CLI instalado (nunca inventar o adivinar el texto). Anotar el patrón exacto y si aparece en
+       `stderr`, en el inicio de `stdout`, o en ambos. Implementar `detectQuotaExhausted` en el adapter
+@@ -228,6 +226,11 @@ Su trabajo: decidir qué analizar, con qué nivel de profundidad, y qué modelo/
+ tarea. No le importa cómo se invoca el motor por dentro (eso es de Engines) ni cómo se aísla el
+ proceso (eso es de Workers).
+ 
++- [ ] El motor nuevo declara `supportsReadOnly` en las capacidades que Engines publica y acepta
++      `--read-only`; si no puede garantizarlo, Atlas rechaza el lanzamiento con
++      `READ_ONLY_UNSUPPORTED`. Confirmar el campo en `forge614-engines:src/app/capabilities.ts:16,35`
++      y el rechazo en `forge614-atlas:src/modules/cli/requirements.ts:84-85`.
++
+ **Validaciones a investigar para un agente nuevo:**
+ 
+ - [ ] ¿Qué modelo(s) de este agente corresponden a cada nivel de la tabla ya fija de Atlas
+@@ -459,7 +462,7 @@ resultado con la función pura `classifyMemoryOutcome`, que produce uno de: `con
+ verificado, incluida evidencia de runtime), `prepared` (estructuralmente correcto, evidencia de runtime
+ aún ausente — reportado como éxito, nunca como pendiente ni como error), `blocked` (conflicto real
+ reportado por Engines en el plan, con su detalle textual), `unsupported` (limitación real del agente,
+-p. ej. Cursor sin mecanismo de instrucciones) o `failed` (error genuino de Engines). La ausencia de
++por ejemplo, un agente sin mecanismo de instrucciones) o `failed` (error genuino de Engines). La ausencia de
+ evidencia de runtime **nunca** bloquea el resultado ni pide volver a ejecutar nada — es información de
+ estado, no una condición de éxito. Todo el comando además renderiza en una sola sesión de pantalla
+ alterna continua (`EngramFlowScreen`, `src/ui/startup/frame.ts`) desde la intro hasta el resultado —
+@@ -490,7 +493,7 @@ sin cerrar/reabrir pantallas TUI entre pasos.
+       sesión.
+ - [ ] **Nunca mostrar ni registrar `writes[].afterContent`/`beforeHash` de ningún componente, para
+       ningún agente.** Confirmado con evidencia real durante esta implementación: un `plan
+-      memory-install` real para Cursor devolvió el archivo `~/.cursor/mcp.json` completo, con tokens
++      memory-install` real devolvió un archivo de configuración completo, con tokens
+       reales de GitHub y GitLab en texto plano, dentro de `afterContent` — porque Engines reconstruye el
+       archivo completo al planear cualquier escritura de MCP/hook, no solo el fragmento nuevo. Esto
+       aplica todavía más a un agente cuyo hook se escribe en su archivo de configuración principal (como
+@@ -652,9 +655,8 @@ hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez
+ 
+ | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
+ |---|---|---|---|---|---|---|
+-| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
++| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. Soporta razonamiento con `--effort` (5 niveles). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
+ | Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`; límite: dice que la sesión quedó abierta, casi siempre cuándo (5 de 6) y cuenta su resumen, pero no ofrece continuar desde él (0 de 6) — si quieres seguir o saber la hora, pídeselo) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
+-| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
+ 
+ **Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
+ persona ejecuta la prueba indicada, con fecha. Las de Engines y Shell de Claude Code y Codex se abrieron el
+diff --git a/standard/support-matrix.json b/standard/support-matrix.json
+index 5d0a619..c592054 100644
+--- a/standard/support-matrix.json
++++ b/standard/support-matrix.json
+@@ -1,7 +1,7 @@
+ {
+   "schemaVersion": 1,
+   "nodes": ["engines", "workers", "atlas", "engram", "shell"],
+-  "agents": ["claude-code", "codex", "cursor"],
++  "agents": ["claude-code", "codex"],
+   "cells": [
+     {
+       "node": "engines",
+@@ -9,7 +9,7 @@
+       "status": "supported",
+       "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+-      "notes": "Sin nivel de razonamiento configurable (REASONING_LEVEL_UNSUPPORTED). Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
++      "notes": "Sí soporta nivel de razonamiento (`--effort`, 5 niveles) desde Engines 1.16.0. Revalidado el 2026-09-25 (gancho con unbound desde ~ y sin Git; ver docs/orquestacion/revalidaciones/2026-09-25-claude-code-codex.md)."
+     },
+     {
+       "node": "workers",
+@@ -82,46 +82,6 @@
+       "verifiedAt": "2026-09-25",
+       "verifiedBy": "owner",
+       "notes": "Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
+-    },
+-    {
+-      "node": "engines",
+-      "agent": "cursor",
+-      "status": "partial",
+-      "verifiedAt": "2026-09-22",
+-      "verifiedBy": "owner",
+-      "notes": "Detectado; supportsHeadlessExec false; sin instrucciones globales."
+-    },
+-    {
+-      "node": "workers",
+-      "agent": "cursor",
+-      "status": "not-applicable",
+-      "verifiedAt": "2026-09-22",
+-      "verifiedBy": "owner",
+-      "notes": "No requiere adapter en Workers — no puede invocarse headless."
+-    },
+-    {
+-      "node": "atlas",
+-      "agent": "cursor",
+-      "status": "not-applicable",
+-      "verifiedAt": "2026-09-22",
+-      "verifiedBy": "owner",
+-      "notes": ""
+-    },
+-    {
+-      "node": "engram",
+-      "agent": "cursor",
+-      "status": "not-applicable",
+-      "verifiedAt": "2026-09-22",
+-      "verifiedBy": "owner",
+-      "notes": ""
+-    },
+-    {
+-      "node": "shell",
+-      "agent": "cursor",
+-      "status": "not-applicable",
+-      "verifiedAt": "2026-09-22",
+-      "verifiedBy": "owner",
+-      "notes": ""
+     }
+   ]
+ }
