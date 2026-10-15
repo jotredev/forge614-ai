@@ -1,4 +1,4 @@
-$InstallerArgs = @($args)
+﻿$InstallerArgs = @($args)
 $ErrorActionPreference = "Stop"
 $NodeName = "{{NODE_NAME}}"
 $Repo = "{{REPO}}"
@@ -52,7 +52,7 @@ for ($Index = 0; $Index -lt $InstallerArgs.Count; $Index++) {
 $TestBase = $env:FORGE614_INSTALL_TEST_BASE_URL
 if ($TestBase) {
   $TestUri = $null
-  if (-not [System.Uri]::TryCreate($TestBase, [System.UriKind]::Absolute, [ref]$TestUri) -or $TestUri.Scheme -ne "http" -or $TestUri.Port -lt 1 -or ($TestUri.Host -ne "127.0.0.1" -and $TestUri.Host -ne "[::1]" -and $TestUri.Host -ne "::1") -or $TestUri.AbsolutePath -ne "/" -or $TestUri.Query -or $TestUri.Fragment -or $TestUri.UserInfo) {
+  if ($TestBase -notmatch '^http://(127\.0\.0\.1|\[::1\]):[0-9]+/?$' -or -not [System.Uri]::TryCreate($TestBase, [System.UriKind]::Absolute, [ref]$TestUri) -or $TestUri.Scheme -ne "http" -or $TestUri.Port -lt 1 -or ($TestUri.Host -ne "127.0.0.1" -and $TestUri.Host -ne "[::1]" -and $TestUri.Host -ne "::1") -or $TestUri.AbsolutePath -ne "/" -or $TestUri.Query -or $TestUri.Fragment -or $TestUri.UserInfo) {
     [Console]::Error.WriteLine("FORGE614_INSTALL_TEST_BASE_URL only accepts loopback HTTP.")
     exit 64
   }
@@ -74,6 +74,8 @@ try {
   if (-not $Tag.StartsWith("v")) { $Tag = "v$Tag" }
   if ($TestBase) { $DownloadBase = "$Base/repos/$Repo/releases/download/$([System.Uri]::EscapeDataString($Tag))" }
   else { $DownloadBase = "$Base/download/$([System.Uri]::EscapeDataString($Tag))" }
+  $VersionTag = $Tag.TrimStart("v")
+  if ($VersionTag -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { [Console]::Error.WriteLine("invalid version tag"); exit 64 }
   foreach ($Name in @("install.mjs", "forge614.node.json", "SHA256SUMS")) {
     $Destination = Join-Path $TemporaryDirectory $Name
     Invoke-WebRequest -Uri "$DownloadBase/$Name" -OutFile $Destination -UseBasicParsing

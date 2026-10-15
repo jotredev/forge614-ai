@@ -31,7 +31,19 @@ const InstallSchema = z
         .object({
           node: Slug,
           minimumVersion: SemVer.nullable(),
-          requiredCapabilities: z.array(z.string()),
+          requiredCapabilities: z.array(
+            z.object({
+              agent: Slug,
+              field: z.enum([
+                "supportsMcp",
+                "supportsHooks",
+                "supportsHeadlessExec",
+                "supportsReasoningLevel",
+                "supportsReadOnly",
+                "fullySupported",
+              ]),
+            }).strict(),
+          ),
           compatibility: z.enum([
             "installed",
             "version",
