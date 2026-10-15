@@ -51,7 +51,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
 - [ ] ¿El CLI candidato tiene un modo headless/no interactivo real (`--help`, `exec --help`, etc.)?
       Si sí, `capabilities.supportsHeadlessExec = true` y hay que implementar `headlessCommand()`.
       Si no, se deja `false` y **no** se implementa `headlessCommand` — mismo patrón que el adapter
-      de Cursor (`src/infrastructure/agents/cursor.ts`), que no tiene esa función.
+      de un agente que no ofrece ejecución headless, que no tiene esa función.
 - [ ] ¿Cómo recibe el prompt en modo headless: como argumento posicional, o puede leerlo por stdin?
       Confirmarlo ejecutando el binario real (ej. `echo "..." | <cmd> <flag>`), como ya se hizo con
       Claude Code (`-p` sin prompt posicional lee de stdin) y Codex (`exec` sin `PROMPT` posicional lee
@@ -83,7 +83,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
 **Registro del agente en el código:**
 
 - [ ] Agregar el id nuevo al union type `AgentId` en `src/modules/agents/types.ts` (única fuente de
-      verdad del tipo — hoy es `"claude-code" | "codex" | "cursor"`).
+      verdad del tipo — hoy es `"claude-code" | "codex"`).
 - [ ] Crear `src/infrastructure/agents/<agente>.ts` implementando `AgentAdapter` completo:
       - `capabilities` (`supportsMcp`, `supportsHooks`, `supportsHeadlessExec`) con los valores reales
         confirmados arriba.
@@ -97,7 +97,7 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
       - `configDir(home)` / `configFile(home)`: rutas reales de configuración del agente.
       - `instructions` (opcional): solo si el agente tiene un mecanismo de archivo estable y
         oficialmente soportado para cargar instrucciones globales en cada sesión nueva. Si no lo tiene
-        documentado y estable (como Cursor, cuyas "User Rules" solo se configuran desde su UI), se deja
+        documentado y estable (si solo se configura desde una interfaz gráfica), se deja
         sin definir — no inventar un archivo que no está garantizado.
 - [ ] Registrar el adapter nuevo en `buildDefaultRegistry()` (`src/app/default-registry.ts`).
 - [ ] Confirmar que pasa `validateCapabilityManifest` (se corre automáticamente al `register()`): si
@@ -106,8 +106,8 @@ el comando correcto y declara con precisión qué soporta el CLI y qué no.
 
 **Pruebas y verificación:**
 
-- [ ] Agregar tests unitarios del adapter nuevo (paralelos a `claude-code.test.ts` / `codex.test.ts` /
-      `cursor.test.ts`), cubriendo `headlessCommand()` con y sin `stdinPrompt`, y con y sin
+- [ ] Agregar tests unitarios del adapter nuevo (paralelos a `claude-code.test.ts` / `codex.test.ts`),
+      cubriendo `headlessCommand()` con y sin `stdinPrompt`, y con y sin
       `reasoningLevel`.
 - [ ] Confirmar que `agents list` y `capabilities --agent <id>` (comandos CLI genéricos sobre el
       registry, en `src/interfaces/cli/commands.ts`) exponen el agente nuevo sin cambios adicionales de
@@ -178,8 +178,7 @@ reales ya aprendidas del aislamiento de autenticación (con Claude Code y Codex)
 **Validaciones a investigar para un agente nuevo:**
 
 - [ ] Confirmar con `forge614-engines agents list` que el agente tiene `supportsHeadlessExec: true`.
-      Si es `false`, Workers no necesita adapter — nunca podrá invocarlo headless (caso ya visto con
-      Cursor).
+      Si es `false`, Workers no necesita adapter — nunca podrá invocarlo headless.
 - [ ] Detectar el patrón real de "cuota/sesión agotada" de este motor **forzando un error real** con
       el CLI instalado (nunca inventar o adivinar el texto). Anotar el patrón exacto y si aparece en
       `stderr`, en el inicio de `stdout`, o en ambos. Implementar `detectQuotaExhausted` en el adapter
@@ -463,7 +462,7 @@ resultado con la función pura `classifyMemoryOutcome`, que produce uno de: `con
 verificado, incluida evidencia de runtime), `prepared` (estructuralmente correcto, evidencia de runtime
 aún ausente — reportado como éxito, nunca como pendiente ni como error), `blocked` (conflicto real
 reportado por Engines en el plan, con su detalle textual), `unsupported` (limitación real del agente,
-p. ej. Cursor sin mecanismo de instrucciones) o `failed` (error genuino de Engines). La ausencia de
+por ejemplo, un agente sin mecanismo de instrucciones) o `failed` (error genuino de Engines). La ausencia de
 evidencia de runtime **nunca** bloquea el resultado ni pide volver a ejecutar nada — es información de
 estado, no una condición de éxito. Todo el comando además renderiza en una sola sesión de pantalla
 alterna continua (`EngramFlowScreen`, `src/ui/startup/frame.ts`) desde la intro hasta el resultado —
@@ -494,7 +493,7 @@ sin cerrar/reabrir pantallas TUI entre pasos.
       sesión.
 - [ ] **Nunca mostrar ni registrar `writes[].afterContent`/`beforeHash` de ningún componente, para
       ningún agente.** Confirmado con evidencia real durante esta implementación: un `plan
-      memory-install` real para Cursor devolvió el archivo `~/.cursor/mcp.json` completo, con tokens
+      memory-install` real devolvió un archivo de configuración completo, con tokens
       reales de GitHub y GitLab en texto plano, dentro de `afterContent` — porque Engines reconstruye el
       archivo completo al planear cualquier escritura de MCP/hook, no solo el fragmento nuevo. Esto
       aplica todavía más a un agente cuyo hook se escribe en su archivo de configuración principal (como
@@ -656,9 +655,8 @@ hoy y Shell lo dice ("este motor no informa actividad en segundo plano") en vez 
 
 | Agente | Engines | Workers | Atlas | Engram | Shell | Notas |
 |---|---|---|---|---|---|---|
-| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. No soporta nivel de razonamiento (`REASONING_LEVEL_UNSUPPORTED`). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
+| Claude Code | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`) | ✅ (revalidado 2026-09-25); onboarding de `claude setup-token` no diseñado aún | Auth por suscripción funciona con `cwd` aislado y `HOME` real intacto. Soporta razonamiento con `--effort` (5 niveles). Recibe el manual por `~/.claude/CLAUDE.md` y por las instrucciones del servidor MCP. |
 | Codex | ✅ (revalidado 2026-09-25) | ✅ | ✅ | ✅ (revalidado 2026-09-26, Engram 1.7.2: manual v4 con la regla 3 nueva y `sessionNotice`; límite: dice que la sesión quedó abierta, casi siempre cuándo (5 de 6) y cuenta su resumen, pero no ofrece continuar desde él (0 de 6) — si quieres seguir o saber la hora, pídeselo) | ✅ (revalidado 2026-09-25) | Necesita `--skip-git-repo-check` en `extraArgs()` porque rechaza correr en carpetas no confiables. Sí soporta nivel de razonamiento (`model_reasoning_effort`). No toma las instrucciones del servidor MCP: el manual completo en `~/.codex/AGENTS.md` es obligatorio. |
-| Cursor | ✅ (detectado, `supportsHeadlessExec: false`) | N/A (no aplica, no soporta headless) | N/A | N/A | N/A | No requiere adapter en Workers — no puede invocarse headless. |
 
 **Revalidaciones abiertas (acta 0017):** las celdas marcadas `⚠️ revalidar` vuelven a ✅ solo cuando una
 persona ejecuta la prueba indicada, con fecha. Las de Engines y Shell de Claude Code y Codex se abrieron el

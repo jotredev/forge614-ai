@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "nodes": ["engines", "workers", "atlas", "engram", "shell"],
-  "agents": ["claude-code", "codex", "cursor"],
+  "agents": ["claude-code", "codex"],
   "cells": [
     {
       "node": "engines",
@@ -82,46 +82,6 @@
       "verifiedAt": "2026-09-25",
       "verifiedBy": "owner",
       "notes": "Revalidado el 2026-09-25 (Shell desde ~ y desde una carpeta sin Git con memoria compartida, y /compact; ver el plan docs/superpowers/plans/2026-09-25-revalidacion-matriz-claude-code-codex.md, cierre de R2)."
-    },
-    {
-      "node": "engines",
-      "agent": "cursor",
-      "status": "partial",
-      "verifiedAt": "2026-09-22",
-      "verifiedBy": "owner",
-      "notes": "Detectado; supportsHeadlessExec false; sin instrucciones globales."
-    },
-    {
-      "node": "workers",
-      "agent": "cursor",
-      "status": "not-applicable",
-      "verifiedAt": "2026-09-22",
-      "verifiedBy": "owner",
-      "notes": "No requiere adapter en Workers — no puede invocarse headless."
-    },
-    {
-      "node": "atlas",
-      "agent": "cursor",
-      "status": "not-applicable",
-      "verifiedAt": "2026-09-22",
-      "verifiedBy": "owner",
-      "notes": ""
-    },
-    {
-      "node": "engram",
-      "agent": "cursor",
-      "status": "not-applicable",
-      "verifiedAt": "2026-09-22",
-      "verifiedBy": "owner",
-      "notes": ""
-    },
-    {
-      "node": "shell",
-      "agent": "cursor",
-      "status": "not-applicable",
-      "verifiedAt": "2026-09-22",
-      "verifiedBy": "owner",
-      "notes": ""
     }
   ]
 }
