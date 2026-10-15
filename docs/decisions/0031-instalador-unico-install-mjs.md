@@ -47,6 +47,8 @@ El archivo es idéntico byte a byte en los seis nodos y no incluye datos de nodo
 10. Migra las instalaciones planas de Engram y Atlas al esquema versionado, conservando la ruta canónica del lanzador (`forge614-engram:scripts/install.sh:180,213,324-333`; `forge614-atlas:scripts/install.sh:55-90,374-392`). Retira los bloques PATH viejos al reemplazarlos por el bloque marcado vigente.
 11. Ejecuta `<lanzador> --version`; confirma éxito solo con salida y código válidos. `--uninstall` llama primero a `<lanzador> uninstall --self` y después borra solo `~/.forge614/<nodo>/`.
 
+La única puerta de red para pruebas es `FORGE614_INSTALL_TEST_BASE_URL`, exclusiva de pruebas. Acepta únicamente `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS.
+
 No confirma `.active-version` hasta que el contenido y la prueba de humo estén listos. Una falla previa deja activa la versión anterior; una posterior revierte el puntero y elimina la carpeta nueva.
 
 El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; las capacidades declaradas deben aparecer en `capabilities`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.
@@ -112,7 +114,7 @@ Datos: `forge614-sentinel:install.sh:84-99`; Windows x64: `forge614-sentinel:ins
 
 ### 4. Releases, comandos y errores
 
-Cada release publica el activo declarado por `install.asset.pattern`, `SHA256SUMS`, `install.sh`, `install.ps1`, `install.mjs` y `forge614.node.json`. `SHA256SUMS` usa un único formato GNU: `<64 caracteres hexadecimales minúsculos><dos espacios><nombre exacto>\n`, una entrada por archivo. No se mezclan activos `.sha256` sueltos ni formatos alternativos. Por una versión menor completa, cada release conserva los nombres de activos que aún usan actualizadores anteriores. Todas las etiquetas son `vX.Y.Z`, también Shell.
+Cada release publica el activo declarado por `install.asset.pattern`, `SHA256SUMS`, `install.sh`, `install.ps1`, `install.mjs` y `forge614.node.json`. `SHA256SUMS` usa un único formato GNU: `<64 caracteres hexadecimales minúsculos><dos espacios><nombre exacto>\n`, una entrada por archivo. No se mezclan activos `.sha256` sueltos ni formatos alternativos, salvo la excepción temporal de Engines descrita en la sección 6. Todas las etiquetas son `vX.Y.Z`, también Shell.
 
 | Nodo | Nombre del activo por plataforma y arquitectura |
 |---|---|
@@ -128,9 +130,9 @@ Cada release publica el activo declarado por `install.asset.pattern`, `SHA256SUM
 | `<nodo> --version` | `forge614-<nodo> X.Y.Z\n` | 0 | Objeto estructurado en stderr. |
 | `<nodo> --version --json` | `{"schemaVersion":1,"name":"forge614-<nodo>","version":"X.Y.Z"}\n` | 0 | Objeto estructurado en stderr. |
 | `<nodo> --help` | Ayuda de texto, terminada en salto de línea | 0 | Objeto estructurado en stderr si no se puede generar. |
-| `<nodo> update` | `{"schemaVersion":1,"result":{"updated":true,"previousVersion":"X.Y.Z","installedVersion":"X.Y.Z"}}\n`; sin cambios: `updated:false` y versión actual en ambos campos | 0 | Objeto de error por stderr; código 1. |
-| `<nodo> uninstall` | `{"schemaVersion":1,"result":{"removed":true}}\n`, tras confirmación | 0 | Objeto de error por stderr; código 1. Cancelar: 130. |
-| `<nodo> uninstall --self` | `{"schemaVersion":1,"result":{"integrationsRemoved":true}}\n` | 0 | Objeto de error por stderr; código 1. |
+| `<nodo> update` | Por defecto, una frase para personas por stdout (por ejemplo, `forge614-engram se actualizó de 1.9.0 a 1.9.1.` o `forge614-engram ya está al día (1.9.1).`); el JSON definido sale solo con `--json` | 0 | Objeto de error por stderr; código 1. |
+| `<nodo> uninstall` | Por defecto, una frase para personas por stdout tras confirmar; el JSON `{"schemaVersion":1,"result":{"removed":true}}\n` sale solo con `--json` | 0 | Objeto de error por stderr; código 1. Cancelar: 130. |
+| `<nodo> uninstall --self` | Por defecto, una frase para personas por stdout; el JSON `{"schemaVersion":1,"result":{"integrationsRemoved":true}}\n` sale solo con `--json` | 0 | Objeto de error por stderr; código 1. |
 
 Los errores CLI usan `{ "schemaVersion": 1, "code": "CODIGO_ESTABLE", "error": "mensaje para personas" }` en stderr, sin rutas crudas, trazas ni secretos. Entrada inválida de un comando de nodo sale con 2. Son distintos de los códigos del instalador:
 
@@ -150,7 +152,9 @@ Los mensajes del instalador tienen catálogos en español e inglés. `FORGE614_L
 
 ### 6. Compatibilidad y adopción
 
-El portero conserva `--latest`, `--force`, `--version`, `--archive`, `--uninstall` y `--help`, además de `--bin-dir` para Engram y Atlas. Así siguen funcionando los `update` ya instalados que llaman `releases/latest/download/install.sh` con `--force` o `--latest`; se conservan también los activos antiguos durante una versión menor completa. Los llamadores conocidos son `forge614-engram:src/infrastructure/updater.ts:262`, `forge614-atlas:src/modules/updater/updater.ts:103`, `forge614-workers:src/updater.ts:108` y `forge614-shell:src/infrastructure/updater.ts:49,87`.
+El portero conserva `--latest`, `--force`, `--version`, `--archive`, `--uninstall` y `--help`, además de `--bin-dir` para Engram y Atlas. Los `update` ya instalados de Engram, Atlas, Workers y Shell descargan `releases/latest/download/install.sh`; el portero conserva ese nombre y sus argumentos, así que no hace falta conservar activos antiguos. Los llamadores conocidos son `forge614-engram:src/infrastructure/updater.ts:262`, `forge614-atlas:src/modules/updater/updater.ts:103`, `forge614-workers:src/updater.ts:108` y `forge614-shell:src/infrastructure/updater.ts:49,87`.
+
+La única excepción es el `update` de Engines ya instalado: descarga el activo y su archivo `<activo>.sha256` (`forge614-engines:src/app/self-update.ts:239-255`). La primera release de Engines con esta plantilla publica también ese `.sha256`; la siguiente lo quita. El `update` de Engram en Windows descarga directamente `forge614-engram-windows-x64.exe` y `SHA256SUMS` (`forge614-engram:src/infrastructure/updater.ts:14-16,164-189`); esos nombres no cambian en el diseño y no requieren conservación adicional. Cada nodo que adopta la plantilla borra sus instaladores escritos a mano.
 
 Orden de adopción: Sentinel, Workers, Engines, Atlas, Engram y Shell. Al adoptar la plantilla, cada nodo borra sus instaladores escritos a mano y su copia v1 de `FORGE614_ECOSYSTEM_CONTRACT.md`, y referencia el reglamento por la ficha. Sentinel 0.2 verifica igualdad byte a byte de las tres plantillas, valida la ficha y su bloque `install`, comprueba los activos de release y admite nodos fijados a plantilla antigua o nueva. Debe publicarse antes de que migre el primer nodo.
 

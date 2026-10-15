@@ -59,7 +59,7 @@ Single convention (record 0013): it changes the format Shell used to read from E
 - Exit codes: `0` success; `1` error; `2` invalid input; `75` recoverable pause (quota); others only if the node's contract documents them.
 - Event streams: NDJSON on stdout, one object per line, each with `schemaVersion` and `event`; a terminal event is guaranteed.
 - `--version` prints `forge614-<node> X.Y.Z`; `--version --json` prints `{"schemaVersion":1,"name":"forge614-<node>","version":"X.Y.Z"}`. Both and `--help` write to stdout and exit 0; errors go to stderr in the machine error format (record 0031).
-- `<node> update` writes its JSON result with `schemaVersion: 1`, `updated`, `previousVersion` and `installedVersion` to stdout; `<node> uninstall` and `<node> uninstall --self` write the JSON results defined in record 0031 to stdout. CLI errors go to stderr; exit codes are 0 on success, 1 on error and 2 on invalid input (record 0031).
+- `<node> update`, `<node> uninstall` and `<node> uninstall --self` print a human-readable sentence to stdout by default; with `--json` they print the JSON results defined in record 0031. CLI errors go to stderr; exit codes are 0 on success, 1 on error and 2 on invalid input (record 0031).
 - Incompatible changes bump `schemaVersion`; the consumer rejects versions it does not know with `SCHEMA_UNSUPPORTED`.
 - The `code` is a stable identifier in `UPPERCASE_WITH_UNDERSCORES` (regex `^[A-Z][A-Z0-9_]+$`), listed in the node's `CONTRACT.md`. Nodes with a human interface derive the text from the same `code` through a typed catalog per language (8).
 
@@ -87,6 +87,7 @@ They are named by problem. An abstraction that does not answer a listed problem 
 - Node 22.19+ is required to install every node; Python is not required. Each node documents its runtime separately (record 0031).
 - Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. Activation is atomic, migrates flat installs and ends with a `--version` smoke test; `FORGE614_HOME` replaces `~/.forge614` (record 0031).
 - Download over HTTPS only; mandatory SHA-256 verification against the same release's `SHA256SUMS`; the installer never executes remote scripts without verifying their fingerprint.
+- `FORGE614_INSTALL_TEST_BASE_URL` is for tests only and accepts only `http://127.0.0.1:<port>` or `http://[::1]:<port>`; every other address requires HTTPS (record 0031).
 - No other language runtime is required for installation: Node 22.19+ is the minimum; Python is not required (record 0031).
 - Engram, Shell and Atlas add the current marked block to `PATH` until `forge614 init` manages that configuration. Engines, Workers and Sentinel do not modify it (record 0031).
 - Symmetric uninstallation: first removes its integrations in assistants (hooks, MCP, instructions) through the public contracts, then deletes only its own directory. Never the whole `~/.forge614/`.
@@ -95,6 +96,7 @@ They are named by problem. An abstraction that does not answer a listed problem 
 ## 7. Release, versioning and workflows
 
 - Node release tags use `vX.Y.Z`. Each release publishes the program, `SHA256SUMS`, `install.sh`, `install.ps1`, `install.mjs` and `forge614.node.json`. `SHA256SUMS` uses one GNU-format line per file, with its SHA-256 and two spaces before the exact filename (record 0031).
+- Existing Engram, Atlas, Workers and Shell updaters download `releases/latest/download/install.sh`; the gatekeeper keeps that name and its arguments. The first Engines release using the template also keeps the `<asset>.sha256` downloaded by its previous updater; the following release removes it. Engram's Windows updater downloads `forge614-engram-windows-x64.exe` and `SHA256SUMS`, names already published by the design. Each node deletes its hand-written installers when adopting the template (record 0031).
 - Installer exit codes are `0` success, `64` invalid usage, `65` missing Node/requirement or unsupported platform, `66` failed download/fingerprint and `69` incompatible dependency (record 0031).
 
 - `bun release` is a shared package published by `forge614-ai` (origin: the proven Engines script), not a copy per repository: it suggests a version from conventional commits, validates against tags, syncs `productVersion` in `notion-map.json`, runs tests and typecheck, runs the verifier, applies the agent-procedure gate (12), tags, pushes and follows the CI run.
