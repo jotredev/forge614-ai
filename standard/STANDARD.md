@@ -59,7 +59,7 @@ Convención única (acta 0013): cambia el formato que Shell leía de Engines, po
 - Códigos de salida: `0` éxito; `1` error; `2` entrada inválida; `75` pausa recuperable (cuota); otros solo si el contrato del nodo los documenta.
 - Flujos de eventos: NDJSON en stdout, un objeto por línea, cada uno con `schemaVersion` y `event`; evento terminal garantizado.
 - `--version` imprime `forge614-<nodo> X.Y.Z`; `--version --json` imprime `{"schemaVersion":1,"name":"forge614-<nodo>","version":"X.Y.Z"}`. Ambos y `--help` salen por stdout con código 0; los errores salen por stderr en el formato de error de máquina (acta 0031).
-- `<nodo> update` informa por stdout el resultado JSON con `schemaVersion: 1`, `updated`, `previousVersion` e `installedVersion`; `<nodo> uninstall` y `<nodo> uninstall --self` informan por stdout sus resultados JSON definidos en el acta 0031. Los errores CLI van por stderr; los códigos son 0 en éxito, 1 en error y 2 en entrada inválida (acta 0031).
+- `<nodo> update`, `<nodo> uninstall` y `<nodo> uninstall --self` muestran por defecto una frase para personas por stdout; con `--json` muestran sus resultados JSON definidos en el acta 0031. Los errores CLI van por stderr; los códigos son 0 en éxito, 1 en error y 2 en entrada inválida (acta 0031).
 - Cambios incompatibles suben `schemaVersion`; el consumidor rechaza versiones que no conoce con `SCHEMA_UNSUPPORTED`.
 - El `code` es un identificador estable en `MAYUSCULAS_CON_GUION_BAJO` (regex `^[A-Z][A-Z0-9_]+$`), listado en el `CONTRACT.md` del nodo. Los nodos con interfaz humana derivan el texto del mismo `code` mediante un catálogo tipado por idioma (8).
 
@@ -87,6 +87,7 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 - Node 22.19+ es obligatorio para instalar todos los nodos; no se requiere Python. El runtime de cada nodo queda documentado aparte (acta 0031).
 - Destino `~/.forge614/<nodo>/<versión>/` con lanzador estable `~/.forge614/<nodo>/bin/forge614-<nodo>` y archivo `.active-version`. La activación es atómica, migra las instalaciones planas y termina con una prueba `--version`; `FORGE614_HOME` sustituye `~/.forge614` (acta 0031).
 - Descarga solo por HTTPS; verificación SHA-256 obligatoria contra `SHA256SUMS` del mismo release; el instalador nunca ejecuta scripts remotos sin verificar su huella.
+- `FORGE614_INSTALL_TEST_BASE_URL` es exclusiva de pruebas y solo acepta `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS (acta 0031).
 - Ningún otro requisito de lenguaje se usa para instalar: Node 22.19+ es el mínimo; Python no se requiere (acta 0031).
 - Engram, Shell y Atlas agregan al `PATH` un bloque marcado vigente hasta que `forge614 init` gestione esa configuración. Engines, Workers y Sentinel no lo modifican (acta 0031).
 - Desinstalación simétrica: retira primero sus integraciones en asistentes (ganchos, MCP, instrucciones) mediante los contratos públicos, luego borra solo su directorio. Nunca `~/.forge614/` completo.
@@ -95,6 +96,7 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 ## 7. Release, versionado y workflows
 
 - Las etiquetas de nodos usan `vX.Y.Z`. Cada release publica el programa, `SHA256SUMS`, `install.sh`, `install.ps1`, `install.mjs` y `forge614.node.json`; `SHA256SUMS` usa una línea GNU por archivo, con el SHA-256 y dos espacios antes del nombre exacto (acta 0031).
+- Los actualizadores ya instalados de Engram, Atlas, Workers y Shell descargan `releases/latest/download/install.sh`; el portero conserva ese nombre y sus argumentos. La primera release de Engines con la plantilla conserva también el `<activo>.sha256` que descarga su actualizador previo; la siguiente release lo elimina. El actualizador Windows de Engram descarga `forge614-engram-windows-x64.exe` y `SHA256SUMS`, nombres ya publicados por el diseño. Al adoptar la plantilla, cada nodo borra sus instaladores escritos a mano (acta 0031).
 - Los códigos del instalador son `0` éxito, `64` uso incorrecto, `65` falta Node/requisito o plataforma no admitida, `66` descarga/huella fallida y `69` dependencia incompatible (acta 0031).
 
 - `bun release` es un paquete compartido publicado por `forge614-ai` (origen: el script probado de Engines), no una copia por repositorio: sugiere versión por commits convencionales, valida contra tags, sincroniza `productVersion` en `notion-map.json`, corre tests y typecheck, ejecuta el verificador, aplica la puerta del procedimiento de agentes (12), etiqueta, empuja y sigue la ejecución de CI.
