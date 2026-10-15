@@ -1,5 +1,8 @@
 ﻿$InstallerArgs = @($args)
 $ErrorActionPreference = "Stop"
+if ([Console]::IsOutputRedirected -or [Console]::IsErrorRedirected) {
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+}
 $NodeName = "{{NODE_NAME}}"
 $Repo = "{{REPO}}"
 
