@@ -1,5 +1,7 @@
 # {{NODE_TITLE}} (`forge614-{{NODE_NAME}}`)
 
+The installer templates change in Standard 1.2.0 according to record [0031](../../docs/decisions/0031-instalador-unico-install-mjs.md).
+
 > One-sentence analogy: <fill in>.
 
 ## What it is
