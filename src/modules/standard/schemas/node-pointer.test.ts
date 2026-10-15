@@ -20,4 +20,18 @@ describe("forge614.node.json", () => {
   test("rejects a non-canonical ecosystem name", () => {
     expect(NodePointerSchema.safeParse({ ...valid, ecosystem: "Forge_614" }).success).toBe(false);
   });
+  test("requires each capability to identify an Engines agent and boolean field", () => {
+    const install = {
+      repository: "jotredev/forge614-demo",
+      minimumNodeVersion: "22.19.0",
+      systems: [{ os: "linux", architectures: ["x64"] }],
+      tagFormat: "vX.Y.Z",
+      asset: { type: "raw-binary", pattern: "forge614-demo-<plat>-<arch>", checksumFile: "SHA256SUMS" },
+      dependencies: [{ node: "engines", minimumVersion: null, requiredCapabilities: [{ agent: "claude-code", field: "supportsReadOnly" }], compatibility: "capabilities" }],
+      path: { modify: false, retireWhen: null },
+      smokeTest: ["--version"],
+    };
+    expect(NodePointerSchema.safeParse({ ...valid, install }).success).toBe(true);
+    expect(NodePointerSchema.safeParse({ ...valid, install: { ...install, dependencies: [{ ...install.dependencies[0], requiredCapabilities: ["supportsReadOnly"] }] } }).success).toBe(false);
+  });
 });
