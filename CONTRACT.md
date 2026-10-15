@@ -63,6 +63,8 @@ Toda salida de datos es un solo objeto JSON en stdout con `schemaVersion: 1`; to
 | `SCHEMAS_DRIFT` | `schemas:generate --check`: `standard/schemas/` no coincide con los esquemas Zod |
 | `STANDARD_INVALID` | `standard:pack`: algún validador del estándar falla, no se empaqueta |
 | `STANDARD_PACK_DRIFT` | `standard:pack --check`: la huella fresca no coincide con `forge614.node.json` o con `dist/SHA256SUMS` |
+| `STANDARD_VERSION_NOT_BUMPED` | `standard:check`: cambió `standard/` desde la etiqueta de su versión; sube `standard/VERSION` |
+| `STANDARD_TAGS_UNAVAILABLE` | `standard:check`: no hay historial de etiquetas disponible; ejecuta `git fetch --tags` |
 | `STANDARD_PACK_FAILED` | `standard:pack`: error inesperado de lectura o escritura |
 | `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: el tag no nombra la versión de `standard/VERSION` |
 | `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` no pudo ejecutarse o la release no se creó (por ejemplo, ya existía) |

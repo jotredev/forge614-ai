@@ -63,6 +63,8 @@ Every data output is a single JSON object on stdout with `schemaVersion: 1`; eve
 | `SCHEMAS_DRIFT` | `schemas:generate --check`: `standard/schemas/` does not match the Zod schemas |
 | `STANDARD_INVALID` | `standard:pack`: some standard validator fails, nothing is packed |
 | `STANDARD_PACK_DRIFT` | `standard:pack --check`: the fresh fingerprint does not match `forge614.node.json` or `dist/SHA256SUMS` |
+| `STANDARD_VERSION_NOT_BUMPED` | `standard:check`: `standard/` changed since its version tag; bump `standard/VERSION` |
+| `STANDARD_TAGS_UNAVAILABLE` | `standard:check`: tag history is unavailable; run `git fetch --tags` |
 | `STANDARD_PACK_FAILED` | `standard:pack`: unexpected read or write error |
 | `STANDARD_RELEASE_TAG_MISMATCH` | `standard:release`: the tag does not name `standard/VERSION`'s version |
 | `STANDARD_RELEASE_FAILED` | `standard:release`: `gh` could not run or the release was not created (for example, it already existed) |
