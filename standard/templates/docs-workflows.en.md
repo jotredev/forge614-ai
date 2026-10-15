@@ -11,7 +11,7 @@
 | Job | Trigger | What it runs | What it publishes | Expected duration |
 | --- | --- | --- | --- | --- |
 | `build` | tag `v*` | `bun run build:target`, `bun run smoke:target` on macOS arm64/x64, Linux arm64/x64, Windows x64 | per-platform artifacts | ~8 min |
-| `publish` | after `build` | `bun run release:publish` | release with binaries and `SHA256SUMS` | ~1 min |
+| `publish` | after `build` | Node 22.19.0, `bun run scripts/prepare-release-assets.mjs`, `bun run release:publish` | program, gatekeepers, `install.mjs`, pointer and one GNU `SHA256SUMS` | ~1 min |
 
 Every job declares `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10): no stage runs without a limit and `bun run workflows:check` rejects a job that lacks it.
 
@@ -25,5 +25,6 @@ Every job declares `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10):
 | --- | --- | --- |
 | actions/checkout | v4.3.1 | 34e114876b0b11c390a56381ad16ebd13914f8d5 |
 | oven-sh/setup-bun | v2.0.2 | 735343b667d3e6f658f44d0eca948eb6282f2b76 |
+| actions/setup-node | v7.1.0 | 949feb2413d6458794dcd2491c4babbbce0c15c1 |
 | actions/upload-artifact | v4.6.2 | ea165f8d65b6e75b540449e92b4886f43607fa02 |
 | actions/download-artifact | v4.3.0 | d3f86a106a0bac45b974a628896c90dbdf5c8093 |

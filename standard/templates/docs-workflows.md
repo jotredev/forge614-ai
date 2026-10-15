@@ -11,7 +11,7 @@
 | Job | Disparador | Qué ejecuta | Qué publica | Duración esperada |
 | --- | --- | --- | --- | --- |
 | `build` | tag `v*` | `bun run build:target`, `bun run smoke:target` en macOS arm64/x64, Linux arm64/x64, Windows x64 | artefactos por plataforma | ~8 min |
-| `publish` | tras `build` | `bun run release:publish` | release con binarios y `SHA256SUMS` | ~1 min |
+| `publish` | tras `build` | Node 22.19.0, `bun run scripts/prepare-release-assets.mjs`, `bun run release:publish` | programa, porteros, `install.mjs`, ficha y un `SHA256SUMS` GNU | ~1 min |
 
 Todo job declara `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10): ninguna etapa queda sin límite y `bun run workflows:check` rechaza el job que no lo lleva.
 
@@ -25,5 +25,6 @@ Todo job declara `timeout-minutes` (`verify`: 10; `build`: 20; `publish`: 10): n
 | --- | --- | --- |
 | actions/checkout | v4.3.1 | 34e114876b0b11c390a56381ad16ebd13914f8d5 |
 | oven-sh/setup-bun | v2.0.2 | 735343b667d3e6f658f44d0eca948eb6282f2b76 |
+| actions/setup-node | v7.1.0 | 949feb2413d6458794dcd2491c4babbbce0c15c1 |
 | actions/upload-artifact | v4.6.2 | ea165f8d65b6e75b540449e92b4886f43607fa02 |
 | actions/download-artifact | v4.3.0 | d3f86a106a0bac45b974a628896c90dbdf5c8093 |

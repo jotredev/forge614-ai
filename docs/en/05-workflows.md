@@ -8,8 +8,8 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 
 | Job | Trigger | What it runs | What it validates | Expected duration |
 | --- | --- | --- | --- | --- |
-| `verify` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run verify` on `ubuntu-24.04` | typecheck, tests, decisions index, workflows, schemas, Notion map and standard validators (document 04) | ~3 min |
-| `parity` | push to `main`, pull request | `bun install --frozen-lockfile`, `bun run standard:check` on the matrix `ubuntu-24.04`, `macos-15`, `windows-2025` | that the standard archive has, on the three operating systems, the same fingerprint as `forge614.node.json`: the bytes are identical on Linux, macOS and Windows (record 0018) | ~2 min per system |
+| `verify` | push to `main`, pull request | Node 22.19.0, `bun install --frozen-lockfile`, `bun run verify` on `ubuntu-24.04` | typecheck, tests, decisions index, workflows, schemas, Notion map and standard validators (document 04) | ~4 min |
+| `parity` | push to `main`, pull request | `bun install --frozen-lockfile`, Node 22.19.0 through `actions/setup-node`, `bun run installer:e2e` and `bun run standard:check` on the matrix `ubuntu-24.04`, `macos-15`, `windows-2025` | end-to-end installer and platform gatekeepers, plus the standard archive fingerprint against `forge614.node.json` | ~5 min per system |
 
 `standard:check` is the script alias of `bun run standard:pack --check` (document 04); the workflows validator only accepts `bun run <script>` steps without arguments, which is why the job does not invoke the flag directly. Every job declares `timeout-minutes` (`verify` and `parity`: 10; `build`: 20; `publish`: 10; `standard-release`: 10): no stage runs without a limit and `workflows:check` rejects a job that lacks it. The `parity` matrix declares `fail-fast: false`: if one system fails, the other two finish and report their own result, so a parity failure shows all three verdicts instead of cancelling the ones still running.
 
@@ -17,10 +17,10 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 
 | Job | Trigger | What it runs | What it publishes | Expected duration |
 | --- | --- | --- | --- | --- |
-| `build` | tag `v*` | `bun install --frozen-lockfile`, `bun run build:target`, `bun run smoke:target` on macOS arm64/x64, Linux arm64/x64, Windows x64 | per-platform artifacts (`dist/release/*`) | ~8 min |
-| `publish` | after `build` | `bun install --frozen-lockfile`, `bun run release:publish` | release with binaries and `SHA256SUMS` | ~1 min |
+| `build` | tag `v*` | `bun install --frozen-lockfile`, `bun run build:target`, `bun run smoke:target` on macOS arm64/x64, Linux arm64/x64, Windows x64 | per-platform programs (`dist/release/*`) | ~8 min |
+| `publish` | after `build` | Node 22.19.0, `bun install --frozen-lockfile`, `bun run scripts/prepare-release-assets.mjs`, `bun run release:publish` | program, gatekeepers, `install.mjs`, pointer and one GNU `SHA256SUMS` covering every file | ~1 min |
 
-`build:target`, `smoke:target` and `release:publish` are stubs: `package.json` scripts that end with `NOT_IMPLEMENTED` until the shared `bun release` arrives in phase 0.4. Until then a `v*` tag fails deliberately: the three scripts call `src/interfaces/cli/not-implemented.ts`, which exits with `1` and that code.
+`build:target`, `smoke:target` and `release:publish` are stubs: `package.json` scripts that end with `NOT_IMPLEMENTED` until the shared `bun release` arrives in phase 0.4. `prepare-release-assets.mjs`, copied from `standard/templates/`, stages the common assets and creates the single manifest before publishing. Until then a `v*` tag fails deliberately: the three scripts call `src/interfaces/cli/not-implemented.ts`, which exits with `1` and that code.
 
 **Precondition of `release.yml`:** a node with `file:../` dependencies to sibling repositories in its `package.json` cannot adopt this template; the workflow checks out a single repository, so `bun install --frozen-lockfile` would fail against that path dependency. Replace it with the published version of the sibling node before adopting the template.
 
@@ -46,5 +46,7 @@ It is the minimum publication mechanism for the standard (phase 0.2 spec, §5.1)
 | --- | --- | --- |
 | actions/checkout | v4.3.1 | 34e114876b0b11c390a56381ad16ebd13914f8d5 |
 | oven-sh/setup-bun | v2.0.2 | 735343b667d3e6f658f44d0eca948eb6282f2b76 |
+| actions/setup-node | v7.1.0 | 949feb2413d6458794dcd2491c4babbbce0c15c1 |
+| actions/setup-node | v7.1.0 | 949feb2413d6458794dcd2491c4babbbce0c15c1 |
 | actions/upload-artifact | v4.6.2 | ea165f8d65b6e75b540449e92b4886f43607fa02 |
 | actions/download-artifact | v4.3.0 | d3f86a106a0bac45b974a628896c90dbdf5c8093 |
