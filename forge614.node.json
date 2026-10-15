@@ -4,7 +4,7 @@
   "kind": "product",
   "standard": {
     "version": "1.1.3",
-    "sha256": "770a6292b97a158e218ddf58e25e23f994b8f89e6a674e76a8e04a9ac4695242"
+    "sha256": "d507c313c3ece3bbe1bf6b188134b08645353220bee6d9c6ce1977e522ef6f37"
   },
   "ecosystem": "forge614"
 }
