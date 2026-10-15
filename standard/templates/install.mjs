@@ -4,13 +4,29 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, readlink, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { gunzipSync, inflateRawSync } from "node:zlib";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 const EXIT = Object.freeze({ OK: 0, USAGE: 64, REQUIREMENT: 65, DOWNLOAD: 66, DEPENDENCY: 69 });
 const MIN_NODE = [22, 19, 0];
 const TEST_BASE_ENV = "FORGE614_INSTALL_TEST_BASE_URL";
+const temporaryInstallDirs = new Set();
+
+/** Remove every staged installer directory when a signal interrupts installation. */
+async function cleanupInstallDirs() {
+  await Promise.all([...temporaryInstallDirs].map((path) => rm(path, { recursive: true, force: true }).catch(() => {})));
+  temporaryInstallDirs.clear();
+}
+
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    void cleanupInstallDirs().finally(() => {
+      process.exitCode = code;
+      process.exit(code);
+    });
+  });
+}
 
 /** Raise an installer error with its public exit code. */
 class InstallerError extends Error {
@@ -24,7 +40,7 @@ class InstallerError extends Error {
 
 /** Select Spanish or English from the current and legacy locale variables. */
 function locale() {
-  const selected = process.env.FORGE614_LOCALE ?? process.env.FORGE614_SHELL_LOCALE ?? "es";
+  const selected = process.env.FORGE614_LOCALE || process.env.FORGE614_SHELL_LOCALE || "es";
   return selected.toLowerCase().startsWith("en") ? "en" : "es";
 }
 
@@ -220,15 +236,27 @@ async function installedVersion(launcher) {
 /** Run an executable with bounded time and capture its output. */
 function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { windowsHide: true, shell: process.platform === "win32" && /\.cmd$/i.test(command), stdio: ["ignore", "pipe", "pipe"], ...options });
+    const isCmd = process.platform === "win32" && /\.cmd$/i.test(command);
+    const child = spawn(isCmd ? `"${command}"` : command, args, { windowsHide: true, shell: isCmd, stdio: ["ignore", "pipe", "pipe"], ...options });
     let stdout = "";
     let stderr = "";
+    let settled = false;
     const timeout = setTimeout(() => child.kill("SIGKILL"), options.timeout ?? 15_000);
     child.stdout?.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
     child.stderr?.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
-    child.once("error", reject);
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      if (options.allowFailure) {
+        settled = true;
+        resolvePromise({ code: null, stdout, stderr: stderr || error.message });
+      } else {
+        settled = true;
+        reject(error);
+      }
+    });
     child.once("close", (code) => {
       clearTimeout(timeout);
+      if (settled) return;
       if (code !== 0 && !options.allowFailure) reject(new Error(stderr || `process exited with ${code}`));
       else resolvePromise({ code, stdout, stderr });
     });
@@ -252,13 +280,21 @@ async function dependencyCompatible(dependency, home) {
   if (!version) return false;
   if (dependency.minimumVersion && compareVersions(version, dependency.minimumVersion) < 0) return false;
   if (Array.isArray(dependency.requiredCapabilities) && dependency.requiredCapabilities.length > 0) {
-    const result = await run(launcher, ["--capabilities", "--json"], { allowFailure: true });
-    if (result.code !== 0) return false;
-    try {
-      const capabilities = JSON.parse(result.stdout).capabilities;
-      if (!dependency.requiredCapabilities.every((item) => capabilities.includes(item))) return false;
-    } catch {
-      return false;
+    for (const requirement of dependency.requiredCapabilities) {
+      if (!requirement || typeof requirement.agent !== "string" || typeof requirement.field !== "string") return false;
+    }
+    const agents = [...new Set(dependency.requiredCapabilities.map((requirement) => requirement.agent))];
+    for (const agent of agents) {
+      const result = await run(launcher, ["capabilities", "--agent", agent], { allowFailure: true });
+      if (result.code !== 0) return false;
+      try {
+        const capabilities = JSON.parse(result.stdout);
+        if (capabilities.schemaVersion !== 1 || !dependency.requiredCapabilities
+          .filter((requirement) => requirement.agent === agent)
+          .every((requirement) => capabilities[requirement.field] === true)) return false;
+      } catch {
+        return false;
+      }
     }
   }
   return true;
@@ -304,32 +340,97 @@ async function ensureDependencies(install, home, testBase) {
 async function atomicWrite(path, bytes, mode) {
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${randomUUID()}.tmp`;
-  await writeFile(temp, bytes, mode === undefined ? undefined : { mode });
-  await rename(temp, path);
+  try {
+    await writeFile(temp, bytes, mode === undefined ? undefined : { mode });
+    if (mode !== undefined) await chmod(temp, mode);
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
-/** Remove a legacy marked PATH block and append the current block once. */
-async function updatePath(home, nodeName, binDir, platform) {
+/** Select the one profile to create when the user's home has no known profile. */
+function defaultProfile(home) {
+  const shell = (process.env.SHELL ?? "").toLowerCase();
+  if (shell.endsWith("zsh")) return join(home, ".zshrc");
+  if (shell.endsWith("bash")) return join(home, ".bashrc");
+  return join(home, ".profile");
+}
+
+/** Preserve an existing profile's bytes and permissions for activation rollback. */
+async function profileSnapshot(profile) {
+  let info;
+  try {
+    info = await lstat(profile);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return { profile, target: profile, existed: false, bytes: Buffer.alloc(0), mode: 0o644 };
+  }
+  const target = info.isSymbolicLink() ? await realpath(profile) : profile;
+  const targetInfo = await stat(target);
+  return { profile, target, existed: true, bytes: await readFile(target), mode: targetInfo.mode & 0o777 };
+}
+
+/** Restore profile contents or remove a profile created by a failed activation. */
+async function restoreProfiles(snapshots) {
+  for (const snapshot of [...snapshots].reverse()) {
+    if (snapshot.existed) await atomicWrite(snapshot.target, snapshot.bytes, snapshot.mode).catch(() => {});
+    else await rm(snapshot.profile, { force: true }).catch(() => {});
+  }
+}
+
+/** Remove Forge614 PATH blocks from existing profiles and optionally add this node's block. */
+async function updatePath(home, nodeName, binDir, platform, add = true) {
+  if (!home) {
+    process.stderr.write("No se modificó PATH: no hay HOME ni USERPROFILE.\n");
+    return [];
+  }
+  const profiles = [
+    join(home, ".zshrc"), join(home, ".bashrc"), join(home, ".bash_profile"), join(home, ".profile"),
+    join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"),
+    join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
+  ];
+  const present = [];
+  for (const profile of profiles) if (await pathExists(profile)) present.push(profile);
+  if (present.length === 0 && add) present.push(defaultProfile(home));
+  const snapshots = [];
   const begin = `# >>> forge614-${nodeName} PATH >>>`;
   const end = `# <<< forge614-${nodeName} PATH <<<`;
-  const profiles = platform.os === "windows"
-    ? [join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"), join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")]
-    : [join(home, ".zshrc"), join(home, ".bash_profile"), join(home, ".bashrc"), join(home, ".profile")];
-  for (const profile of profiles) {
-    let content = "";
-    try { content = await readFile(profile, "utf8"); } catch {}
-    const lines = content.split(/\r?\n/);
-    const kept = [];
-    let skip = false;
-    for (const line of lines) {
-      if (line === begin) { skip = true; continue; }
-      if (line === end) { skip = false; continue; }
-      if (!skip) kept.push(line);
+  const oldBlocks = ["engram", "atlas"].map((node) => ({ begin: `# >>> forge614-${node} PATH >>>`, end: `# <<< forge614-${node} PATH <<<` }));
+  try {
+    for (const profile of present) {
+      const snapshot = await profileSnapshot(profile);
+      snapshots.push(snapshot);
+      const content = snapshot.existed ? snapshot.bytes.toString("utf8") : "";
+      const lines = content.split(/\r?\n/);
+      const kept = [];
+      let skip = false;
+      let removeShellPath = false;
+      for (const line of lines) {
+        if (line === begin || oldBlocks.some((block) => line === block.begin)) { skip = true; continue; }
+        if (line === end || oldBlocks.some((block) => line === block.end)) { skip = false; continue; }
+        if (line === "# Forge614 Shell") { removeShellPath = true; continue; }
+        if (removeShellPath) {
+          removeShellPath = false;
+          if (/^\s*(export\s+)?PATH\s*=/.test(line)) continue;
+        }
+        if (!skip) kept.push(line);
+      }
+      const pathLine = profile.toLowerCase().endsWith(".ps1")
+        ? `$env:Path = "${binDir};$env:Path"`
+        : `export PATH="${binDir}:$PATH"`;
+      const body = kept.join("\n").replace(/\n+$/, "");
+      const next = add
+        ? `${body}${body ? "\n" : ""}${begin}\n${pathLine}\n${end}\n`
+        : `${body}${body ? "\n" : ""}`;
+      if (next !== content) await atomicWrite(snapshot.target, Buffer.from(next), snapshot.mode);
     }
-    const pathLine = platform.os === "windows" ? `$env:Path = "${binDir};$env:Path"` : `export PATH="${binDir}:$PATH"`;
-    const next = `${kept.join("\n").replace(/\n+$/, "")}${kept.join("").length ? "\n" : ""}${begin}\n${pathLine}\n${end}\n`;
-    if (next !== content) await atomicWrite(profile, Buffer.from(next), 0o600);
+  } catch (error) {
+    await restoreProfiles(snapshots);
+    throw error;
   }
+  return snapshots;
 }
 
 /** Return true if a path exists without following a missing path error. */
@@ -348,6 +449,7 @@ async function extractTarGzip(bytes, destination) {
     const entry = prefix ? `${prefix}/${name}` : name;
     const size = Number.parseInt(header.subarray(124, 136).toString("ascii").replace(/\0.*$/, "").trim() || "0", 8);
     const type = String.fromCharCode(header[156] ?? 48);
+    if (isUnsafeArchivePath(entry) || !["0", "\0", "5"].includes(type)) throw new InstallerError(EXIT.DOWNLOAD, "archive contains an unsafe path or link");
     const target = resolve(destination, entry);
     if (target !== destination && !target.startsWith(`${destination}${sep}`)) throw new InstallerError(EXIT.DOWNLOAD, "archive contains an unsafe path");
     const dataStart = offset + 512;
@@ -378,7 +480,9 @@ async function extractZip(bytes, destination) {
     const extraLength = bytes.readUInt16LE(offset + 30);
     const commentLength = bytes.readUInt16LE(offset + 32);
     const localOffset = bytes.readUInt32LE(offset + 42);
+    const unixMode = bytes.readUInt32LE(offset + 38) >>> 16;
     const name = bytes.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+    if (isUnsafeArchivePath(name) || (unixMode & 0o170000) === 0o120000) throw new InstallerError(EXIT.DOWNLOAD, "archive contains an unsafe path or link");
     const dataOffset = localOffset + 30 + bytes.readUInt16LE(localOffset + 26) + bytes.readUInt16LE(localOffset + 28);
     const compressedBytes = bytes.subarray(dataOffset, dataOffset + compressed);
     const data = method === 0 ? compressedBytes : method === 8 ? inflateRawSync(compressedBytes) : undefined;
@@ -389,6 +493,12 @@ async function extractZip(bytes, destination) {
     else { await mkdir(dirname(target), { recursive: true }); await writeFile(target, data); }
     offset += 46 + nameLength + extraLength + commentLength;
   }
+}
+
+/** Reject absolute archive names and any parent traversal segment before resolving them. */
+function isUnsafeArchivePath(name) {
+  const normalized = name.replaceAll("\\\\", "/");
+  return normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").includes("..");
 }
 
 /** Extract a verified asset according to its declared format and return its launcher file. */
@@ -424,48 +534,112 @@ async function findFile(directory, names) {
   return undefined;
 }
 
-/** Migrate an unversioned regular launcher into a retained legacy folder. */
-async function migrateFlatInstall(nodeHome, launcher) {
-  if (!(await pathExists(launcher))) return;
+/** Move a regular flat launcher to a retained legacy folder only before versioned activation. */
+async function migrateFlatInstall(nodeHome, launcher, hasActiveVersion) {
+  if (hasActiveVersion || !(await pathExists(launcher))) return undefined;
   const info = await lstat(launcher);
-  if (info.isSymbolicLink()) return;
-  const active = join(nodeHome, `legacy-${Date.now()}`);
-  await mkdir(active, { recursive: true });
-  await rename(launcher, join(active, info.isFile() ? launcher.split(/[\\/]/).at(-1) : "launcher"));
+  if (info.isSymbolicLink()) return undefined;
+  const legacyDir = join(nodeHome, `legacy-${Date.now()}-${randomUUID()}`);
+  await mkdir(legacyDir, { recursive: true });
+  const legacyLauncher = join(legacyDir, info.isFile() ? launcher.split(/[\\/]/).at(-1) : "launcher");
+  await rename(launcher, legacyLauncher);
+  return { launcher, legacyLauncher };
 }
 
-/** Publish the new version and stable launcher with rollback on every failed write. */
-async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home) {
-  const versionDir = join(nodeHome, version);
+/** Atomically replace the Unix launcher from a temporary sibling and handle cross-device fallback. */
+async function publishUnixLauncher(source, launcher) {
+  await mkdir(dirname(launcher), { recursive: true });
+  const tempLink = `${launcher}.${randomUUID()}.tmp`;
+  const target = resolve(source);
+  try {
+    await symlink(target, tempLink);
+    await rename(tempLink, launcher);
+  } catch (error) {
+    await rm(tempLink, { force: true }).catch(() => {});
+    if (error?.code !== "EXDEV") throw error;
+    const tempCopy = `${launcher}.${randomUUID()}.tmp`;
+    try {
+      await copyFile(source, tempCopy);
+      await chmod(tempCopy, 0o755);
+      await rename(tempCopy, launcher);
+    } catch (copyError) {
+      await rm(tempCopy, { force: true }).catch(() => {});
+      throw copyError;
+    }
+  }
+}
+
+/** Publish the new version, PATH, active pointer and smoke test as one rollback transaction. */
+async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home, smokeTest) {
   const activeFile = join(nodeHome, ".active-version");
+  const hadActivePointer = await pathExists(activeFile);
+  const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const launcherName = `forge614-${nodeName}${platform.os === "windows" && stagedLauncher.endsWith(".cmd") ? ".cmd" : platform.os === "windows" ? ".exe" : ""}`;
   const launcher = join(binDir, launcherName);
-  const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
-  const previousLauncher = await pathExists(launcher) ? join(nodeHome, `.launcher-backup-${randomUUID()}`) : "";
-  const previousVersionDir = await pathExists(versionDir) ? join(nodeHome, `.version-backup-${randomUUID()}`) : "";
+  const versionDir = join(nodeHome, version);
+  const publishDir = previousVersion === version && await pathExists(versionDir)
+    ? join(nodeHome, `${version}.install-${randomUUID()}`)
+    : versionDir;
+  const versionBackup = publishDir === versionDir && await pathExists(versionDir) ? join(nodeHome, `.version-backup-${randomUUID()}`) : "";
+  const launcherExists = await pathExists(launcher);
+  let oldLauncherTarget = "";
+  let launcherBackup = "";
+  if (launcherExists) {
+    const info = await lstat(launcher);
+    if (info.isSymbolicLink()) oldLauncherTarget = await readlink(launcher);
+    else {
+      launcherBackup = join(nodeHome, `.launcher-backup-${randomUUID()}`);
+      await copyFile(launcher, launcherBackup);
+    }
+  }
   await mkdir(nodeHome, { recursive: true });
   await mkdir(binDir, { recursive: true });
-  if (previousLauncher) await rename(launcher, previousLauncher);
+  let migration;
+  let pathSnapshots = [];
+  let pointerWritten = false;
   try {
-    if (previousVersionDir) await rename(versionDir, previousVersionDir);
-    await rename(stagedDir, versionDir);
-    const relativeTarget = join(versionDir, stagedLauncher.slice(stagedDir.length + 1));
-    if (platform.os === "windows") await copyFile(relativeTarget, launcher);
-    else {
-      const tempLink = `${launcher}.${randomUUID()}.tmp`;
-      await symlink(relativeTarget, tempLink);
-      await rename(tempLink, launcher);
-    }
+    migration = await migrateFlatInstall(nodeHome, join(nodeHome, "bin", launcherName), hadActivePointer);
+    if (versionBackup) await rename(versionDir, versionBackup);
+    await rename(stagedDir, publishDir);
+    const relativeTarget = stagedLauncher.slice(stagedDir.length + 1);
+    const publishedLauncher = join(publishDir, relativeTarget);
+    if (platform.os === "windows") {
+      const temporaryLauncher = `${launcher}.${randomUUID()}.tmp`;
+      try {
+        await copyFile(publishedLauncher, temporaryLauncher);
+        await rename(temporaryLauncher, launcher);
+      } finally {
+        await rm(temporaryLauncher, { force: true }).catch(() => {});
+      }
+    } else await publishUnixLauncher(publishedLauncher, launcher);
+    if (pathModify) pathSnapshots = await updatePath(home, nodeName, binDir, platform, true);
     await atomicWrite(activeFile, Buffer.from(`${version}\n`));
-    if (pathModify) await updatePath(home, nodeName, binDir, platform);
-    if (previousLauncher) await rm(previousLauncher, { force: true });
-    if (previousVersionDir) await rm(previousVersionDir, { recursive: true, force: true });
+    pointerWritten = true;
+    const smoke = await run(launcher, smokeTest, { allowFailure: true });
+    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${nodeName} ${version}`) {
+      throw new Error("published launcher smoke test failed");
+    }
+    if (launcherBackup) await rm(launcherBackup, { force: true });
+    if (versionBackup) await rm(versionBackup, { recursive: true, force: true });
   } catch (error) {
+    await restoreProfiles(pathSnapshots);
+    if (pointerWritten) {
+      if (previousVersion) await atomicWrite(activeFile, Buffer.from(`${previousVersion}\n`)).catch(() => {});
+      else await rm(activeFile, { force: true }).catch(() => {});
+    }
     await rm(launcher, { force: true }).catch(() => {});
-    if (previousLauncher && await pathExists(previousLauncher)) await rename(previousLauncher, launcher).catch(() => {});
-    if (previousVersion) await atomicWrite(activeFile, Buffer.from(`${previousVersion}\n`)).catch(() => {});
-    await rm(versionDir, { recursive: true, force: true }).catch(() => {});
-    if (previousVersionDir && await pathExists(previousVersionDir)) await rename(previousVersionDir, versionDir).catch(() => {});
+    if (oldLauncherTarget) {
+      const tempLink = `${launcher}.${randomUUID()}.rollback`;
+      await symlink(oldLauncherTarget, tempLink).then(() => rename(tempLink, launcher)).catch(() => rm(tempLink, { force: true }));
+    } else if (launcherBackup && await pathExists(launcherBackup)) {
+      await rename(launcherBackup, launcher).catch(() => {});
+    }
+    if (migration && await pathExists(migration.legacyLauncher)) {
+      await rename(migration.legacyLauncher, migration.launcher).catch(() => {});
+      await rm(dirname(migration.legacyLauncher), { recursive: true, force: true }).catch(() => {});
+    }
+    await rm(publishDir, { recursive: true, force: true }).catch(() => {});
+    if (versionBackup && await pathExists(versionBackup)) await rename(versionBackup, versionDir).catch(() => {});
     throw error;
   }
 }
@@ -476,6 +650,11 @@ async function main(argv) {
   if (options.help) { process.stdout.write(`${message("help")}\n`); return EXIT.OK; }
   checkNodeVersion();
   const home = forgeHome();
+  if (options.uninstall) {
+    const node = process.env.FORGE614_INSTALL_NODE;
+    if (!node || !/^[a-z0-9-]+$/.test(node)) throw new InstallerError(EXIT.REQUIREMENT, "the gatekeeper did not provide the node identity");
+    return await uninstallNode(node, home, options.binDir);
+  }
   const testBase = testBaseUrl();
   const repositoryHint = process.env.FORGE614_INSTALL_REPOSITORY;
   if (!repositoryHint) throw new InstallerError(EXIT.REQUIREMENT, "install repository is not available");
@@ -485,10 +664,8 @@ async function main(argv) {
   const { node, install } = parsePointer(pointerBytes);
   if (install.repository !== repositoryHint) throw new InstallerError(EXIT.REQUIREMENT, "release repository does not match install.repository");
   if (process.env.FORGE614_INSTALL_NODE && process.env.FORGE614_INSTALL_NODE !== node) throw new InstallerError(EXIT.REQUIREMENT, "release node does not match the gatekeeper");
-  if (options.uninstall) return await uninstallNode(node, home, options.binDir);
   const platform = currentPlatform();
   requireSupportedSystem(install, platform);
-  await ensureDependencies(install, home, testBase);
   const nodeHome = join(home, node);
   const activeFile = join(nodeHome, ".active-version");
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
@@ -504,19 +681,23 @@ async function main(argv) {
     const expected = sums.toString("utf8").split(/\r?\n/).find((line) => line.endsWith(`  ${name}`))?.slice(0, 64);
     if (!expected || createHash("sha256").update(asset).digest("hex") !== expected) throw new InstallerError(EXIT.DOWNLOAD, `SHA-256 mismatch for ${name}`);
   } else asset = await verifiedAsset(install.repository, tag, name, sums, testBase);
+  await ensureDependencies(install, home, testBase);
   const stage = join(nodeHome, `.install-${randomUUID()}`);
   await mkdir(stage, { recursive: true });
+  temporaryInstallDirs.add(stage);
   try {
     const stagedLauncher = await prepareAsset(install, asset, name, node, stage, platform);
-    const smoke = await run(stagedLauncher, install.smokeTest ?? ["--version"], { allowFailure: true });
-    if (smoke.code !== 0 || !smoke.stdout.trim()) throw new Error("smoke test failed");
-    await migrateFlatInstall(nodeHome, join(options.binDir ? resolve(options.binDir) : join(nodeHome, "bin"), `forge614-${node}${platform.os === "windows" ? ".exe" : ""}`));
-    await activate(node, version, nodeHome, stage, stagedLauncher, options.binDir ? resolve(options.binDir) : join(nodeHome, "bin"), platform, install.path?.modify === true, process.env.HOME ?? process.env.USERPROFILE ?? "");
+    const smokeTest = install.smokeTest ?? ["--version"];
+    const smoke = await run(stagedLauncher, smokeTest, { allowFailure: true });
+    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) throw new Error("staged launcher smoke test failed");
+    await activate(node, version, nodeHome, stage, stagedLauncher, options.binDir ? resolve(options.binDir) : join(nodeHome, "bin"), platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest);
     process.stdout.write(`${message(previousVersion ? "updated" : "installed", { node, previous: previousVersion, version })}\n`);
     return EXIT.OK;
   } catch (error) {
     await rm(stage, { recursive: true, force: true });
     throw error;
+  } finally {
+    temporaryInstallDirs.delete(stage);
   }
 }
 
@@ -529,9 +710,12 @@ async function uninstallNode(node, home, binDirOverride) {
     const launcher = join(binDir, name);
     if (!(await pathExists(launcher))) continue;
     const result = await run(launcher, ["uninstall", "--self"], { allowFailure: true });
-    if (result.code !== 0) throw new InstallerError(EXIT.REQUIREMENT, result.stderr || "node refused to remove its integrations");
+    if (result.code !== 0) process.stderr.write(`Warning: forge614-${node} uninstall --self failed; continuing with installer cleanup.\n`);
     break;
   }
+  const platform = currentPlatform();
+  await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
+  if (binDirOverride) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
   await rm(nodeHome, { recursive: true, force: true });
   process.stdout.write(`${message("removed", { node })}\n`);
   return EXIT.OK;

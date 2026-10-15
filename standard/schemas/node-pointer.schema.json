@@ -139,7 +139,29 @@
               "requiredCapabilities": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "object",
+                  "properties": {
+                    "agent": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                    },
+                    "field": {
+                      "type": "string",
+                      "enum": [
+                        "supportsMcp",
+                        "supportsHooks",
+                        "supportsHeadlessExec",
+                        "supportsReasoningLevel",
+                        "supportsReadOnly",
+                        "fullySupported"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "field"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "compatibility": {

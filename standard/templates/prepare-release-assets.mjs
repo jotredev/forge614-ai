@@ -34,11 +34,31 @@ async function copyInstallerSet(root, releaseDir) {
   await chmod(join(releaseDir, "install.sh"), 0o755);
 }
 
-/** List top-level regular files that the release manifest must cover. */
-async function releaseFiles(releaseDir, nodeName) {
+/** Resolve a node asset pattern to its concrete release filename for one declared system. */
+function resolveProgramAsset(pattern, nodeName, version, os, arch) {
+  return pattern
+    .replaceAll("<node>", nodeName)
+    .replaceAll("<ver>", version)
+    .replaceAll("<plat>", os)
+    .replaceAll("<arch>", arch)
+    .replace("[.exe]", os === "windows" ? ".exe" : "")
+    .replace(/\.tar\.gz\|\.zip$/, os === "windows" ? ".zip" : ".tar.gz");
+}
+
+/** List release files and require every program asset declared by install.systems. */
+async function releaseFiles(releaseDir, pointer, version) {
   const entries = await readdir(releaseDir, { withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile() && entry.name !== "SHA256SUMS").map((entry) => entry.name).sort();
-  if (!files.some((name) => name.startsWith(`forge614-${nodeName}`))) throw new Error(`release has no forge614-${nodeName} program asset`);
+  const install = pointer.install;
+  if (!Array.isArray(install?.systems) || typeof install?.asset?.pattern !== "string") {
+    throw new Error("forge614.node.json has no install.systems asset pattern");
+  }
+  for (const system of install.systems) {
+    for (const arch of system.architectures ?? []) {
+      const expected = resolveProgramAsset(install.asset.pattern, pointer.node, version, system.os, arch);
+      if (!files.includes(expected)) throw new Error(`release is missing declared program asset: ${expected}`);
+    }
+  }
   return files;
 }
 
@@ -57,9 +77,10 @@ async function main() {
   const root = process.cwd();
   const releaseDir = join(root, "dist", "release");
   const pointer = await readNodePointer(root);
+  const version = (await readFile(join(root, "VERSION"), "utf8")).trim().replace(/^v/, "");
   await mkdir(releaseDir, { recursive: true });
   await copyInstallerSet(root, releaseDir);
-  const files = await releaseFiles(releaseDir, pointer.node);
+  const files = await releaseFiles(releaseDir, pointer, version);
   await writeManifest(releaseDir, files);
   process.stdout.write(`Prepared ${files.length} release files for forge614-${pointer.node}.\n`);
 }
