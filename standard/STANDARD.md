@@ -85,12 +85,12 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 - **Tres sistemas operativos, siempre** (acta 0018): todo nodo publica binarios e instalador para macOS (arm64 y x64), Linux (arm64 y x64) y Windows (x64). No hay excepciones ni "pendiente"; un nodo sin uno de los tres no se libera.
 - Porteros `install.sh` e `install.ps1` mínimos más un `install.mjs` común, desde `standard/templates/`. En el portero solo varían dos líneas de datos: nombre del nodo y repositorio. `install.mjs` es idéntico byte a byte; lee los datos del bloque `install` en la ficha publicada con la release (acta 0031).
 - Node 22.19+ es obligatorio para instalar todos los nodos; no se requiere Python. El runtime de cada nodo queda documentado aparte (acta 0031).
-- Destino `~/.forge614/<nodo>/<versión>/` con lanzador estable `~/.forge614/<nodo>/bin/forge614-<nodo>` y archivo `.active-version`. La activación es atómica, migra las instalaciones planas y termina con una prueba `--version`; `FORGE614_HOME` sustituye `~/.forge614` (acta 0031).
+- Destino `~/.forge614/<nodo>/<versión>/` con lanzador estable `~/.forge614/<nodo>/bin/forge614-<nodo>` y archivo `.active-version`. Se comprueba dos veces que `--version` devuelve exactamente `forge614-<nodo> <versión>`; `.active-version` se escribe al final y los fallos revierten PATH, lanzador, puntero y migración (acta 0031).
 - Descarga solo por HTTPS; verificación SHA-256 obligatoria contra `SHA256SUMS` del mismo release; el instalador nunca ejecuta scripts remotos sin verificar su huella.
 - `FORGE614_INSTALL_TEST_BASE_URL` es exclusiva de pruebas y solo acepta `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS (acta 0031).
 - Ningún otro requisito de lenguaje se usa para instalar: Node 22.19+ es el mínimo; Python no se requiere (acta 0031).
-- Engram, Shell y Atlas agregan al `PATH` un bloque marcado vigente hasta que `forge614 init` gestione esa configuración. Engines, Workers y Sentinel no lo modifican (acta 0031).
-- Desinstalación simétrica: retira primero sus integraciones en asistentes (ganchos, MCP, instrucciones) mediante los contratos públicos, luego borra solo su directorio. Nunca `~/.forge614/` completo.
+- Engram, Shell y Atlas editan perfiles existentes o crean uno según `$SHELL` (`.zshrc`, `.bashrc` o `.profile`); conservan enlaces simbólicos y permisos. Engines, Workers y Sentinel no modifican PATH (acta 0031).
+- `--uninstall` usa la identidad entregada por el portero, no requiere red, avisa si falla `uninstall --self`, quita el lanzador externo y sus bloques PATH y borra solo `FORGE614_HOME/<nodo>/`. Nunca borra `~/.forge614/` completo.
 - Actualización (`<nodo> update`): descarga y verifica el instalador **de la release destino**, permite `--version`, y registra la versión previa para revertir.
 
 ## 7. Release, versionado y workflows
