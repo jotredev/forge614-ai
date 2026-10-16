@@ -14,13 +14,13 @@ function writePointer(dir: string, sha256: string): string {
   return path;
 }
 
-test("rewrites only standard.sha256, keeping every other field", () => {
+test("rewrites standard.version and standard.sha256 from the current standard", () => {
   const dir = mkdtempSync(join(tmpdir(), "node-pointer-"));
   const path = writePointer(dir, SHA_A);
 
-  const updated = updateNodePointerSha256(path, SHA_B);
+  const updated = updateNodePointerSha256(path, SHA_B, "1.2.0");
 
-  expect(updated).toEqual({ schemaVersion: 1, node: "ai", kind: "product", standard: { version: "1.0.0", sha256: SHA_B }, ecosystem: "forge614" });
+  expect(updated).toEqual({ schemaVersion: 1, node: "ai", kind: "product", standard: { version: "1.2.0", sha256: SHA_B }, ecosystem: "forge614" });
   const onDisk = JSON.parse(readFileSync(path, "utf8"));
   expect(onDisk).toEqual(updated);
 });
@@ -30,7 +30,7 @@ test("refuses to write when the resulting pointer would be invalid", () => {
   const path = writePointer(dir, SHA_A);
   const before = readFileSync(path, "utf8");
 
-  expect(() => updateNodePointerSha256(path, "not-a-sha")).toThrow();
+  expect(() => updateNodePointerSha256(path, "not-a-sha", "1.2.0")).toThrow();
   expect(readFileSync(path, "utf8")).toBe(before);
 });
 
@@ -39,5 +39,5 @@ test("refuses to write when the existing pointer on disk is already invalid", ()
   const path = join(dir, "forge614.node.json");
   writeFileSync(path, `${JSON.stringify({ schemaVersion: 1, node: "AI", kind: "product", standard: { version: "1.0.0", sha256: SHA_A } })}\n`, "utf8");
 
-  expect(() => updateNodePointerSha256(path, SHA_B)).toThrow();
+  expect(() => updateNodePointerSha256(path, SHA_B, "1.2.0")).toThrow();
 });
