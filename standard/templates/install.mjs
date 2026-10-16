@@ -56,6 +56,7 @@ function message(key, values = {}) {
     current: { es: "forge614-{node} ya está al día ({version}).", en: "forge614-{node} is already up to date ({version})." },
     updated: { es: "forge614-{node} se actualizó de {previous} a {version}.", en: "forge614-{node} was updated from {previous} to {version}." },
     reinstalled: { es: "forge614-{node} se reinstaló {version}.", en: "forge614-{node} was reinstalled at {version}." },
+    pathNotAdded: { es: "forge614-{node} quedó instalado, pero no se agregó al PATH: {reason}.", en: "forge614-{node} was installed, but was not added to PATH: {reason}." },
     removed: { es: "forge614-{node} se desinstaló.", en: "forge614-{node} was uninstalled." },
     uninstallHookFailed: { es: "Aviso: falló forge614-{node} uninstall --self; se sigue con la limpieza del instalador.", en: "Warning: forge614-{node} uninstall --self failed; continuing with installer cleanup." },
     help: { es: "Uso: install.mjs [--latest] [--force] [--version ETIQUETA] [--archive RUTA] [--uninstall] [--bin-dir RUTA]", en: "Usage: install.mjs [--latest] [--force] [--version TAG] [--archive PATH] [--uninstall] [--bin-dir PATH]" },
@@ -427,40 +428,97 @@ function decodeProfile(bytes) {
   return { content: bytes.toString("utf8").replace(/^\uFEFF/, ""), encode: (text) => Buffer.concat([hasBom ? Buffer.from([0xef, 0xbb, 0xbf]) : Buffer.alloc(0), Buffer.from(text, "utf8")]) };
 }
 
-/** Return the test-only Path file only when a 127.0.0.1 test server is enabled. */
-function testWindowsUserPathFile() {
-  const pathFile = process.env.FORGE614_TEST_WINDOWS_USER_PATH_FILE;
-  if (!pathFile) return undefined;
+/** Validate the test-only registry key and require a loopback test release server. */
+function testWindowsEnvironmentKey() {
+  const key = process.env.FORGE614_TEST_WINDOWS_ENV_KEY;
+  if (!key) return undefined;
   const base = testBaseUrl();
-  if (!base || new URL(base).hostname !== "127.0.0.1") {
-    throw new InstallerError(EXIT.USAGE, "FORGE614_TEST_WINDOWS_USER_PATH_FILE requires FORGE614_INSTALL_TEST_BASE_URL at 127.0.0.1");
+  const hostname = base ? new URL(base).hostname : "";
+  if (!base || !["127.0.0.1", "::1", "[::1]"].includes(hostname)) {
+    throw new InstallerError(EXIT.USAGE, "FORGE614_TEST_WINDOWS_ENV_KEY requires FORGE614_INSTALL_TEST_BASE_URL at 127.0.0.1 or [::1]");
   }
-  return pathFile;
+  if (!/^Software\\Forge614-Test-[A-Za-z0-9-]+$/.test(key)) {
+    throw new InstallerError(EXIT.USAGE, "FORGE614_TEST_WINDOWS_ENV_KEY must name a key under HKCU:\\Software\\Forge614-Test-");
+  }
+  return key;
 }
 
-/** Write only the current user's Windows Path variable. */
-async function setWindowsPath(value) {
-  const testPathFile = testWindowsUserPathFile();
-  if (testPathFile) {
-    await writeFile(testPathFile, `${value}\r\n`, "utf8");
-    return;
-  }
-  const literal = value.replaceAll("'", "''");
-  const command = `[Environment]::SetEnvironmentVariable('Path', '${literal}', 'User')`;
-  const result = await run("powershell.exe", ["-NoProfile", "-Command", command], { allowFailure: true });
-  if (result.code !== 0) throw new Error(result.stderr || "could not update the current user's Path");
+/** Encode a PowerShell script as UTF-16LE base64 for Windows PowerShell 5.1. */
+function encodedPowerShell(script) {
+  return Buffer.from(script, "utf16le").toString("base64");
+}
+
+/** Resolve the real or test registry path inside PowerShell, without embedding a user value. */
+function windowsRegistryPathScript() {
+  return [
+    "$registryPath = 'HKCU:\\Environment'",
+    "if ($env:FORGE614_TEST_WINDOWS_ENV_KEY) {",
+    "  if ($env:FORGE614_TEST_WINDOWS_ENV_KEY -notmatch '^Software\\\\Forge614-Test-[A-Za-z0-9-]+$') { throw 'invalid test registry key' }",
+    "  $registryPath = 'HKCU:\\' + $env:FORGE614_TEST_WINDOWS_ENV_KEY",
+    "}",
+  ].join("\n");
+}
+
+/** Run a UTF-16LE encoded PowerShell script with values passed only through the child environment. */
+async function runWindowsPathScript(script, environment = {}) {
+  const key = testWindowsEnvironmentKey();
+  const result = await run("powershell.exe", ["-NoProfile", "-EncodedCommand", encodedPowerShell(script)], {
+    allowFailure: true,
+    env: { ...process.env, ...environment, FORGE614_TEST_WINDOWS_ENV_KEY: key ?? "" },
+  });
+  if (result.code !== 0) throw new Error(result.stderr || "could not access the current user's Path");
+  return result.stdout.trim();
+}
+
+/** Read the raw current user's Path value and registry type without expanding environment variables. */
+async function readWindowsPath() {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "try {",
+    windowsRegistryPathScript(),
+    "  $item = Get-Item -LiteralPath $registryPath -ErrorAction SilentlyContinue",
+    "  if ($null -eq $item -or -not ($item.GetValueNames() -contains 'Path')) { [Console]::Out.WriteLine('MISSING||'); exit 0 }",
+    "  $value = $item.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+    "  $kind = $item.GetValueKind('Path').ToString()",
+    "  $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($value))",
+    "  [Console]::Out.WriteLine($kind + '|' + $encoded)",
+    "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }",
+  ].join("\n");
+  const result = await runWindowsPathScript(script);
+  const [kind, encoded] = result.split("|");
+  if (kind === "MISSING") return { value: "", kind: null, exists: false };
+  if (!kind || encoded === undefined) throw new Error("could not decode the current user's Path");
+  return { value: Buffer.from(encoded, "base64").toString("utf8"), kind, exists: true };
+}
+
+/** Write the current user's Path using its existing registry type or restore its absent state. */
+async function setWindowsPath(value, kind, exists = true) {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "try {",
+    windowsRegistryPathScript(),
+    "  if ($env:FORGE614_USER_PATH_PRESENT -eq '1') {",
+    "    $item = Get-Item -LiteralPath $registryPath -ErrorAction SilentlyContinue",
+    "    if ($null -ne $item -and $item.GetValueNames() -contains 'Path') { Set-ItemProperty -LiteralPath $registryPath -Name Path -Value $env:FORGE614_NEW_USER_PATH -Type $env:FORGE614_USER_PATH_KIND }",
+    "    else { New-ItemProperty -LiteralPath $registryPath -Name Path -Value $env:FORGE614_NEW_USER_PATH -PropertyType $env:FORGE614_USER_PATH_KIND -Force | Out-Null }",
+    "  }",
+    "  elseif (Test-Path -LiteralPath $registryPath) { Remove-ItemProperty -LiteralPath $registryPath -Name Path -ErrorAction SilentlyContinue }",
+    "  Add-Type -TypeDefinition @'\nusing System;\nusing System.Runtime.InteropServices;\npublic static class Forge614PathNotification {\n  [DllImport(\"user32.dll\", CharSet = CharSet.Auto, SetLastError = true)]\n  public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);\n}\n'@",
+    "  $notificationResult = [IntPtr]::Zero",
+    "  [void][Forge614PathNotification]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [IntPtr]::Zero, 'Environment', 0x0002, 5000, [ref]$notificationResult)",
+    "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }",
+  ].join("\n");
+  await runWindowsPathScript(script, {
+    FORGE614_NEW_USER_PATH: value,
+    FORGE614_USER_PATH_KIND: kind ?? "ExpandString",
+    FORGE614_USER_PATH_PRESENT: exists ? "1" : "0",
+  });
 }
 
 /** Update the current user's Windows Path variable and return its rollback snapshot. */
 async function updateWindowsPath(binDir, add) {
-  const testPathFile = testWindowsUserPathFile();
-  let original;
-  if (testPathFile) original = (await readFile(testPathFile, "utf8")).replace(/\r?\n$/, "");
-  else {
-    const current = await run("powershell.exe", ["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path', 'User')"], { allowFailure: true });
-    if (current.code !== 0) throw new Error(current.stderr || "could not read the current user's Path");
-    original = current.stdout.replace(/\r?\n$/, "");
-  }
+  const originalState = await readWindowsPath();
+  const original = originalState.value;
   const entries = original ? original.split(";") : [];
   const normalizedBin = binDir.replace(/[\\/]+$/, "").toLowerCase();
   const hasEntry = entries.some((entry) => entry.replace(/[\\/]+$/, "").toLowerCase() === normalizedBin);
@@ -468,17 +526,20 @@ async function updateWindowsPath(binDir, add) {
     ? hasEntry ? original : original ? `${original};${binDir}` : binDir
     : hasEntry ? entries.filter((entry) => entry.replace(/[\\/]+$/, "").toLowerCase() !== normalizedBin).join(";") : original;
   if (next === original) return undefined;
+  const kind = originalState.kind === "ExpandString" || next.includes("%") || !originalState.exists
+    ? "ExpandString"
+    : originalState.kind ?? "String";
   try {
-    await setWindowsPath(next);
+    await setWindowsPath(next, kind, true);
   } catch (error) {
     try {
-      await setWindowsPath(original);
+      await setWindowsPath(original, originalState.kind, originalState.exists);
     } catch (restoreError) {
       process.stderr.write(`No se pudo restaurar la variable Path del usuario: ${restoreError.message}\n`);
     }
     throw error;
   }
-  return { windowsPath: original };
+  return { windowsPath: original, windowsPathKind: originalState.kind, windowsPathExists: originalState.exists };
 }
 
 /** Restore profile contents or remove a profile created by a failed activation. */
@@ -486,7 +547,7 @@ async function restoreProfiles(snapshots) {
   for (const snapshot of [...snapshots].reverse()) {
     if (snapshot.windowsPath !== undefined) {
       try {
-        await setWindowsPath(snapshot.windowsPath);
+        await setWindowsPath(snapshot.windowsPath, snapshot.windowsPathKind, snapshot.windowsPathExists);
       } catch (error) {
         process.stderr.write(`No se pudo restaurar la variable Path del usuario: ${error.message}\n`);
       }
@@ -501,11 +562,11 @@ async function restoreProfiles(snapshots) {
 async function updatePath(home, nodeName, binDir, platform, add = true) {
   if (platform.os === "windows") {
     const snapshot = await updateWindowsPath(binDir, add);
-    return snapshot ? [snapshot] : [];
+    return { snapshots: snapshot ? [snapshot] : [], warning: "" };
   }
   if (!home) {
     process.stderr.write("No se modificó PATH: no hay HOME ni USERPROFILE.\n");
-    return [];
+    return { snapshots: [], warning: locale() === "es" ? "no se encontró un perfil de shell modificable" : "no modifiable shell profile was found" };
   }
   const profiles = [
     join(home, ".zshrc"), join(home, ".bashrc"), join(home, ".bash_profile"), join(home, ".profile"),
@@ -514,6 +575,7 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
   for (const profile of profiles) if (await pathExists(profile)) present.push(profile);
   if (present.length === 0 && add) present.push(defaultProfile(home));
   const snapshots = [];
+  let warning = "";
   const begin = `# >>> forge614-${nodeName} PATH >>>`;
   const end = `# <<< forge614-${nodeName} PATH <<<`;
   try {
@@ -524,20 +586,29 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
       } catch (error) {
         if (error?.code === "ENOENT" && (await pathExists(profile))) {
           process.stderr.write(`Aviso: se omite el perfil roto ${profile}.\n`);
+          warning ||= locale() === "es" ? "el perfil de shell no está disponible" : "the shell profile is unavailable";
           continue;
         }
         throw error;
       }
-      snapshots.push(snapshot);
       const decoded = decodeProfile(snapshot.bytes);
       const content = snapshot.existed ? decoded.content : "";
-      const newline = content.includes("\r\n") ? "\r\n" : "\n";
-      const lines = content.split(/\r\n|\n/);
+      const parts = content.split(/(\r\n|\n)/);
+      const records = [];
+      for (let index = 0; index < parts.length; index += 2) records.push({ line: parts[index] ?? "", ending: parts[index + 1] ?? "" });
+      const hasBegin = records.some(({ line }) => line === begin);
+      const hasEnd = records.some(({ line }) => line === end);
+      const hasLegacyShell = nodeName === "shell" && records.some(({ line }) => line === "# Forge614 Shell");
+      if (!add && !hasBegin && !hasEnd && !hasLegacyShell) continue;
+      const endings = records.flatMap(({ ending }) => ending ? [ending] : []);
+      const crlfCount = endings.filter((ending) => ending === "\r\n").length;
+      const newline = crlfCount > endings.length - crlfCount ? "\r\n" : "\n";
       const kept = [];
       let skip = false;
       let removeShellPath = false;
       let incomplete = false;
-      for (const line of lines) {
+      for (const record of records) {
+        const { line } = record;
         if (line === begin) { if (skip) incomplete = true; skip = true; continue; }
         if (line === end) { if (!skip) incomplete = true; skip = false; continue; }
         if (nodeName === "shell" && line === "# Forge614 Shell") { removeShellPath = true; continue; }
@@ -545,26 +616,32 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
           removeShellPath = false;
           if (/^\s*(export\s+)?PATH\s*=/.test(line)) continue;
         }
-        if (!skip) kept.push(line);
+        if (!skip) kept.push(record);
       }
-      if (skip) incomplete = true;
+      if (skip || hasBegin !== hasEnd) incomplete = true;
       if (incomplete) {
         process.stderr.write(`Aviso: el perfil ${profile} tiene un marcador PATH incompleto; no se modificó.\n`);
+        warning ||= locale() === "es" ? "el perfil tiene un marcador PATH incompleto" : "the profile has an incomplete PATH marker";
         continue;
       }
       const pathLine = `export PATH="${binDir.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`")}:$PATH"`;
-      const body = kept.join(newline).replace(new RegExp(`${newline === "\r\n" ? "\\r?\\n" : "\\n"}+$`), "");
-      const finalNewline = !snapshot.existed || content.endsWith("\n") ? newline : "";
-      const next = add
-        ? `${body}${body ? newline : ""}${begin}${newline}${pathLine}${newline}${end}${finalNewline}`
-        : `${body}${body ? finalNewline : ""}`;
-      if (next !== content) await atomicWrite(snapshot.target, decoded.encode(next), snapshot.mode);
+      const body = kept.map(({ line, ending }) => `${line}${ending}`).join("");
+      let next = body;
+      if (add) {
+        if (next && !next.endsWith("\n")) next += newline;
+        const finalNewline = !content || content.endsWith("\n") ? newline : "";
+        next += `${begin}${newline}${pathLine}${newline}${end}${finalNewline}`;
+      }
+      if (next !== content) {
+        snapshots.push(snapshot);
+        await atomicWrite(snapshot.target, decoded.encode(next), snapshot.mode);
+      }
     }
   } catch (error) {
     await restoreProfiles(snapshots);
     throw error;
   }
-  return snapshots;
+  return { snapshots, warning };
 }
 
 /** Return true if a path exists without following a missing path error. */
@@ -732,6 +809,9 @@ async function publishUnixLauncher(source, launcher) {
 /** Publish the new version, PATH, active pointer and smoke test as one rollback transaction. */
 async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home, smokeTest) {
   const activeFile = join(nodeHome, ".active-version");
+  const binDirFile = join(nodeHome, ".bin-dir");
+  const hadBinDir = await pathExists(binDirFile);
+  const previousBinDir = await readFile(binDirFile).catch(() => null);
   const hadActivePointer = await pathExists(activeFile);
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const launcherName = `forge614-${nodeName}${platform.os === "windows" && stagedLauncher.endsWith(".cmd") ? ".cmd" : platform.os === "windows" ? ".exe" : ""}`;
@@ -749,6 +829,7 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     if (info.isSymbolicLink()) oldLauncherTarget = await readlink(launcher);
     else {
       launcherBackup = join(dirname(launcher), `.launcher-backup-${randomUUID()}`);
+      temporaryFiles.add(launcherBackup);
       await copyFile(launcher, launcherBackup);
     }
   }
@@ -756,6 +837,7 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
   await mkdir(binDir, { recursive: true });
   let migrations = [];
   let pathSnapshots = [];
+  let pathWarning = "";
   let pointerWritten = false;
   try {
     const flatLaunchers = platform.os === "windows"
@@ -768,21 +850,31 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     const publishedLauncher = join(publishDir, relativeTarget);
     if (platform.os === "windows") {
       const temporaryLauncher = `${launcher}.${randomUUID()}.tmp`;
+      temporaryFiles.add(temporaryLauncher);
       try {
         await copyFile(publishedLauncher, temporaryLauncher);
         await rename(temporaryLauncher, launcher);
       } finally {
         await rm(temporaryLauncher, { force: true }).catch(() => {});
+        temporaryFiles.delete(temporaryLauncher);
       }
     } else await publishUnixLauncher(publishedLauncher, launcher);
-    if (pathModify) pathSnapshots = await updatePath(home, nodeName, binDir, platform, true);
+    if (pathModify) {
+      const pathResult = await updatePath(home, nodeName, binDir, platform, true);
+      pathSnapshots = pathResult.snapshots;
+      pathWarning = pathResult.warning;
+    }
+    await atomicWrite(binDirFile, Buffer.from(`${binDir}\n`));
     await atomicWrite(activeFile, Buffer.from(`${version}\n`));
     pointerWritten = true;
     const smoke = await run(launcher, smokeTest, { allowFailure: true });
     if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${nodeName} ${version}`) {
       throw new Error("published launcher smoke test failed");
     }
-    if (launcherBackup) await rm(launcherBackup, { force: true });
+    if (launcherBackup) {
+      await rm(launcherBackup, { force: true });
+      temporaryFiles.delete(launcherBackup);
+    }
     if (versionBackup) await rm(versionBackup, { recursive: true, force: true });
     for (const entry of await readdir(nodeHome)) {
       if (entry.startsWith(`${version}.install-`) && join(nodeHome, entry) !== publishDir) {
@@ -808,6 +900,7 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     } else if (launcherBackup && await pathExists(launcherBackup)) {
       try {
         await rename(launcherBackup, launcher);
+        temporaryFiles.delete(launcherBackup);
       } catch (restoreError) {
         process.stderr.write(`No se pudo restaurar el lanzador ${launcher}: ${restoreError.message}\n`);
       }
@@ -816,10 +909,13 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       if (await pathExists(migration.legacyLauncher)) await rename(migration.legacyLauncher, migration.launcher).catch(() => {});
     }
     for (const migration of migrations) await rm(dirname(migration.legacyLauncher), { recursive: true, force: true }).catch(() => {});
+    if (previousBinDir) await atomicWrite(binDirFile, previousBinDir).catch(() => {});
+    else if (!hadBinDir) await rm(binDirFile, { force: true }).catch(() => {});
     await rm(publishDir, { recursive: true, force: true }).catch(() => {});
     if (versionBackup && await pathExists(versionBackup)) await rename(versionBackup, versionDir).catch(() => {});
     throw error;
   }
+  return pathWarning;
 }
 
 /** Execute installation arguments and convert failures to the documented exit codes. */
@@ -869,9 +965,10 @@ async function main(argv) {
     const smoke = await run(stagedLauncher, smokeTest, { allowFailure: true });
     if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) throw new Error("staged launcher smoke test failed");
     const selectedBinDir = options.binDir ? resolve(options.binDir) : join(nodeHome, "bin");
-    await activate(node, version, nodeHome, stage, stagedLauncher, selectedBinDir, platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest);
-    await atomicWrite(join(nodeHome, ".bin-dir"), Buffer.from(`${selectedBinDir}\n`));
-    process.stdout.write(`${message(previousVersion === version ? "reinstalled" : previousVersion ? "updated" : "installed", { node, previous: previousVersion, version })}\n`);
+    const pathWarning = await activate(node, version, nodeHome, stage, stagedLauncher, selectedBinDir, platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest);
+    process.stdout.write(`${pathWarning
+      ? message("pathNotAdded", { node, reason: pathWarning })
+      : message(previousVersion === version ? "reinstalled" : previousVersion ? "updated" : "installed", { node, previous: previousVersion, version })}\n`);
     return EXIT.OK;
   } catch (error) {
     await rm(stage, { recursive: true, force: true });
@@ -879,6 +976,12 @@ async function main(argv) {
   } finally {
     temporaryInstallDirs.delete(stage);
   }
+}
+
+/** Return true when another Forge614 Windows launcher still uses this directory. */
+async function hasWindowsLauncher(binDir) {
+  const entries = await readdir(binDir).catch(() => []);
+  return entries.some((name) => /^forge614-.+\.(?:exe|cmd)$/i.test(name));
 }
 
 /** Run the node's self-uninstall hook, then delete only its Forge614 home. */
@@ -895,8 +998,10 @@ async function uninstallNode(node, home, binDirOverride) {
     const result = await run(found.launcher, ["uninstall", "--self"], { allowFailure: true });
     if (result.code !== 0) process.stderr.write(`${message("uninstallHookFailed", { node })}\n`);
   }
-  await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
-  if (binDirOverride || storedBinDir) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
+  const removesExternalLauncher = Boolean(binDirOverride || storedBinDir);
+  if (removesExternalLauncher) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
+  const sharedWindowsLauncherRemains = platform.os === "windows" && removesExternalLauncher && await hasWindowsLauncher(binDir);
+  if (!sharedWindowsLauncherRemains) await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
   await rm(nodeHome, { recursive: true, force: true });
   process.stdout.write(`${message("removed", { node })}\n`);
   return EXIT.OK;

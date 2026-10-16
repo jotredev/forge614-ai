@@ -173,34 +173,39 @@ async function fakeReleaseServer(): Promise<{ baseUrl: string; publish: typeof f
 async function runInstaller(home: string, baseUrl: string, args: string[] = [], overrides: Record<string, string> = {}, cwd = process.cwd()): Promise<{ code: number | null; stdout: string; stderr: string }> {
   if (!nodeBinary) throw new Error("Node.js is required for installer end-to-end tests");
   const script = join(root, "standard/templates/install.mjs");
-  const testPathFile = join(home, "windows-user-path.txt");
-  if (onWindows && !existsSync(testPathFile)) writeFileSync(testPathFile, "existing-entry\r\n");
-  return await new Promise((resolve, reject) => {
-    const child = spawn(nodeBinary, [script, ...args], {
-      env: {
-        ...process.env,
-        HOME: home,
-        FORGE614_HOME: join(home, ".forge614"),
-        FORGE614_INSTALL_TEST_BASE_URL: baseUrl,
-        FORGE614_INSTALL_REPOSITORY: REPO,
-        FORGE614_INSTALL_NODE: NODE,
-        ...(onWindows ? { FORGE614_TEST_WINDOWS_USER_PATH_FILE: testPathFile } : {}),
-        ...overrides,
-      },
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+  const automaticEnvKey = onWindows && !overrides.FORGE614_TEST_WINDOWS_ENV_KEY
+    ? await createWindowsEnvironmentTestKey("existing-entry")
+    : "";
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = spawn(nodeBinary, [script, ...args], {
+        env: {
+          ...process.env,
+          HOME: home,
+          FORGE614_HOME: join(home, ".forge614"),
+          FORGE614_INSTALL_TEST_BASE_URL: baseUrl,
+          FORGE614_INSTALL_REPOSITORY: REPO,
+          FORGE614_INSTALL_NODE: NODE,
+          ...(automaticEnvKey ? { FORGE614_TEST_WINDOWS_ENV_KEY: automaticEnvKey } : {}),
+          ...overrides,
+        },
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+      child.once("error", reject);
+      child.once("close", (code) => {
+        clearTimeout(timeout);
+        resolve({ code, stdout, stderr });
+      });
     });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-    child.once("error", reject);
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      resolve({ code, stdout, stderr });
-    });
-  });
+  } finally {
+    if (automaticEnvKey) await removeWindowsEnvironmentTestKey(automaticEnvKey);
+  }
 }
 
 /** Run a gatekeeper process asynchronously and enforce a per-case timeout. */
@@ -220,6 +225,60 @@ async function runCommand(command: string, args: string[], env: NodeJS.ProcessEn
     child.once("error", reject);
     child.once("close", (code) => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
   });
+}
+
+/** Run a UTF-16LE encoded command with Windows PowerShell 5.1. */
+async function runPowerShell51(script: string, env: NodeJS.ProcessEnv = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const powershell = Bun.which("powershell.exe");
+  if (!powershell) throw new Error("Windows PowerShell 5.1 is required for registry tests");
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  return await runCommand(powershell, ["-NoProfile", "-EncodedCommand", encoded], { ...process.env, ...env }, 20_000);
+}
+
+/** Create a disposable registry key for Windows Path tests without touching HKCU:\\Environment. */
+async function createWindowsEnvironmentTestKey(initialPath?: string, valueKind = "String"): Promise<string> {
+  const key = `Software\\Forge614-Test-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const script = [
+    "$registryKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($env:FORGE614_TEST_WINDOWS_ENV_KEY)",
+    "if ($env:FORGE614_TEST_INITIAL_PATH_PRESENT -eq '1') {",
+    "  $value = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:FORGE614_TEST_INITIAL_PATH_BASE64))",
+    "  $kind = [Enum]::Parse([Microsoft.Win32.RegistryValueKind], $env:FORGE614_TEST_INITIAL_PATH_KIND)",
+    "  $registryKey.SetValue('Path', $value, $kind)",
+    "}",
+    "$registryKey.Close()",
+  ].join("\n");
+  const result = await runPowerShell51(script, {
+    FORGE614_TEST_WINDOWS_ENV_KEY: key,
+    FORGE614_TEST_INITIAL_PATH_PRESENT: initialPath === undefined ? "0" : "1",
+    FORGE614_TEST_INITIAL_PATH_BASE64: Buffer.from(initialPath ?? "", "utf8").toString("base64"),
+    FORGE614_TEST_INITIAL_PATH_KIND: valueKind,
+  });
+  if (result.code !== 0) throw new Error(result.stderr || "could not create disposable Windows registry key");
+  return key;
+}
+
+/** Read Path and its registry kind from a disposable test key as ASCII metadata. */
+async function readWindowsEnvironmentTestKey(key: string): Promise<{ kind: string | null; valueBase64: string | null }> {
+  const script = [
+    "$registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($env:FORGE614_TEST_WINDOWS_ENV_KEY, $false)",
+    "if ($null -eq $registryKey -or -not ($registryKey.GetValueNames() -contains 'Path')) { [Console]::Out.WriteLine('MISSING|'); exit 0 }",
+    "$value = $registryKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+    "$kind = $registryKey.GetValueKind('Path').ToString()",
+    "$encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($value))",
+    "$registryKey.Close()",
+    "[Console]::Out.WriteLine($kind + '|' + $encoded)",
+  ].join("\n");
+  const result = await runPowerShell51(script, { FORGE614_TEST_WINDOWS_ENV_KEY: key });
+  if (result.code !== 0) throw new Error(result.stderr || "could not read disposable Windows registry key");
+  const [kind, valueBase64] = result.stdout.trim().split("|");
+  return kind === "MISSING" ? { kind: null, valueBase64: null } : { kind: kind ?? null, valueBase64: valueBase64 ?? null };
+}
+
+/** Remove a disposable test registry key even when an assertion fails. */
+async function removeWindowsEnvironmentTestKey(key: string): Promise<void> {
+  const script = "Remove-Item -LiteralPath ('HKCU:\\' + $env:FORGE614_TEST_WINDOWS_ENV_KEY) -Recurse -Force -ErrorAction SilentlyContinue";
+  const result = await runPowerShell51(script, { FORGE614_TEST_WINDOWS_ENV_KEY: key });
+  if (result.code !== 0) throw new Error(result.stderr || "could not remove disposable Windows registry key");
 }
 
 /** Register an installer case with a progress line and a bounded test duration. */
@@ -445,6 +504,18 @@ installerCase("a published launcher smoke failure rolls back the first installat
   expect(existsSync(join(nodeHome, VERSION))).toBe(false);
 });
 
+installerCase("a bin-dir write failure rolls back the activation transaction", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-bindir-transaction-");
+  const nodeHome = join(home, ".forge614", NODE);
+  mkdirSync(join(nodeHome, ".bin-dir"), { recursive: true });
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(65);
+  expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
+  expect(existsSync(join(nodeHome, VERSION))).toBe(false);
+  expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
+});
+
 installerCase("smoke testing requires the exact node name and version output", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { wrongSmokeOutput: true });
@@ -458,9 +529,7 @@ installerCase("a PATH failure rolls back a first activation without an active po
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { pathModify: true });
   const home = tempDir("forge614-install-path-rollback-");
-  const fakePathFile = join(home, "path-directory");
-  mkdirSync(fakePathFile);
-  const result = await runInstaller(home, server.baseUrl, [], { FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile });
+  const result = await runInstaller(home, server.baseUrl);
   const nodeHome = join(home, ".forge614", NODE);
   expect(result.code).toBe(65);
   expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
@@ -556,14 +625,45 @@ installerCase("only Shell retires the legacy Forge614 Shell PATH line", async ()
 installerCase("an incomplete PATH marker warns and leaves profile bytes untouched", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { pathModify: true });
-  const home = tempDir("forge614-install-path-incomplete-");
+  for (const { locale, expected } of [
+    { locale: "es", expected: "forge614-demo quedó instalado, pero no se agregó al PATH: el perfil tiene un marcador PATH incompleto." },
+    { locale: "en", expected: "forge614-demo was installed, but was not added to PATH: the profile has an incomplete PATH marker." },
+  ]) {
+    const home = tempDir(`forge614-install-path-incomplete-${locale}-`);
+    const profile = join(home, ".profile");
+    const initial = "# before\n# >>> forge614-demo PATH >>>\nuser content\n";
+    writeFileSync(profile, initial);
+    const result = await runInstaller(home, server.baseUrl, [], { FORGE614_LOCALE: locale, SHELL: "/bin/sh" });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stderr).toContain("marcador");
+    expect(result.stdout).toContain(expected);
+    expect(readFileSync(profile, "utf8")).toBe(initial);
+  }
+}, onWindows);
+
+installerCase("uninstall without a PATH block leaves trailing blank lines byte-identical", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-uninstall-no-path-block-");
   const profile = join(home, ".profile");
-  const initial = "# before\n# >>> forge614-demo PATH >>>\nuser content\n";
-  writeFileSync(profile, initial);
-  const result = await runInstaller(home, server.baseUrl, [], { SHELL: "/bin/sh" });
+  const original = Buffer.from("# user profile\n\n\n");
+  writeFileSync(profile, original);
+  const result = await runInstaller(home, server.baseUrl, ["--uninstall"]);
   expect(result.code, result.stderr).toBe(0);
-  expect(result.stderr).toContain("marcador");
-  expect(readFileSync(profile, "utf8")).toBe(initial);
+  expect(readFileSync(profile).equals(original)).toBe(true);
+}, onWindows);
+
+installerCase("PATH insertion preserves mixed existing line endings and uses the majority for new lines", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-path-mixed-eol-");
+  const profile = join(home, ".profile");
+  const binDir = join(home, ".forge614", NODE, "bin");
+  const original = "first\r\nsecond\nthird\r\n";
+  writeFileSync(profile, original);
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+  const escapedBinDir = binDir.replaceAll("\\", "\\\\");
+  expect(readFileSync(profile, "utf8")).toBe(`${original}# >>> forge614-demo PATH >>>\r\nexport PATH="${escapedBinDir}:$PATH"\r\n# <<< forge614-demo PATH <<<\r\n`);
 }, onWindows);
 
 installerCase("PATH preserves CRLF and does not replace an already-correct profile", async () => {
@@ -600,6 +700,7 @@ installerCase("a broken profile symlink is skipped while installation continues"
   const result = await runInstaller(home, server.baseUrl, [], { SHELL: "/bin/sh" });
   expect(result.code, result.stderr).toBe(0);
   expect(result.stderr).toContain("perfil roto");
+  expect(result.stdout).toContain("quedó instalado, pero no se agregó al PATH: el perfil de shell no está disponible");
   expect(lstatSync(join(home, ".profile")).isSymbolicLink()).toBe(true);
 }, onWindows);
 
@@ -686,18 +787,12 @@ installerCase("an empty active-version file prevents flat-install migration", as
 
 installerCase("a failed activation restores a flat legacy launcher", async () => {
   const server = await fakeReleaseServer();
-  server.publish("1.0.0", { pathModify: true });
+  server.publish("1.0.0", { pathModify: false, failPublishedSmoke: true });
   const home = tempDir("forge614-install-flat-rollback-");
   const oldLauncher = join(home, ".forge614", NODE, "bin", `forge614-demo${onWindows ? ".cmd" : ""}`);
   mkdirSync(join(home, ".forge614", NODE, "bin"), { recursive: true });
   writeFileSync(oldLauncher, onWindows ? "@echo off\r\necho legacy\r\n" : "#!/bin/sh\nprintf legacy\n", { mode: 0o755 });
-  const overrides: Record<string, string> = {};
-  if (onWindows) {
-    const fakePathDirectory = join(home, "path-directory");
-    mkdirSync(fakePathDirectory);
-    overrides.FORGE614_TEST_WINDOWS_USER_PATH_FILE = fakePathDirectory;
-  } else mkdirSync(join(home, ".profile"));
-  const result = await runInstaller(home, server.baseUrl, [], overrides);
+  const result = await runInstaller(home, server.baseUrl);
   expect(result.code).toBe(65);
   expect(readFileSync(oldLauncher, "utf8")).toContain("legacy");
   expect(existsSync(join(home, ".forge614", NODE, ".active-version"))).toBe(false);
@@ -1013,18 +1108,21 @@ installerCase("uninstall continues after a failing hook in both locales and remo
       writeFileSync(launcher, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'forge614-demo 1.0.0\\n'; exit 0; fi\nexit 1\n", { mode: 0o755 });
     }
     const profile = join(home, ".profile");
-    const fakePathFile = join(home, "windows-user-path.txt");
-    if (onWindows) writeFileSync(fakePathFile, `system-entry;${externalBin}\r\n`);
-    else writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
-    const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
-      FORGE614_INSTALL_NODE: NODE, FORGE614_INSTALL_REPOSITORY: REPO, FORGE614_LOCALE: locale,
-      ...(onWindows ? { FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile } : {}),
-    });
-    expect(result.code, result.stderr).toBe(0);
-    expect(result.stderr).toContain(warning);
-    expect(existsSync(launcher)).toBe(false);
-    if (onWindows) expect(readFileSync(fakePathFile, "utf8")).toBe("system-entry\r\n");
-    else expect(readFileSync(profile, "utf8")).not.toContain("forge614-demo PATH");
+    if (!onWindows) writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=old\n# <<< forge614-demo PATH <<<\n");
+    const envKey = onWindows ? await createWindowsEnvironmentTestKey(`system-entry;${externalBin}`) : undefined;
+    try {
+      const result = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
+        FORGE614_INSTALL_NODE: NODE, FORGE614_INSTALL_REPOSITORY: REPO, FORGE614_LOCALE: locale,
+        ...(envKey ? { FORGE614_TEST_WINDOWS_ENV_KEY: envKey } : {}),
+      });
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stderr).toContain(warning);
+      expect(existsSync(launcher)).toBe(false);
+      if (onWindows && envKey) expect((await readWindowsEnvironmentTestKey(envKey)).valueBase64).toBe(Buffer.from("system-entry", "utf8").toString("base64"));
+      else expect(readFileSync(profile, "utf8")).not.toContain("forge614-demo PATH");
+    } finally {
+      if (envKey) await removeWindowsEnvironmentTestKey(envKey);
+    }
   }
 });
 
@@ -1167,60 +1265,101 @@ test.skipIf(pwsh === null)(`pwsh gatekeeper without Node prints the full accente
   expect(existsSync(join(home, ".forge614"))).toBe(false);
 }, 60_000);
 
-installerCase("Windows PATH reads and writes only the test user's Path file", async () => {
+installerCase("Windows Path preserves ExpandString entries with Unicode and uninstalls cleanly", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { pathModify: true });
   const home = tempDir("forge614-install-windows-user-path-");
-  const fakePathFile = join(home, "fake-user-path.txt");
-  writeFileSync(fakePathFile, "existing-entry\r\n");
+  const original = "%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\José\\bin;C:\\Users\\O’Neil\\tools";
+  const envKey = await createWindowsEnvironmentTestKey(original, "ExpandString");
   const binDir = join(home, ".forge614", NODE, "bin");
-  const installed = await runInstaller(home, server.baseUrl, [], {
-    FORGE614_INSTALL_NODE: NODE,
-    FORGE614_INSTALL_REPOSITORY: REPO,
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile,
-  });
-  expect(installed.code, installed.stderr).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe(`existing-entry;${binDir}\r\n`);
+  try {
+    const installed = await runInstaller(home, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey });
+    expect(installed.code, installed.stderr).toBe(0);
+    const afterInstall = await readWindowsEnvironmentTestKey(envKey);
+    expect(afterInstall.kind).toBe("ExpandString");
+    expect(afterInstall.valueBase64).toBe(Buffer.from(`${original};${binDir}`, "utf8").toString("base64"));
 
-  const forced = await runInstaller(home, server.baseUrl, ["--force"], {
-    FORGE614_INSTALL_NODE: NODE,
-    FORGE614_INSTALL_REPOSITORY: REPO,
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile,
-  });
-  expect(forced.code, forced.stderr).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe(`existing-entry;${binDir}\r\n`);
+    const removed = await runInstaller(home, server.baseUrl, ["--uninstall"], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey });
+    expect(removed.code, removed.stderr).toBe(0);
+    const afterUninstall = await readWindowsEnvironmentTestKey(envKey);
+    expect(afterUninstall.kind).toBe("ExpandString");
+    expect(afterUninstall.valueBase64).toBe(Buffer.from(original, "utf8").toString("base64"));
 
-  const removed = await runInstaller(home, server.baseUrl, ["--uninstall"], {
-    FORGE614_INSTALL_NODE: NODE,
-    FORGE614_INSTALL_REPOSITORY: REPO,
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile,
-  });
-  expect(removed.code, removed.stderr).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe("existing-entry\r\n");
+    server.publish("1.1.0", { pathModify: true, failPublishedSmoke: true });
+    server.setLatest("1.1.0");
+    const rollbackHome = tempDir("forge614-install-windows-path-rollback-expand-");
+    const failed = await runInstaller(rollbackHome, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey });
+    expect(failed.code).toBe(65);
+    const afterRollback = await readWindowsEnvironmentTestKey(envKey);
+    expect(afterRollback.kind).toBe("ExpandString");
+    expect(afterRollback.valueBase64).toBe(Buffer.from(original, "utf8").toString("base64"));
+  } finally {
+    await removeWindowsEnvironmentTestKey(envKey);
+  }
+}, !onWindows);
 
-  writeFileSync(fakePathFile, "existing-entry\r\n");
-  server.publish("1.1.0", { pathModify: true, failPublishedSmoke: true });
-  server.setLatest("1.1.0");
-  const rollbackHome = tempDir("forge614-install-windows-path-rollback-");
-  const rollbackBin = join(rollbackHome, "rollback-bin");
-  const failed = await runInstaller(rollbackHome, server.baseUrl, ["--bin-dir", rollbackBin], {
-    FORGE614_INSTALL_NODE: NODE,
-    FORGE614_INSTALL_REPOSITORY: REPO,
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile,
-  });
-  expect(failed.code).toBe(65);
-  expect(readFileSync(fakePathFile, "utf8")).toBe("existing-entry\r\n");
+installerCase("Windows Path installation is idempotent for an existing entry", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-windows-path-repeat-");
+  const original = "existing-entry";
+  const envKey = await createWindowsEnvironmentTestKey(original, "ExpandString");
+  const binDir = join(home, ".forge614", NODE, "bin");
+  try {
+    expect((await runInstaller(home, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey })).code).toBe(0);
+    expect((await runInstaller(home, server.baseUrl, ["--force"], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey })).code).toBe(0);
+    const state = await readWindowsEnvironmentTestKey(envKey);
+    expect(state.kind).toBe("ExpandString");
+    expect(state.valueBase64).toBe(Buffer.from(`${original};${binDir}`, "utf8").toString("base64"));
+  } finally {
+    await removeWindowsEnvironmentTestKey(envKey);
+  }
+}, !onWindows);
 
-  const gateHome = tempDir("forge614-install-windows-path-gate-");
-  const gatePathFile = join(gateHome, "fake-user-path.txt");
-  writeFileSync(gatePathFile, "untouched\r\n");
-  const rejected = await runInstaller(gateHome, server.baseUrl, ["--uninstall"], {
+installerCase("Windows Path without a value creates ExpandString with only the launcher folder", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { pathModify: true });
+  const home = tempDir("forge614-install-windows-path-empty-");
+  const envKey = await createWindowsEnvironmentTestKey();
+  const binDir = join(home, ".forge614", NODE, "bin");
+  try {
+    const installed = await runInstaller(home, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey });
+    expect(installed.code, installed.stderr).toBe(0);
+    const state = await readWindowsEnvironmentTestKey(envKey);
+    expect(state.kind).toBe("ExpandString");
+    expect(state.valueBase64).toBe(Buffer.from(binDir, "utf8").toString("base64"));
+
+    const rollbackKey = await createWindowsEnvironmentTestKey();
+    try {
+      server.publish("1.1.0", { pathModify: true, failPublishedSmoke: true });
+      server.setLatest("1.1.0");
+      const rollbackHome = tempDir("forge614-install-windows-path-rollback-absent-");
+      const failed = await runInstaller(rollbackHome, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: rollbackKey });
+      expect(failed.code).toBe(65);
+      expect(await readWindowsEnvironmentTestKey(rollbackKey)).toEqual({ kind: null, valueBase64: null });
+    } finally {
+      await removeWindowsEnvironmentTestKey(rollbackKey);
+    }
+  } finally {
+    await removeWindowsEnvironmentTestKey(envKey);
+  }
+}, !onWindows);
+
+installerCase("Windows test registry gate rejects an unsafe key and a missing loopback server", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-windows-path-gate-");
+  const invalidKey = await runInstaller(home, server.baseUrl, ["--uninstall"], {
+    FORGE614_TEST_WINDOWS_ENV_KEY: "Environment",
+  });
+  expect(invalidKey.code).toBe(64);
+  expect(invalidKey.stderr).toContain("FORGE614_TEST_WINDOWS_ENV_KEY must name a key");
+
+  const missingServer = await runInstaller(home, server.baseUrl, ["--uninstall"], {
     FORGE614_INSTALL_TEST_BASE_URL: "",
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: gatePathFile,
+    FORGE614_TEST_WINDOWS_ENV_KEY: "Software\\Forge614-Test-not-created",
   });
-  expect(rejected.code).toBe(64);
-  expect(rejected.stderr).toContain("requires FORGE614_INSTALL_TEST_BASE_URL at 127.0.0.1");
-  expect(readFileSync(gatePathFile, "utf8")).toBe("untouched\r\n");
+  expect(missingServer.code).toBe(64);
+  expect(missingServer.stderr).toContain("requires FORGE614_INSTALL_TEST_BASE_URL");
 }, !onWindows);
 
 installerCase("Windows Path keeps other nodes and stays idempotent across install and uninstall", async () => {
@@ -1230,21 +1369,26 @@ installerCase("Windows Path keeps other nodes and stays idempotent across instal
   server.publish("1.0.0", { pathModify: true }, engramRepo, "engram");
   server.publish("1.0.0", { pathModify: true }, atlasRepo, "atlas");
   const home = tempDir("forge614-install-windows-path-nodes-");
-  const fakePathFile = join(home, "fake-user-path.txt");
-  writeFileSync(fakePathFile, "existing-entry\r\n");
-  const installNode = async (node: string, repository: string, args: string[] = []) => runInstaller(home, server.baseUrl, args, {
+  const envKey = await createWindowsEnvironmentTestKey("existing-entry", "ExpandString");
+  const sharedBinDir = join(home, "shared-bin");
+  const installNode = async (node: string, repository: string, args: string[] = []) => runInstaller(home, server.baseUrl, [...args, "--bin-dir", sharedBinDir], {
     FORGE614_INSTALL_NODE: node,
     FORGE614_INSTALL_REPOSITORY: repository,
-    FORGE614_TEST_WINDOWS_USER_PATH_FILE: fakePathFile,
+    FORGE614_TEST_WINDOWS_ENV_KEY: envKey,
   });
-  const engramBin = join(home, ".forge614", "engram", "bin");
-  const atlasBin = join(home, ".forge614", "atlas", "bin");
-  expect((await installNode("engram", engramRepo)).code).toBe(0);
-  expect((await installNode("engram", engramRepo, ["--force"])).code).toBe(0);
-  expect((await installNode("atlas", atlasRepo)).code).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe(`existing-entry;${engramBin};${atlasBin}\r\n`);
-  expect((await installNode("atlas", atlasRepo, ["--uninstall"])).code).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe(`existing-entry;${engramBin}\r\n`);
-  expect((await installNode("engram", engramRepo, ["--uninstall"])).code).toBe(0);
-  expect(readFileSync(fakePathFile, "utf8")).toBe("existing-entry\r\n");
+  const expectedPath = `existing-entry;${sharedBinDir}`;
+  try {
+    expect((await installNode("engram", engramRepo)).code).toBe(0);
+    expect((await installNode("atlas", atlasRepo)).code).toBe(0);
+    expect((await readWindowsEnvironmentTestKey(envKey)).valueBase64).toBe(Buffer.from(expectedPath, "utf8").toString("base64"));
+
+    expect((await installNode("engram", engramRepo, ["--uninstall"])).code).toBe(0);
+    expect((await readWindowsEnvironmentTestKey(envKey)).valueBase64).toBe(Buffer.from(expectedPath, "utf8").toString("base64"));
+    expect(readdirSync(sharedBinDir).some((name) => /^forge614-.+\.(exe|cmd)$/i.test(name))).toBe(true);
+
+    expect((await installNode("atlas", atlasRepo, ["--uninstall"])).code).toBe(0);
+    expect((await readWindowsEnvironmentTestKey(envKey)).valueBase64).toBe(Buffer.from("existing-entry", "utf8").toString("base64"));
+  } finally {
+    await removeWindowsEnvironmentTestKey(envKey);
+  }
 }, !onWindows);
