@@ -91,3 +91,22 @@ test("release helper requires a program asset for every declared OS and architec
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("release helper rejects an empty install.systems list", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "forge614-release-empty-systems-"));
+  try {
+    const releaseDir = join(cwd, "dist", "release");
+    mkdirSync(releaseDir, { recursive: true });
+    writeFileSync(join(cwd, "VERSION"), "1.2.0\n");
+    writeFileSync(join(cwd, "forge614.node.json"), JSON.stringify({
+      node: "demo",
+      install: { repository: "jotredev/forge614-demo", systems: [], asset: { pattern: "forge614-demo-<plat>-<arch>" } },
+    }));
+    for (const name of ["install.sh", "install.ps1", "install.mjs"]) writeFileSync(join(cwd, name), "fixture\n");
+    const result = await runReleaseHelper(cwd);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("install.systems");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
