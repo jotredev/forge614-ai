@@ -2,7 +2,7 @@
 
 > Como la lista de control de un vuelo: cada paso está escrito, se ejecuta igual en tierra (local) que en el aire (CI), y nadie despega sin completarla.
 
-Un **workflow** es un archivo YAML de `.github/workflows/` que la integración continua (CI) ejecuta ante un evento; un **job** es cada unidad de trabajo dentro de él, con su propia máquina. En este repositorio los workflows son delgados (acta 0019): cada paso llama un script de `package.json`, así que `bun run workflows:run` reproduce en local exactamente lo que corre en CI. Los dos archivos están generados desde `standard/templates/verify.yml` y `release.yml`; `verify.yml` suma un job propio, `parity`, que la plantilla no lleva.
+Un **workflow** es un archivo YAML de `.github/workflows/` que la integración continua (CI) ejecuta ante un evento; un **job** es cada unidad de trabajo dentro de él, con su propia máquina. En este repositorio los workflows son delgados (acta 0019): cada paso `run` llama un script de `package.json`, mientras que los pasos `uses` configuran acciones fijadas; `bun run workflows:run` reproduce en local los comandos `run` de CI. `verify.yml` parte de `standard/templates/verify.yml` y suma el job `parity`; `release.yml` parte de su plantilla, con pasos de publicación adaptados a este repositorio.
 
 ## `verify.yml`
 
@@ -18,11 +18,13 @@ Un **workflow** es un archivo YAML de `.github/workflows/` que la integración c
 | Job | Disparador | Qué ejecuta | Qué publica | Duración esperada |
 | --- | --- | --- | --- | --- |
 | `build` | tag `v*` | `bun install --frozen-lockfile`, `bun run build:target`, `bun run smoke:target` en macOS arm64/x64, Linux arm64/x64, Windows x64 | programas por plataforma (`dist/release/*`) | ~8 min |
-| `publish` | tras `build` | Node 22.19.0, `bun install --frozen-lockfile`, `bun run scripts/prepare-release-assets.mjs`, `bun run release:publish` | programa, porteros, `install.mjs`, ficha y un `SHA256SUMS` GNU que cubre todos los archivos | ~1 min |
+| `publish` | tras `build` | descarga los artefactos, `bun install --frozen-lockfile` y `bun run release:publish` en Ubuntu | nada aún: el stub termina con `NOT_IMPLEMENTED` | ~1 min |
 
-`build:target`, `smoke:target` y `release:publish` son stubs: scripts de `package.json` que terminan con `NOT_IMPLEMENTED` hasta que el `bun release` compartido llegue en la fase 0.4. `prepare-release-assets.mjs`, copiado desde `standard/templates/`, prepara los activos comunes y genera el manifiesto único antes de publicar. Hasta entonces un tag `v*` falla de forma deliberada: los tres scripts llaman a `src/interfaces/cli/not-implemented.ts`, que sale con `1` y ese código.
+`build:target`, `smoke:target` y `release:publish` son stubs: scripts de `package.json` que terminan con `NOT_IMPLEMENTED` hasta que el `bun release` compartido llegue en la fase 0.4. El `release.yml` de este repositorio no instala Node ni ejecuta `prepare-release-assets.mjs`; su job `publish` descarga los artefactos y llama al stub `release:publish`. Por eso un tag `v*` falla de forma deliberada: los tres scripts llaman a `src/interfaces/cli/not-implemented.ts`, que sale con `1` y ese código.
 
-**Precondición de `release.yml`:** un nodo con dependencias `file:../` a repositorios hermanos en su `package.json` no puede adoptar esta plantilla; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría contra esa dependencia de ruta. Se sustituye por la versión publicada del nodo hermano antes de adoptar la plantilla.
+**Plantilla para los nodos:** `standard/templates/release.yml` configura Node 22.19.0, descarga los artefactos, instala dependencias, ejecuta `bun run scripts/prepare-release-assets.mjs` y después `bun run release:publish`. El script de preparación, copiado de `standard/templates/prepare-release-assets.mjs`, toma la versión de `package.json`, prepara los activos comunes y crea un `SHA256SUMS` GNU único antes de publicar.
+
+**Precondición de la plantilla `release.yml`:** un nodo con dependencias `file:../` a repositorios hermanos en su `package.json` no puede adoptarla; el workflow hace checkout de un solo repositorio y `bun install --frozen-lockfile` fallaría contra esa dependencia de ruta. Se sustituye por la versión publicada del nodo hermano antes de adoptar la plantilla.
 
 ## `standard-release.yml`
 
