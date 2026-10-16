@@ -49,6 +49,8 @@ El archivo es idéntico byte a byte en los seis nodos y no incluye datos de nodo
 
 La única puerta de red para pruebas es `FORGE614_INSTALL_TEST_BASE_URL`, exclusiva de pruebas. Acepta únicamente `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS.
 
+La puerta `FORGE614_TEST_WINDOWS_USER_PATH_FILE` también es solo para pruebas: se acepta únicamente junto con `FORGE614_INSTALL_TEST_BASE_URL` apuntando a `127.0.0.1`. En ese caso, `install.mjs` lee y escribe el `Path` de usuario en el archivo indicado en lugar del registro. Si se indica el archivo sin esa URL local, el instalador rechaza la combinación. Cuando no se indica el archivo, usa `powershell.exe` y el scope `User` real.
+
 No confirma `.active-version` hasta que el contenido y la prueba de humo estén listos. Una falla previa deja activa la versión anterior; una posterior revierte el puntero y elimina la carpeta nueva.
 
 El criterio `compatible` vive en la ficha: si falta el nodo, se instala; `minimumVersion` se compara como SemVer; cada capacidad requerida es `{ "agent": "claude-code", "field": "supportsReadOnly" }`. El instalador ejecuta `<lanzador> capabilities --agent <agent>` y exige `schemaVersion === 1` y que el campo solicitado sea `true`. Si la comprobación falla, el error 69 identifica la dependencia y la razón en español o inglés. Engines registra esa orden en `forge614-engines:src/interfaces/cli/main.ts:169` y `src/interfaces/cli/commands.ts:63-66`; su JSON y campos están definidos en `forge614-engines:src/app/capabilities.ts:4-41`. Donde el reconocimiento solo comprobó existencia, el ejemplo usa `installed`, sin inventar un mínimo. Windows admite inicialmente `x64`; Atlas y Workers agregan Windows con la plantilla, sin `arm64`.

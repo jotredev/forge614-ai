@@ -421,39 +421,46 @@ async function profileSnapshot(profile) {
   return { profile, target, existed: true, bytes: await readFile(target), mode: targetInfo.mode & 0o777 };
 }
 
-/** Decode a profile without changing its newline style or PowerShell encoding. */
-function decodeProfile(bytes, powershell) {
-  if (powershell && bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return { content: bytes.subarray(2).toString("utf16le"), encode: (text) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]) };
-  }
-  if (powershell && bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    const swapped = Buffer.from(bytes.subarray(2));
-    for (let index = 0; index + 1 < swapped.length; index += 2) [swapped[index], swapped[index + 1]] = [swapped[index + 1], swapped[index]];
-    return { content: swapped.toString("utf16le"), encode: (text) => {
-      const data = Buffer.from(text, "utf16le");
-      for (let index = 0; index + 1 < data.length; index += 2) [data[index], data[index + 1]] = [data[index + 1], data[index]];
-      return Buffer.concat([Buffer.from([0xfe, 0xff]), data]);
-    } };
-  }
+/** Decode a POSIX profile while preserving a UTF-8 BOM. */
+function decodeProfile(bytes) {
   const hasBom = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   return { content: bytes.toString("utf8").replace(/^\uFEFF/, ""), encode: (text) => Buffer.concat([hasBom ? Buffer.from([0xef, 0xbb, 0xbf]) : Buffer.alloc(0), Buffer.from(text, "utf8")]) };
 }
 
+/** Return the test-only Path file only when a 127.0.0.1 test server is enabled. */
+function testWindowsUserPathFile() {
+  const pathFile = process.env.FORGE614_TEST_WINDOWS_USER_PATH_FILE;
+  if (!pathFile) return undefined;
+  const base = testBaseUrl();
+  if (!base || new URL(base).hostname !== "127.0.0.1") {
+    throw new InstallerError(EXIT.USAGE, "FORGE614_TEST_WINDOWS_USER_PATH_FILE requires FORGE614_INSTALL_TEST_BASE_URL at 127.0.0.1");
+  }
+  return pathFile;
+}
+
 /** Write only the current user's Windows Path variable. */
 async function setWindowsPath(value) {
-  const powershell = process.env.FORGE614_TEST_POWERSHELL ?? "powershell.exe";
+  const testPathFile = testWindowsUserPathFile();
+  if (testPathFile) {
+    await writeFile(testPathFile, `${value}\r\n`, "utf8");
+    return;
+  }
   const literal = value.replaceAll("'", "''");
   const command = `[Environment]::SetEnvironmentVariable('Path', '${literal}', 'User')`;
-  const result = await run(powershell, ["-NoProfile", "-Command", command], { allowFailure: true });
+  const result = await run("powershell.exe", ["-NoProfile", "-Command", command], { allowFailure: true });
   if (result.code !== 0) throw new Error(result.stderr || "could not update the current user's Path");
 }
 
 /** Update the current user's Windows Path variable and return its rollback snapshot. */
 async function updateWindowsPath(binDir, add) {
-  const powershell = process.env.FORGE614_TEST_POWERSHELL ?? "powershell.exe";
-  const current = await run(powershell, ["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path', 'User')"], { allowFailure: true });
-  if (current.code !== 0) throw new Error(current.stderr || "could not read the current user's Path");
-  const original = current.stdout.replace(/\r?\n$/, "");
+  const testPathFile = testWindowsUserPathFile();
+  let original;
+  if (testPathFile) original = (await readFile(testPathFile, "utf8")).replace(/\r?\n$/, "");
+  else {
+    const current = await run("powershell.exe", ["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path', 'User')"], { allowFailure: true });
+    if (current.code !== 0) throw new Error(current.stderr || "could not read the current user's Path");
+    original = current.stdout.replace(/\r?\n$/, "");
+  }
   const entries = original ? original.split(";") : [];
   const normalizedBin = binDir.replace(/[\\/]+$/, "").toLowerCase();
   const hasEntry = entries.some((entry) => entry.replace(/[\\/]+$/, "").toLowerCase() === normalizedBin);
@@ -502,8 +509,6 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
   }
   const profiles = [
     join(home, ".zshrc"), join(home, ".bashrc"), join(home, ".bash_profile"), join(home, ".profile"),
-    join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"),
-    join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
   ];
   const present = [];
   for (const profile of profiles) if (await pathExists(profile)) present.push(profile);
@@ -524,8 +529,7 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
         throw error;
       }
       snapshots.push(snapshot);
-      const powershell = profile.toLowerCase().endsWith(".ps1");
-      const decoded = decodeProfile(snapshot.bytes, powershell);
+      const decoded = decodeProfile(snapshot.bytes);
       const content = snapshot.existed ? decoded.content : "";
       const newline = content.includes("\r\n") ? "\r\n" : "\n";
       const lines = content.split(/\r\n|\n/);
@@ -548,9 +552,7 @@ async function updatePath(home, nodeName, binDir, platform, add = true) {
         process.stderr.write(`Aviso: el perfil ${profile} tiene un marcador PATH incompleto; no se modificó.\n`);
         continue;
       }
-      const pathLine = profile.toLowerCase().endsWith(".ps1")
-        ? `$env:Path = "${binDir.replaceAll("`", "``").replaceAll("$", "`$").replaceAll('"', '`"')};$env:Path"`
-        : `export PATH="${binDir.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`")}:$PATH"`;
+      const pathLine = `export PATH="${binDir.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`")}:$PATH"`;
       const body = kept.join(newline).replace(new RegExp(`${newline === "\r\n" ? "\\r?\\n" : "\\n"}+$`), "");
       const finalNewline = !snapshot.existed || content.endsWith("\n") ? newline : "";
       const next = add
