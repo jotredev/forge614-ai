@@ -529,12 +529,18 @@ installerCase("a PATH failure rolls back a first activation without an active po
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { pathModify: true });
   const home = tempDir("forge614-install-path-rollback-");
-  const result = await runInstaller(home, server.baseUrl);
-  const nodeHome = join(home, ".forge614", NODE);
-  expect(result.code).toBe(65);
-  expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
-  expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
-  expect(existsSync(join(nodeHome, VERSION))).toBe(false);
+  const envKey = "Software\\Forge614-Test-path-failure";
+  try {
+    const result = await runInstaller(home, server.baseUrl, [], { FORGE614_TEST_WINDOWS_ENV_KEY: envKey });
+    const nodeHome = join(home, ".forge614", NODE);
+    expect(result.code).toBe(65);
+    expect(existsSync(join(nodeHome, ".active-version"))).toBe(false);
+    expect(existsSync(join(nodeHome, "bin", "forge614-demo"))).toBe(false);
+    expect(existsSync(join(nodeHome, VERSION))).toBe(false);
+    expect(await readWindowsEnvironmentTestKey(envKey)).toEqual({ kind: null, valueBase64: null });
+  } finally {
+    await removeWindowsEnvironmentTestKey(envKey);
+  }
 }, !onWindows);
 
 installerCase("PATH modification is idempotent when enabled and absent when disabled", async () => {
