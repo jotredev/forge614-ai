@@ -2,7 +2,7 @@
 
 > Like a flight's checklist: every step is written down, runs the same on the ground (local) as in the air (CI), and no one takes off without completing it.
 
-A **workflow** is a YAML file in `.github/workflows/` that continuous integration (CI) runs on an event; a **job** is each unit of work inside it, with its own machine. In this repository the workflows are thin (record 0019): every step calls a `package.json` script, so `bun run workflows:run` reproduces locally exactly what runs in CI. Both files are generated from `standard/templates/verify.yml` and `release.yml`; `verify.yml` adds one job of its own, `parity`, that the template does not carry.
+A **workflow** is a YAML file in `.github/workflows/` that continuous integration (CI) runs on an event; a **job** is each unit of work inside it, with its own machine. In this repository the workflows are thin (record 0019): every `run` step calls a `package.json` script, while `uses` steps configure pinned actions; `bun run workflows:run` reproduces the CI `run` commands locally. `verify.yml` starts from `standard/templates/verify.yml` and adds its own `parity` job; `release.yml` starts from its template with publication steps adapted for this repository.
 
 ## `verify.yml`
 
@@ -18,11 +18,13 @@ A **workflow** is a YAML file in `.github/workflows/` that continuous integratio
 | Job | Trigger | What it runs | What it publishes | Expected duration |
 | --- | --- | --- | --- | --- |
 | `build` | tag `v*` | `bun install --frozen-lockfile`, `bun run build:target`, `bun run smoke:target` on macOS arm64/x64, Linux arm64/x64, Windows x64 | per-platform programs (`dist/release/*`) | ~8 min |
-| `publish` | after `build` | Node 22.19.0, `bun install --frozen-lockfile`, `bun run scripts/prepare-release-assets.mjs`, `bun run release:publish` | program, gatekeepers, `install.mjs`, pointer and one GNU `SHA256SUMS` covering every file | ~1 min |
+| `publish` | after `build` | downloads artifacts, runs `bun install --frozen-lockfile` and `bun run release:publish` on Ubuntu | nothing yet: the stub exits with `NOT_IMPLEMENTED` | ~1 min |
 
-`build:target`, `smoke:target` and `release:publish` are stubs: `package.json` scripts that end with `NOT_IMPLEMENTED` until the shared `bun release` arrives in phase 0.4. `prepare-release-assets.mjs`, copied from `standard/templates/`, stages the common assets and creates the single manifest before publishing. Until then a `v*` tag fails deliberately: the three scripts call `src/interfaces/cli/not-implemented.ts`, which exits with `1` and that code.
+`build:target`, `smoke:target` and `release:publish` are stubs: `package.json` scripts that end with `NOT_IMPLEMENTED` until the shared `bun release` arrives in phase 0.4. This repository's `release.yml` does not set up Node or run `prepare-release-assets.mjs`; its `publish` job downloads the artifacts and calls the `release:publish` stub. A `v*` tag therefore fails deliberately: the three scripts call `src/interfaces/cli/not-implemented.ts`, which exits with `1` and that code.
 
-**Precondition of `release.yml`:** a node with `file:../` dependencies to sibling repositories in its `package.json` cannot adopt this template; the workflow checks out a single repository, so `bun install --frozen-lockfile` would fail against that path dependency. Replace it with the published version of the sibling node before adopting the template.
+**Node template:** `standard/templates/release.yml` sets up Node 22.19.0, downloads the artifacts, installs dependencies, runs `bun run scripts/prepare-release-assets.mjs`, and then runs `bun run release:publish`. The preparation script, copied from `standard/templates/prepare-release-assets.mjs`, reads the version from `package.json`, stages the common assets and creates one GNU `SHA256SUMS` file before publishing.
+
+**Template `release.yml` precondition:** a node with `file:../` dependencies to sibling repositories in its `package.json` cannot adopt it; the workflow checks out a single repository, so `bun install --frozen-lockfile` would fail against that path dependency. Replace it with the published version of the sibling node before adopting the template.
 
 ## `standard-release.yml`
 
