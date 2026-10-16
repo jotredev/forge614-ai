@@ -1,7 +1,7 @@
 ﻿$InstallerArgs = @($args)
 $ErrorActionPreference = "Stop"
 if ([Console]::IsOutputRedirected -or [Console]::IsErrorRedirected) {
-  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
 }
 $NodeName = "{{NODE_NAME}}"
 $Repo = "{{REPO}}"
@@ -44,11 +44,13 @@ if ($VersionParts.Count -lt 2 -or [int]$VersionParts[0] -lt 22 -or ([int]$Versio
 }
 
 $Tag = "latest"
+$TagWasSet = $false
 for ($Index = 0; $Index -lt $InstallerArgs.Count; $Index++) {
-  if ($InstallerArgs[$Index] -eq "--latest") { $Tag = "latest" }
-  if ($InstallerArgs[$Index] -eq "--version") {
+  if (-not $TagWasSet -and $InstallerArgs[$Index] -eq "--latest") { $Tag = "latest"; $TagWasSet = $true }
+  if (-not $TagWasSet -and $InstallerArgs[$Index] -eq "--version") {
     if ($Index + 1 -ge $InstallerArgs.Count) { [Console]::Error.WriteLine("invalid value for --version"); exit 64 }
     $Tag = $InstallerArgs[$Index + 1]
+    $TagWasSet = $true
   }
 }
 

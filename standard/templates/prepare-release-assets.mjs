@@ -35,9 +35,8 @@ async function copyInstallerSet(root, releaseDir) {
 }
 
 /** Resolve a node asset pattern to its concrete release filename for one declared system. */
-function resolveProgramAsset(pattern, nodeName, version, os, arch) {
+function resolveProgramAsset(pattern, version, os, arch) {
   return pattern
-    .replaceAll("<node>", nodeName)
     .replaceAll("<ver>", version)
     .replaceAll("<plat>", os)
     .replaceAll("<arch>", arch)
@@ -50,12 +49,13 @@ async function releaseFiles(releaseDir, pointer, version) {
   const entries = await readdir(releaseDir, { withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile() && entry.name !== "SHA256SUMS").map((entry) => entry.name).sort();
   const install = pointer.install;
-  if (!Array.isArray(install?.systems) || typeof install?.asset?.pattern !== "string") {
+  if (!Array.isArray(install?.systems) || install.systems.length === 0 || typeof install?.asset?.pattern !== "string") {
     throw new Error("forge614.node.json has no install.systems asset pattern");
   }
   for (const system of install.systems) {
     for (const arch of system.architectures ?? []) {
-      const expected = resolveProgramAsset(install.asset.pattern, pointer.node, version, system.os, arch);
+      const expected = resolveProgramAsset(install.asset.pattern, version, system.os, arch);
+      if (!expected || /[<>|]/.test(expected)) throw new Error(`install.asset.pattern cannot resolve ${system.os}-${arch}`);
       if (!files.includes(expected)) throw new Error(`release is missing declared program asset: ${expected}`);
     }
   }
