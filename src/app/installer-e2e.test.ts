@@ -276,7 +276,10 @@ async function readWindowsEnvironmentTestKey(key: string): Promise<{ kind: strin
 
 /** Remove a disposable test registry key even when an assertion fails. */
 async function removeWindowsEnvironmentTestKey(key: string): Promise<void> {
-  const script = "Remove-Item -LiteralPath ('HKCU:\\' + $env:FORGE614_TEST_WINDOWS_ENV_KEY) -Recurse -Force -ErrorAction SilentlyContinue";
+  const script = [
+    "$registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($env:FORGE614_TEST_WINDOWS_ENV_KEY, $true)",
+    "if ($null -ne $registryKey) { $registryKey.Close(); [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($env:FORGE614_TEST_WINDOWS_ENV_KEY, $false) }",
+  ].join("\n");
   const result = await runPowerShell51(script, { FORGE614_TEST_WINDOWS_ENV_KEY: key });
   if (result.code !== 0) throw new Error(result.stderr || "could not remove disposable Windows registry key");
 }
