@@ -13,7 +13,7 @@ async function runReleaseHelper(cwd: string): Promise<{ code: number | null; std
   return await new Promise((resolve, reject) => {
     const child = spawn(node, [helper], {
       cwd,
-      env: { ...process.env, HOME: cwd, FORGE614_HOME: join(cwd, ".forge614") },
+      env: { ...process.env, HOME: cwd, FORGE614_HOME: join(cwd, ".forge614"), GITHUB_REF_NAME: "v1.2.0" },
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -44,6 +44,7 @@ test("release helper stages the program and installer set with one GNU SHA256SUM
     writeFileSync(join(cwd, "install.ps1"), files.get("install.ps1")!);
     writeFileSync(join(cwd, "install.mjs"), files.get("install.mjs")!);
     writeFileSync(join(cwd, "forge614.node.json"), files.get("forge614.node.json")!);
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "forge614-demo", version: "1.2.0" }));
     writeFileSync(join(cwd, "VERSION"), "1.2.0\n");
     writeFileSync(join(releaseDir, "forge614-demo-linux-x64"), files.get("forge614-demo-linux-x64")!);
 
@@ -65,6 +66,7 @@ test("release helper requires a program asset for every declared OS and architec
   try {
     const releaseDir = join(cwd, "dist", "release");
     mkdirSync(releaseDir, { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "forge614-demo", version: "1.2.0" }));
     writeFileSync(join(cwd, "VERSION"), "1.2.0\n");
     writeFileSync(join(cwd, "forge614.node.json"), JSON.stringify({
       node: "demo",
@@ -97,6 +99,7 @@ test("release helper rejects an empty install.systems list", async () => {
   try {
     const releaseDir = join(cwd, "dist", "release");
     mkdirSync(releaseDir, { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "forge614-demo", version: "1.2.0" }));
     writeFileSync(join(cwd, "VERSION"), "1.2.0\n");
     writeFileSync(join(cwd, "forge614.node.json"), JSON.stringify({
       node: "demo",

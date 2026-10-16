@@ -77,7 +77,22 @@ async function main() {
   const root = process.cwd();
   const releaseDir = join(root, "dist", "release");
   const pointer = await readNodePointer(root);
-  const version = (await readFile(join(root, "VERSION"), "utf8")).trim().replace(/^v/, "");
+  let packageJson;
+  try {
+    packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  } catch {
+    throw new Error("package.json could not be read");
+  }
+  const version = packageJson && typeof packageJson === "object" ? packageJson.version : undefined;
+  if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+    throw new Error("package.json must declare a SemVer version (X.Y.Z)");
+  }
+  if (process.env.GITHUB_REF_NAME !== undefined) {
+    const expectedTag = `v${version}`;
+    if (process.env.GITHUB_REF_NAME !== expectedTag) {
+      throw new Error(`GITHUB_REF_NAME ${process.env.GITHUB_REF_NAME} does not match package.json version ${version} (expected ${expectedTag})`);
+    }
+  }
   await mkdir(releaseDir, { recursive: true });
   await copyInstallerSet(root, releaseDir);
   const files = await releaseFiles(releaseDir, pointer, version);
