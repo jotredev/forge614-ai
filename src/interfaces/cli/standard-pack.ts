@@ -54,7 +54,7 @@ function main(argv: string[]): number {
     }
     const result = checkStandardPack({ root: repoRoot, pointerPath: POINTER_PATH, sumsPath: resolve(repoRoot, "dist/SHA256SUMS") });
     if (!result.ok) {
-      printError("STANDARD_PACK_DRIFT", result.error);
+      printError(result.code, result.error);
       return 1;
     }
     printJson({ schemaVersion: 1, ...result });
@@ -62,7 +62,7 @@ function main(argv: string[]): number {
   }
 
   const result = packStandard(repoRoot, resolve(repoRoot, "dist"));
-  if (parsed.data["update-pointer"]) updateNodePointerSha256(POINTER_PATH, result.sha256);
+  if (parsed.data["update-pointer"]) updateNodePointerSha256(POINTER_PATH, result.sha256, standardVersion);
   printJson({ ...result });
   return 0;
 }

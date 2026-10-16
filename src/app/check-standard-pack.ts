@@ -12,7 +12,7 @@ export interface CheckStandardPackOptions {
 
 export type CheckStandardPackResult =
   | { ok: true; sha256: string; tarSha256: string; pointerChecked: true; sumsChecked: boolean }
-  | { ok: false; code: "STANDARD_PACK_DRIFT"; error: string };
+  | { ok: false; code: "STANDARD_PACK_DRIFT" | "STANDARD_POINTER_VERSION_MISMATCH"; error: string };
 
 // Packs into a temp dir and compares the fresh sha256 against the committed
 // truth (forge614.node.json) and, when present, dist/SHA256SUMS. Meaningful
@@ -25,6 +25,13 @@ export function checkStandardPack(options: CheckStandardPackOptions): CheckStand
   try {
     const fresh = packStandard(options.root, tmpOut);
     const pointer = NodePointerSchema.parse(JSON.parse(readFileSync(options.pointerPath, "utf8")));
+    if (pointer.standard.version !== fresh.version) {
+      return {
+        ok: false,
+        code: "STANDARD_POINTER_VERSION_MISMATCH",
+        error: `forge614.node.json declara ${pointer.standard.version}; standard/VERSION dice ${fresh.version}`,
+      };
+    }
     if (pointer.standard.sha256 !== fresh.sha256) {
       return {
         ok: false,
