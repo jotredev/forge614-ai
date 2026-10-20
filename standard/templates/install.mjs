@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmod, copyFile, lstat, mkdir, readFile, readlink, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { gunzipSync, inflateRawSync } from "node:zlib";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 
 const EXIT = Object.freeze({ OK: 0, USAGE: 64, REQUIREMENT: 65, DOWNLOAD: 66, DEPENDENCY: 69 });
 const MIN_NODE = [22, 19, 0];
@@ -214,14 +214,17 @@ function parsePointer(bytes) {
     if (!Array.isArray(install.userData)) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
     for (const entry of install.userData) {
       if (typeof entry !== "string" || !entry.trim()) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
-      const normalized = entry.replace(/\\/g, "/");
-      if (
-        isAbsolute(entry) ||
-        normalized.startsWith("/") ||
-        normalized === pointer.node ||
-        normalized.startsWith(`${pointer.node}/`) ||
-        normalized.split("/").includes("..")
-      ) {
+      if (isAbsolute(entry) || /^[A-Za-z]:/.test(entry)) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      const replaced = entry.replace(/\\/g, "/");
+      if (replaced.startsWith("/") || replaced.split("/").includes("..")) {
+        throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      }
+      const normalized = posix.normalize(replaced);
+      if (normalized === "." || normalized === "" || normalized.startsWith("/") || normalized.split("/").includes("..")) {
+        throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      }
+      const firstSegment = normalized.split("/")[0] ?? "";
+      if (firstSegment.toLowerCase() === pointer.node.toLowerCase()) {
         throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
       }
     }
