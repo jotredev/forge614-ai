@@ -15,7 +15,7 @@
   }
   ```
 
-  `kind: internal` marca piezas que nadie instala a mano (Engines, Workers).
+  `kind: internal` marca piezas que nadie instala a mano (Engines, Workers). El bloque opcional `install` declara la distribución del nodo para `install.mjs` (acta 0031). En él, `userData` (opcional) declara carpetas relativas a `FORGE614_HOME` donde el nodo almacena datos del usuario (no pueden empezar por `<nodo>/`, ser absolutas ni contener `..`); el instalador nunca las borra, y la desinstalación se detiene sin borrar nada con código 65 si `uninstall --self` falla en un nodo que declara `userData`.
 - Todo nodo lleva `CONTRACT.md` y `CONTRACT.en.md` en la raíz, con secciones fijas: propósito en una frase; qué hace; qué no hace; dependencias (nodos y binarios externos); comandos públicos con esquema de entrada, esquema de salida y `schemaVersion`; códigos de error; requisitos obligatorios para agentes de IA soportados (enlace al procedimiento central); política de compatibilidad. El contrato se actualiza en el mismo cambio que modifica cualquiera de esos puntos.
 - `FORGE614_ECOSYSTEM_CONTRACT.md` no se copia. Cada repositorio lo referencia por el puntero; el verificador comprueba que el texto local, si existe, es byte-idéntico al publicado por `forge614-ai` para la versión fijada.
 
@@ -85,12 +85,12 @@ Se nombran por problema. Una abstracción que no responde a un problema listado 
 - **Tres sistemas operativos, siempre** (acta 0018): todo nodo publica binarios e instalador para macOS (arm64 y x64), Linux (arm64 y x64) y Windows (x64). No hay excepciones ni "pendiente"; un nodo sin uno de los tres no se libera.
 - Porteros `install.sh` e `install.ps1` mínimos más un `install.mjs` común, desde `standard/templates/`. En el portero solo varían dos líneas de datos: nombre del nodo y repositorio. `install.mjs` es idéntico byte a byte; lee los datos del bloque `install` en la ficha publicada con la release (acta 0031).
 - Node 22.19+ es obligatorio para instalar todos los nodos; no se requiere Python. El runtime de cada nodo queda documentado aparte (acta 0031).
-- Destino `~/.forge614/<nodo>/<versión>/` con lanzador estable `~/.forge614/<nodo>/bin/forge614-<nodo>` y archivo `.active-version`. Se comprueba dos veces que `--version` devuelve exactamente `forge614-<nodo> <versión>`; `.active-version` se escribe al final y los fallos revierten PATH, lanzador, puntero y migración (acta 0031).
+- Destino `~/.forge614/<nodo>/<versión>/` con lanzador estable `~/.forge614/<nodo>/bin/forge614-<nodo>` y archivo `.active-version`. Se comprueba dos veces que `--version` devuelve exactamente `forge614-<nodo> <versión>`; si falla, el error incluye el código de salida y stdout/stderr saneados. `.active-version` se escribe al final y los fallos revierten PATH, lanzador, puntero y migración. Tras una instalación exitosa, borra en mejor esfuerzo versiones viejas, carpetas `legacy-*`, `.version-backup-*` y `.trash-*` (acta 0031).
 - Descarga solo por HTTPS; verificación SHA-256 obligatoria contra `SHA256SUMS` del mismo release; el instalador nunca ejecuta scripts remotos sin verificar su huella.
 - `FORGE614_INSTALL_TEST_BASE_URL` es exclusiva de pruebas y solo acepta `http://127.0.0.1:<puerto>` o `http://[::1]:<puerto>`; cualquier otra dirección requiere HTTPS (acta 0031).
 - Ningún otro requisito de lenguaje se usa para instalar: Node 22.19+ es el mínimo; Python no se requiere (acta 0031).
 - Engram, Shell y Atlas editan perfiles existentes o crean uno según `$SHELL` (`.zshrc`, `.bashrc` o `.profile`); conservan enlaces simbólicos y permisos. Engines, Workers y Sentinel no modifican PATH (acta 0031).
-- `--uninstall` usa la identidad entregada por el portero, no requiere red, avisa si falla `uninstall --self`, quita el lanzador externo y sus bloques PATH y borra solo `FORGE614_HOME/<nodo>/`. Nunca borra `~/.forge614/` completo.
+- `--uninstall` usa la identidad entregada por el portero, no requiere red y ejecuta `uninstall --self`. Si la ficha `.node.json` declara `userData` y el hook falla, la desinstalación se detiene sin borrar nada con código 65 para proteger los datos; sin `userData`, avisa si falla y continúa. Para evitar estados a medias por bloqueos de archivos, primero renombra `FORGE614_HOME/<nodo>` a `FORGE614_HOME/.<nodo>-removing-<uuid>`, retira el lanzador externo y sus bloques PATH, y luego borra la carpeta temporal (las carpetas declaradas en `userData` nunca se borran). Solo se confirma la desinstalación si la carpeta del nodo ya no existe (acta 0031).
 - Actualización (`<nodo> update`): descarga y verifica el instalador **de la release destino**, permite `--version`, y registra la versión previa para revertir.
 
 ## 7. Release, versionado y workflows
