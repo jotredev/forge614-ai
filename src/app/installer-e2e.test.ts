@@ -596,6 +596,52 @@ installerCase("successful uninstall removes the node directory but preserves use
   expect(readFileSync(join(userDataDir, "engram.db"), "utf8")).toBe("data to keep forever");
 });
 
+installerCase("a failing nodeHome rename during uninstall halts before touching the launcher and PATH", async () => {
+  if (onWindows) return;
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-uninstall-rename-fail-");
+  const installResult = await runInstaller(home, server.baseUrl);
+  expect(installResult.code, installResult.stderr).toBe(0);
+
+  const forgeHome = join(home, ".forge614");
+  const nodeHome = join(forgeHome, NODE);
+  const externalBin = join(home, "external-bin");
+  mkdirSync(externalBin, { recursive: true });
+  const launcher = join(externalBin, `forge614-${NODE}`);
+  writeFileSync(launcher, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'forge614-demo 1.0.0\\n'; exit 0; fi\nexit 0\n", { mode: 0o755 });
+
+  const profile = join(home, ".profile");
+  writeFileSync(profile, "# >>> forge614-demo PATH >>>\nexport PATH=test\n# <<< forge614-demo PATH <<<\n");
+
+  chmodSync(forgeHome, 0o555);
+  try {
+    const uninstallResult = await runInstaller(home, server.baseUrl, ["--uninstall", "--bin-dir", externalBin], {
+      FORGE614_INSTALL_NODE: NODE,
+      FORGE614_INSTALL_REPOSITORY: REPO,
+    });
+    expect(uninstallResult.code).not.toBe(0);
+    expect(existsSync(nodeHome)).toBe(true);
+    expect(existsSync(launcher)).toBe(true);
+    expect(readFileSync(profile, "utf8")).toContain("forge614-demo PATH");
+  } finally {
+    chmodSync(forgeHome, 0o755);
+  }
+});
+
+installerCase("a stale removing directory from a previous uninstall is cleaned up on the next install", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-clean-removing-");
+  const forgeHome = join(home, ".forge614");
+  const staleRemoving = join(forgeHome, `.${NODE}-removing-stale-test-id`);
+  mkdirSync(staleRemoving, { recursive: true });
+  writeFileSync(join(staleRemoving, "leftover.txt"), "leftover data");
+
+  const installResult = await runInstaller(home, server.baseUrl);
+  expect(installResult.code, installResult.stderr).toBe(0);
+  expect(existsSync(staleRemoving)).toBe(false);
+  expect(existsSync(join(forgeHome, NODE, VERSION))).toBe(true);
+});
+
 installerCase("a bad active checksum returns 66 before creating the node directory", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { badHash: true });
