@@ -861,7 +861,12 @@ async function cleanupOldVersions(nodeHome, activeVersion, publishDir) {
         } catch {
           if (!isTrash) {
             const trashPath = join(nodeHome, `.trash-${randomUUID()}`);
-            await rename(targetPath, trashPath).catch(() => {});
+            try {
+              await rename(targetPath, trashPath);
+            } catch {
+              await chmod(targetPath, 0o755).catch(() => {});
+              await rename(targetPath, trashPath).catch(() => {});
+            }
           }
         }
       }

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -75,7 +75,7 @@ function fakeRelease(version: string, options: { badHash?: boolean; badInstaller
     ? readFileSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe"))
     : Buffer.from(
     process.platform === "win32"
-      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" ( ${options.failUninstall ? "exit /b 1" : "echo called>\"%FORGE614_TEST_UNINSTALL_MARKER%\""} & exit /b 0 )\r\nif "%1"=="capabilities" if "%2"=="--agent" ( echo ${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"} & exit /b 0 )\r\n${options.smokePrintsHome ? `echo forge614-x 0.0.0\r\necho %HOME%` : options.failSmoke ? "exit /b 1" : options.failPublishedSmoke ? `echo %~dp0 | findstr /i "bin" >nul && exit /b 1` : `echo forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}`}\r\n`
+      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" ( ${options.failUninstall ? "exit /b 1" : `echo called>"%FORGE614_TEST_UNINSTALL_MARKER%" & exit /b 0`} )\r\nif "%1"=="capabilities" if "%2"=="--agent" ( echo ${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"} & exit /b 0 )\r\n${options.smokePrintsHome ? `echo forge614-x 0.0.0\r\necho %HOME%` : options.failSmoke ? "exit /b 1" : options.failPublishedSmoke ? `echo %~dp0 | findstr /i "bin" >nul && exit /b 1` : `echo forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}`}\r\n`
       : options.smokePrintsHome ? '#!/bin/sh\nprintf \'forge614-x 0.0.0\\n%s\\n\' "$HOME"\n' : options.failSmoke ? "#!/bin/sh\nexit 1\n" : `#!/bin/sh\nif [ "$1" = uninstall ] && [ "$2" = "--self" ]; then ${options.failUninstall ? "exit 1" : 'printf called > "$FORGE614_TEST_UNINSTALL_MARKER"; exit 0'}; fi\nif [ "$1" = capabilities ] && [ "$2" = "--agent" ]; then printf '%s\\n' '${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"}'; exit 0; fi\n${options.failPublishedSmoke ? 'case "$0" in */bin/*) exit 1;; esac\n' : ""}printf '%s\\n' 'forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}'\n`,
     "utf8",
   );
@@ -509,8 +509,14 @@ installerCase("an unremovable old version directory does not fail installation a
   const nodeHome = join(home, ".forge614", NODE);
   const lockedDir = join(nodeHome, "0.1.0");
   mkdirSync(lockedDir, { recursive: true });
-  writeFileSync(join(lockedDir, "file.txt"), "data");
-  if (!onWindows) chmodSync(lockedDir, 0o555);
+  const lockedFile = join(lockedDir, "file.txt");
+  writeFileSync(lockedFile, "data");
+  let handle: number | undefined;
+  if (onWindows) {
+    handle = openSync(lockedFile, "r");
+  } else {
+    chmodSync(lockedDir, 0o555);
+  }
 
   try {
     const result = await runInstaller(home, server.baseUrl);
@@ -520,6 +526,7 @@ installerCase("an unremovable old version directory does not fail installation a
     const trashDirs = readdirSync(nodeHome).filter((entry) => entry.startsWith(".trash-"));
     expect(trashDirs.length).toBeGreaterThan(0);
   } finally {
+    if (handle !== undefined) closeSync(handle);
     if (!onWindows) {
       for (const entry of readdirSync(nodeHome)) {
         if (entry.startsWith(".trash-")) chmodSync(join(nodeHome, entry), 0o755);
@@ -970,7 +977,12 @@ installerCase("a flat launcher is migrated during initial installation and clean
   const result = await runInstaller(home, server.baseUrl);
   const nodeHome = join(home, ".forge614", NODE);
   expect(result.code, result.stderr).toBe(0);
-  expect(readFileSync(oldLauncher, "utf8")).not.toContain("echo legacy");
+  if (process.platform === "win32") {
+    expect(existsSync(oldLauncher)).toBe(false);
+    expect(existsSync(join(home, ".forge614", NODE, "bin", "forge614-demo.cmd"))).toBe(true);
+  } else {
+    expect(readFileSync(oldLauncher, "utf8")).not.toContain("echo legacy");
+  }
   expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-"))).toHaveLength(0);
 });
 
@@ -984,7 +996,8 @@ installerCase("a flat .exe launcher is migrated when the active Windows asset is
   writeFileSync(oldLauncher, "legacy", { mode: 0o755 });
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code, result.stderr).toBe(0);
-  expect(existsSync(oldLauncher)).toBe(false);
+  expect(existsSync(oldLauncher)).toBe(true);
+  expect(readFileSync(oldLauncher, "utf8")).not.toBe("legacy");
   expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-"))).toHaveLength(0);
 }, !onWindows);
 
