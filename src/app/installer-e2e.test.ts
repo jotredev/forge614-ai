@@ -64,7 +64,7 @@ function replaceAsset(release: ReturnType<typeof fakeRelease>, bytes: Buffer): v
 }
 
 /** Build one fake release containing a platform launcher, pointer, and GNU checksum manifest. */
-function fakeRelease(version: string, options: { badHash?: boolean; badInstallerHash?: boolean; badCapabilities?: boolean; failSmoke?: boolean; wrongSmokeOutput?: boolean; wrongNodeName?: boolean; failPublishedSmoke?: boolean; failUninstall?: boolean; pathModify?: boolean; unsupportedSystem?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip" | "binary-tar-gzip-or-zip"; launcherExtension?: "exe" | "cmd" } = {}, nodeName = NODE, repository = REPO) {
+function fakeRelease(version: string, options: { badHash?: boolean; badInstallerHash?: boolean; badCapabilities?: boolean; failSmoke?: boolean; wrongSmokeOutput?: boolean; wrongNodeName?: boolean; failPublishedSmoke?: boolean; failUninstall?: boolean; pathModify?: boolean; unsupportedSystem?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip" | "binary-tar-gzip-or-zip"; launcherExtension?: "exe" | "cmd"; userData?: string[] } = {}, nodeName = NODE, repository = REPO) {
   const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   const assetType = options.assetType ?? "raw-binary";
@@ -95,7 +95,8 @@ function fakeRelease(version: string, options: { badHash?: boolean; badInstaller
         asset: { type: assetType, pattern: `forge614-${nodeName}-<plat>-<arch>${assetType === "raw-binary" ? `.${launcherExtension}` : assetType === "binary-tar-gzip" ? ".tar.gz" : ".tar.gz|.zip"}`, checksumFile: "SHA256SUMS" },
         dependencies: options.dependencies ?? [],
         path: { modify: options.pathModify ?? false, retireWhen: options.pathModify ? "test retirement" : null },
-      smokeTest: process.platform === "win32" && launcherExtension === "exe" ? ["/c", `echo forge614-${nodeName} ${version}`] : ["--version"],
+        smokeTest: process.platform === "win32" && launcherExtension === "exe" ? ["/c", `echo forge614-${nodeName} ${version}`] : ["--version"],
+        ...(options.userData !== undefined ? { userData: options.userData } : {}),
       },
     }),
   );
@@ -526,6 +527,73 @@ installerCase("an unremovable old version directory does not fail installation a
       if (existsSync(lockedDir)) chmodSync(lockedDir, 0o755);
     }
   }
+});
+
+installerCase("install.mjs rejects node pointers with invalid userData entries", async () => {
+  for (const invalidUserData of [["demo/x"], ["/abs"], ["../x"]]) {
+    const server = await fakeReleaseServer();
+    server.publish("1.0.0", { userData: invalidUserData });
+    server.setLatest("1.0.0");
+    const home = tempDir("forge614-install-invalid-userdata-");
+    const result = await runInstaller(home, server.baseUrl);
+    expect(result.code).toBe(65);
+    expect(existsSync(join(home, ".forge614", NODE))).toBe(false);
+  }
+});
+
+installerCase("uninstall halts and protects files when userData is declared and uninstall hook fails", async () => {
+  for (const { locale, expectedMessage } of [
+    { locale: "es", expectedMessage: "Falló forge614-demo uninstall --self; no se borró nada para proteger los datos." },
+    { locale: "en", expectedMessage: "forge614-demo uninstall --self failed; nothing was deleted to protect user data." },
+  ]) {
+    const server = await fakeReleaseServer();
+    server.publish("1.0.0", { userData: ["memory"], failUninstall: true });
+    server.setLatest("1.0.0");
+    const home = tempDir(`forge614-userdata-protected-${locale}-`);
+    const installResult = await runInstaller(home, server.baseUrl);
+    expect(installResult.code, installResult.stderr).toBe(0);
+
+    const nodeHome = join(home, ".forge614", NODE);
+    const userDataDir = join(home, ".forge614", "memory");
+    mkdirSync(userDataDir, { recursive: true });
+    writeFileSync(join(userDataDir, "engram.db"), "data to protect");
+
+    const uninstallResult = await runInstaller(home, server.baseUrl, ["--uninstall"], {
+      FORGE614_INSTALL_NODE: NODE,
+      FORGE614_INSTALL_REPOSITORY: REPO,
+      FORGE614_LOCALE: locale,
+    });
+
+    expect(uninstallResult.code).toBe(65);
+    expect(uninstallResult.stderr).toContain(expectedMessage);
+    expect(existsSync(nodeHome)).toBe(true);
+    expect(existsSync(userDataDir)).toBe(true);
+    expect(readFileSync(join(userDataDir, "engram.db"), "utf8")).toBe("data to protect");
+  }
+});
+
+installerCase("successful uninstall removes the node directory but preserves userData", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { userData: ["memory"] });
+  server.setLatest("1.0.0");
+  const home = tempDir("forge614-userdata-preserved-");
+  const installResult = await runInstaller(home, server.baseUrl);
+  expect(installResult.code, installResult.stderr).toBe(0);
+
+  const nodeHome = join(home, ".forge614", NODE);
+  const userDataDir = join(home, ".forge614", "memory");
+  mkdirSync(userDataDir, { recursive: true });
+  writeFileSync(join(userDataDir, "engram.db"), "data to keep forever");
+
+  const uninstallResult = await runInstaller(home, server.baseUrl, ["--uninstall"], {
+    FORGE614_INSTALL_NODE: NODE,
+    FORGE614_INSTALL_REPOSITORY: REPO,
+  });
+
+  expect(uninstallResult.code, uninstallResult.stderr).toBe(0);
+  expect(existsSync(nodeHome)).toBe(false);
+  expect(existsSync(userDataDir)).toBe(true);
+  expect(readFileSync(join(userDataDir, "engram.db"), "utf8")).toBe("data to keep forever");
 });
 
 installerCase("a bad active checksum returns 66 before creating the node directory", async () => {
