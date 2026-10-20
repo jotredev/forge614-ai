@@ -48,4 +48,21 @@ describe("forge614.node.json", () => {
     };
     expect(NodePointerSchema.safeParse({ ...valid, install }).success).toBe(true);
   });
+  test("rejects invalid userData entries targeting node folder, absolute, dot or dot-dot", () => {
+    const baseInstall = {
+      repository: "jotredev/forge614-demo",
+      minimumNodeVersion: "22.19.0",
+      systems: [{ os: "linux", architectures: ["x64"] }],
+      tagFormat: "vX.Y.Z",
+      asset: { type: "raw-binary", pattern: "forge614-demo-<plat>-<arch>", checksumFile: "SHA256SUMS" },
+      dependencies: [],
+      path: { modify: false, retireWhen: null },
+      smokeTest: ["--version"],
+    };
+    for (const invalid of ["./engram", "engram/.", "memory/../engram", "Engram", "/abs", "../x", "a/../b", ".", "", "   "]) {
+      const install = { ...baseInstall, userData: [invalid] };
+      const parsed = NodePointerSchema.safeParse({ ...valid, node: "engram", install });
+      expect(parsed.success, `expected userData entry '${invalid}' to be rejected`).toBe(false);
+    }
+  });
 });
