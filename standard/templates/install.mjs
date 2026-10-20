@@ -59,6 +59,7 @@ function message(key, values = {}) {
     pathNotAdded: { es: "forge614-{node} quedó instalado, pero no se agregó al PATH: {reason}.", en: "forge614-{node} was installed, but was not added to PATH: {reason}." },
     removed: { es: "forge614-{node} se desinstaló.", en: "forge614-{node} was uninstalled." },
     uninstallHookFailed: { es: "Aviso: falló forge614-{node} uninstall --self; se sigue con la limpieza del instalador.", en: "Warning: forge614-{node} uninstall --self failed; continuing with installer cleanup." },
+    uninstallCleanupFailed: { es: "Aviso: no se pudo borrar la carpeta temporal de desinstalación de forge614-{node}; se limpiará en la siguiente instalación.", en: "Warning: could not delete temporary uninstallation directory for forge614-{node}; it will be cleaned up on the next installation." },
     userDataProtected: { es: "Falló forge614-{node} uninstall --self; no se borró nada para proteger los datos.", en: "forge614-{node} uninstall --self failed; nothing was deleted to protect user data." },
     help: { es: "Uso: install.mjs [--latest] [--force] [--version ETIQUETA] [--archive RUTA] [--uninstall] [--bin-dir RUTA]", en: "Usage: install.mjs [--latest] [--force] [--version TAG] [--archive PATH] [--uninstall] [--bin-dir PATH]" },
   };
@@ -1001,6 +1002,13 @@ async function main(argv) {
   const platform = currentPlatform();
   requireSupportedSystem(install, platform);
   const nodeHome = join(home, node);
+  try {
+    for (const entry of await readdir(home)) {
+      if (entry.startsWith(`.${node}-removing-`)) {
+        await rm(join(home, entry), { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  } catch {}
   const activeFile = join(nodeHome, ".active-version");
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const version = tag.replace(/^v/, "");
@@ -1074,12 +1082,29 @@ async function uninstallNode(node, home, binDirOverride) {
       process.stderr.write(`${message("uninstallHookFailed", { node })}\n`);
     }
   }
+  let removingDir = "";
+  if (await pathExists(nodeHome)) {
+    removingDir = join(home, `.${node}-removing-${randomUUID()}`);
+    try {
+      await rename(nodeHome, removingDir);
+    } catch (renameError) {
+      throw new InstallerError(EXIT.REQUIREMENT, `could not rename ${node} directory for removal: ${renameError.message}`);
+    }
+  }
   const removesExternalLauncher = Boolean(binDirOverride || storedBinDir);
   if (removesExternalLauncher) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
   const sharedWindowsLauncherRemains = platform.os === "windows" && removesExternalLauncher && await hasWindowsLauncher(binDir);
   if (!sharedWindowsLauncherRemains) await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
-  await rm(nodeHome, { recursive: true, force: true });
-  process.stdout.write(`${message("removed", { node })}\n`);
+  if (removingDir) {
+    try {
+      await rm(removingDir, { recursive: true, force: true });
+    } catch {
+      process.stderr.write(`${message("uninstallCleanupFailed", { node })}\n`);
+    }
+  }
+  if (!(await pathExists(nodeHome))) {
+    process.stdout.write(`${message("removed", { node })}\n`);
+  }
   return EXIT.OK;
 }
 
