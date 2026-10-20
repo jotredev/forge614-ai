@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -509,14 +509,8 @@ installerCase("an unremovable old version directory does not fail installation a
   const nodeHome = join(home, ".forge614", NODE);
   const lockedDir = join(nodeHome, "0.1.0");
   mkdirSync(lockedDir, { recursive: true });
-  const lockedFile = join(lockedDir, "file.txt");
-  writeFileSync(lockedFile, "data");
-  let handle: number | undefined;
-  if (onWindows) {
-    handle = openSync(lockedFile, "r");
-  } else {
-    chmodSync(lockedDir, 0o555);
-  }
+  writeFileSync(join(lockedDir, "file.txt"), "data");
+  chmodSync(lockedDir, 0o555);
 
   try {
     const result = await runInstaller(home, server.baseUrl);
@@ -526,15 +520,12 @@ installerCase("an unremovable old version directory does not fail installation a
     const trashDirs = readdirSync(nodeHome).filter((entry) => entry.startsWith(".trash-"));
     expect(trashDirs.length).toBeGreaterThan(0);
   } finally {
-    if (handle !== undefined) closeSync(handle);
-    if (!onWindows) {
-      for (const entry of readdirSync(nodeHome)) {
-        if (entry.startsWith(".trash-")) chmodSync(join(nodeHome, entry), 0o755);
-      }
-      if (existsSync(lockedDir)) chmodSync(lockedDir, 0o755);
+    for (const entry of readdirSync(nodeHome)) {
+      if (entry.startsWith(".trash-")) chmodSync(join(nodeHome, entry), 0o755);
     }
+    if (existsSync(lockedDir)) chmodSync(lockedDir, 0o755);
   }
-});
+}, onWindows);
 
 installerCase("install.mjs rejects node pointers with invalid userData entries", async () => {
   for (const invalidUserData of [
