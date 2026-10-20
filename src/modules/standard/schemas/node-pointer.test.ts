@@ -34,4 +34,18 @@ describe("forge614.node.json", () => {
     expect(NodePointerSchema.safeParse({ ...valid, install }).success).toBe(true);
     expect(NodePointerSchema.safeParse({ ...valid, install: { ...install, dependencies: [{ ...install.dependencies[0], requiredCapabilities: ["supportsReadOnly"] }] } }).success).toBe(false);
   });
+  test("accepts optional userData array in install block", () => {
+    const install = {
+      repository: "jotredev/forge614-demo",
+      minimumNodeVersion: "22.19.0",
+      systems: [{ os: "linux", architectures: ["x64"] }],
+      tagFormat: "vX.Y.Z",
+      asset: { type: "raw-binary", pattern: "forge614-demo-<plat>-<arch>", checksumFile: "SHA256SUMS" },
+      dependencies: [],
+      path: { modify: false, retireWhen: null },
+      smokeTest: ["--version"],
+      userData: ["memory"],
+    };
+    expect(NodePointerSchema.safeParse({ ...valid, install }).success).toBe(true);
+  });
 });

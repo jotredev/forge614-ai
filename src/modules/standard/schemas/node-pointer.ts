@@ -60,6 +60,7 @@ const InstallSchema = z
       })
       .strict(),
     smokeTest: z.array(z.string()),
+    userData: z.array(z.string()).optional(),
   })
   .strict();
 
