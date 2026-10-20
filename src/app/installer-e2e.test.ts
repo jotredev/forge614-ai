@@ -64,7 +64,7 @@ function replaceAsset(release: ReturnType<typeof fakeRelease>, bytes: Buffer): v
 }
 
 /** Build one fake release containing a platform launcher, pointer, and GNU checksum manifest. */
-function fakeRelease(version: string, options: { badHash?: boolean; badInstallerHash?: boolean; badCapabilities?: boolean; failSmoke?: boolean; wrongSmokeOutput?: boolean; wrongNodeName?: boolean; failPublishedSmoke?: boolean; failUninstall?: boolean; pathModify?: boolean; unsupportedSystem?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip" | "binary-tar-gzip-or-zip"; launcherExtension?: "exe" | "cmd"; userData?: string[] } = {}, nodeName = NODE, repository = REPO) {
+function fakeRelease(version: string, options: { badHash?: boolean; badInstallerHash?: boolean; badCapabilities?: boolean; failSmoke?: boolean; wrongSmokeOutput?: boolean; wrongNodeName?: boolean; failPublishedSmoke?: boolean; failUninstall?: boolean; pathModify?: boolean; unsupportedSystem?: boolean; dependencies?: object[]; minimumVersion?: string; assetType?: "raw-binary" | "binary-tar-gzip" | "binary-tar-gzip-or-zip"; launcherExtension?: "exe" | "cmd"; userData?: string[]; smokePrintsHome?: boolean } = {}, nodeName = NODE, repository = REPO) {
   const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   const assetType = options.assetType ?? "raw-binary";
@@ -75,8 +75,8 @@ function fakeRelease(version: string, options: { badHash?: boolean; badInstaller
     ? readFileSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe"))
     : Buffer.from(
     process.platform === "win32"
-      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" ( ${options.failUninstall ? "exit /b 1" : "echo called>\"%FORGE614_TEST_UNINSTALL_MARKER%\""} & exit /b 0 )\r\nif "%1"=="capabilities" if "%2"=="--agent" ( echo ${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"} & exit /b 0 )\r\n${options.failSmoke ? "exit /b 1" : options.failPublishedSmoke ? `echo %~dp0 | findstr /i "bin" >nul && exit /b 1` : `echo forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}`}\r\n`
-      : options.failSmoke ? "#!/bin/sh\nexit 1\n" : `#!/bin/sh\nif [ "$1" = uninstall ] && [ "$2" = "--self" ]; then ${options.failUninstall ? "exit 1" : 'printf called > "$FORGE614_TEST_UNINSTALL_MARKER"; exit 0'}; fi\nif [ "$1" = capabilities ] && [ "$2" = "--agent" ]; then printf '%s\\n' '${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"}'; exit 0; fi\n${options.failPublishedSmoke ? 'case "$0" in */bin/*) exit 1;; esac\n' : ""}printf '%s\\n' 'forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}'\n`,
+      ? `@echo off\r\nif "%1"=="uninstall" if "%2"=="--self" ( ${options.failUninstall ? "exit /b 1" : "echo called>\"%FORGE614_TEST_UNINSTALL_MARKER%\""} & exit /b 0 )\r\nif "%1"=="capabilities" if "%2"=="--agent" ( echo ${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"} & exit /b 0 )\r\n${options.smokePrintsHome ? `echo forge614-x 0.0.0\r\necho %HOME%` : options.failSmoke ? "exit /b 1" : options.failPublishedSmoke ? `echo %~dp0 | findstr /i "bin" >nul && exit /b 1` : `echo forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}`}\r\n`
+      : options.smokePrintsHome ? '#!/bin/sh\nprintf \'forge614-x 0.0.0\\n%s\\n\' "$HOME"\n' : options.failSmoke ? "#!/bin/sh\nexit 1\n" : `#!/bin/sh\nif [ "$1" = uninstall ] && [ "$2" = "--self" ]; then ${options.failUninstall ? "exit 1" : 'printf called > "$FORGE614_TEST_UNINSTALL_MARKER"; exit 0'}; fi\nif [ "$1" = capabilities ] && [ "$2" = "--agent" ]; then printf '%s\\n' '${options.badCapabilities ? "not-json" : "{\"schemaVersion\":1,\"id\":\"claude-code\",\"label\":\"Claude Code\",\"supportsMcp\":true,\"supportsHooks\":true,\"supportsHeadlessExec\":true,\"supportsReasoningLevel\":true,\"supportsReadOnly\":true,\"fullySupported\":true}"}'; exit 0; fi\n${options.failPublishedSmoke ? 'case "$0" in */bin/*) exit 1;; esac\n' : ""}printf '%s\\n' 'forge614-${options.wrongNodeName ? "wrong" : nodeName} ${options.wrongSmokeOutput ? "9.9.9" : version}'\n`,
     "utf8",
   );
   const pointer = Buffer.from(
@@ -714,6 +714,19 @@ installerCase("smoke testing requires the exact node name and version output", a
   expect(existsSync(join(home, ".forge614", NODE, ".active-version"))).toBe(false);
 });
 
+installerCase("smoke test failures explain the cause with exit code, received output, and sanitized HOME", async () => {
+  const server = await fakeReleaseServer();
+  server.publish("1.0.0", { smokePrintsHome: true });
+  const home = tempDir("forge614-install-smoke-detail-");
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).toBe(65);
+  expect(result.stderr).toContain("Detalle técnico:");
+  expect(result.stderr).toContain("0.0.0");
+  expect(result.stderr).toContain("code 0");
+  expect(result.stderr).toContain("~");
+  expect(result.stderr).not.toContain(home);
+});
+
 installerCase("a PATH failure rolls back a first activation without an active pointer", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { pathModify: true });
@@ -938,7 +951,7 @@ installerCase("PATH warns and skips profiles without HOME or USERPROFILE", async
   for (const profile of [".zshrc", ".bashrc", ".profile", ".bash_profile"]) expect(existsSync(join(cwd, profile))).toBe(false);
 }, onWindows);
 
-installerCase("a flat launcher is retained in a legacy folder during migration", async () => {
+installerCase("a flat launcher is migrated during initial installation and cleaned up on success", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-migration-");
   const oldLauncher = join(home, ".forge614", NODE, "bin", `forge614-demo${process.platform === "win32" ? ".exe" : ""}`);
@@ -947,12 +960,11 @@ installerCase("a flat launcher is retained in a legacy folder during migration",
   const result = await runInstaller(home, server.baseUrl);
   const nodeHome = join(home, ".forge614", NODE);
   expect(result.code, result.stderr).toBe(0);
-  const legacyDir = readdirSync(nodeHome).find((entry) => entry.startsWith("legacy-"));
-  expect(legacyDir).toBeDefined();
-  expect(existsSync(join(nodeHome, legacyDir ?? "", oldLauncher.split(/[\\/]/).at(-1) ?? ""))).toBe(true);
+  expect(readFileSync(oldLauncher, "utf8")).not.toContain("echo legacy");
+  expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-"))).toHaveLength(0);
 });
 
-installerCase("a flat .exe launcher is retained when the active Windows asset is .exe", async () => {
+installerCase("a flat .exe launcher is migrated when the active Windows asset is .exe and cleaned up on success", async () => {
   const server = await fakeReleaseServer();
   server.publish("1.0.0", { launcherExtension: "exe" });
   const home = tempDir("forge614-install-migration-exe-active-");
@@ -962,9 +974,8 @@ installerCase("a flat .exe launcher is retained when the active Windows asset is
   writeFileSync(oldLauncher, "legacy", { mode: 0o755 });
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code, result.stderr).toBe(0);
-  const legacyDir = readdirSync(nodeHome).find((entry) => entry.startsWith("legacy-"));
-  expect(legacyDir).toBeDefined();
-  expect(existsSync(join(nodeHome, legacyDir ?? "", "forge614-demo.exe"))).toBe(true);
+  expect(existsSync(oldLauncher)).toBe(false);
+  expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-"))).toHaveLength(0);
 }, !onWindows);
 
 installerCase("an empty active-version file prevents flat-install migration", async () => {
@@ -1083,9 +1094,7 @@ installerCase("a broken dependency launcher is treated as incompatible and repai
   const result = await runInstaller(home, server.baseUrl);
   expect(result.code, result.stderr).toBe(0);
   expect(readFileSync(join(home, ".forge614", "engines", ".active-version"), "utf8").trim()).toBe("1.0.0");
-  const legacyDir = readdirSync(join(home, ".forge614", "engines")).find((entry) => entry.startsWith("legacy-"));
-  expect(legacyDir).toBeDefined();
-  expect(lstatSync(join(home, ".forge614", "engines", legacyDir ?? "", "forge614-engines")).isSymbolicLink()).toBe(true);
+  expect(readdirSync(join(home, ".forge614", "engines")).filter((entry) => entry.startsWith("legacy-"))).toHaveLength(0);
 });
 
 installerCase("a dependency version response must name that dependency exactly", async () => {
