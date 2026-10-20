@@ -1,6 +1,7 @@
 # {{NODE_TITLE}} (`forge614-{{NODE_NAME}}`)
 
 The installer templates change in Standard 1.2.0 according to record [0031](../../docs/decisions/0031-instalador-unico-install-mjs.md).
+In Standard 1.3.0 they incorporate cleanup of old versions, user data protection (`userData`), safe rename before deletion on uninstall, and output details on smoke test failures.
 
 > One-sentence analogy: <fill in>.
 
