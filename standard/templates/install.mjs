@@ -825,7 +825,7 @@ async function publishUnixLauncher(source, launcher) {
 }
 
 /** Remove older SemVer versions, legacy folders, backup directories, and trash on a best-effort basis. */
-async function cleanupOldVersions(nodeHome, activeVersion) {
+async function cleanupOldVersions(nodeHome, activeVersion, publishDir) {
   let entries = [];
   try {
     entries = await readdir(nodeHome);
@@ -834,17 +834,20 @@ async function cleanupOldVersions(nodeHome, activeVersion) {
   }
   const semverDir = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
   for (const entry of entries) {
-    const isOldVersion = semverDir.test(entry) && entry !== activeVersion;
+    const targetPath = join(nodeHome, entry);
+    if (entry === activeVersion || targetPath === publishDir) {
+      continue;
+    }
+    const isOldVersion = semverDir.test(entry);
     const isLegacy = entry.startsWith("legacy-");
     const isBackup = entry.startsWith(".version-backup-");
     const isTrash = entry.startsWith(".trash-");
-    const isStaged = entry.startsWith(`${activeVersion}.install-`) && join(nodeHome, entry) !== join(nodeHome, activeVersion);
+    const isStaged = entry.startsWith(`${activeVersion}.install-`);
 
     if (!isOldVersion && !isLegacy && !isBackup && !isTrash && !isStaged) {
       continue;
     }
 
-    const targetPath = join(nodeHome, entry);
     try {
       const entryStat = await lstat(targetPath);
       if (entryStat.isSymbolicLink()) {
@@ -863,6 +866,31 @@ async function cleanupOldVersions(nodeHome, activeVersion) {
       // Best-effort cleanup never fails the installation.
     }
   }
+}
+
+/** Sanitize smoke test output by replacing home paths and removing control characters except newline. */
+function sanitizeSmokeDetail(raw) {
+  if (!raw) return "";
+  let text = String(raw);
+  const configuredForge = process.env.FORGE614_HOME;
+  if (configuredForge) text = text.replaceAll(configuredForge, "$FORGE614_HOME");
+  const homeEnv = process.env.HOME;
+  if (homeEnv) text = text.replaceAll(homeEnv, "~");
+  const userProfile = process.env.USERPROFILE;
+  if (userProfile) text = text.replaceAll(userProfile, "~");
+  text = text.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, "");
+  return text.slice(0, 2000);
+}
+
+/** Construct an error detailing a smoke test failure with code, stdout, and stderr. */
+function smokeFailureError(phase, smoke) {
+  const code = smoke.code ?? "unknown";
+  const stdout = sanitizeSmokeDetail(smoke.stdout).trim();
+  const stderr = sanitizeSmokeDetail(smoke.stderr).trim();
+  const parts = [`${phase} launcher smoke test failed (code ${code})`];
+  if (stdout) parts.push(`stdout: ${stdout}`);
+  if (stderr) parts.push(`stderr: ${stderr}`);
+  return new Error(parts.join("; "));
 }
 
 /** Publish the new version, PATH, active pointer and smoke test as one rollback transaction. */
@@ -932,14 +960,14 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     pointerWritten = true;
     const smoke = await run(launcher, smokeTest, { allowFailure: true });
     if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${nodeName} ${version}`) {
-      throw new Error("published launcher smoke test failed");
+      throw smokeFailureError("published", smoke);
     }
     if (launcherBackup) {
       await rm(launcherBackup, { force: true });
       temporaryFiles.delete(launcherBackup);
     }
     if (versionBackup) await rm(versionBackup, { recursive: true, force: true }).catch(() => {});
-    await cleanupOldVersions(nodeHome, version);
+    await cleanupOldVersions(nodeHome, version, publishDir);
   } catch (error) {
     await restoreProfiles(pathSnapshots);
     if (pointerWritten) {
@@ -1031,7 +1059,9 @@ async function main(argv) {
     const stagedLauncher = await prepareAsset(install, asset, name, node, stage, platform);
     const smokeTest = install.smokeTest ?? ["--version"];
     const smoke = await run(stagedLauncher, smokeTest, { allowFailure: true });
-    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) throw new Error("staged launcher smoke test failed");
+    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) {
+      throw smokeFailureError("staged", smoke);
+    }
     const selectedBinDir = options.binDir ? resolve(options.binDir) : join(nodeHome, "bin");
     const pathWarning = await activate(node, version, nodeHome, stage, stagedLauncher, selectedBinDir, platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest, pointerBytes);
     process.stdout.write(`${pathWarning
