@@ -806,6 +806,47 @@ async function publishUnixLauncher(source, launcher) {
   }
 }
 
+/** Remove older SemVer versions, legacy folders, backup directories, and trash on a best-effort basis. */
+async function cleanupOldVersions(nodeHome, activeVersion) {
+  let entries = [];
+  try {
+    entries = await readdir(nodeHome);
+  } catch {
+    return;
+  }
+  const semverDir = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+  for (const entry of entries) {
+    const isOldVersion = semverDir.test(entry) && entry !== activeVersion;
+    const isLegacy = entry.startsWith("legacy-");
+    const isBackup = entry.startsWith(".version-backup-");
+    const isTrash = entry.startsWith(".trash-");
+    const isStaged = entry.startsWith(`${activeVersion}.install-`) && join(nodeHome, entry) !== join(nodeHome, activeVersion);
+
+    if (!isOldVersion && !isLegacy && !isBackup && !isTrash && !isStaged) {
+      continue;
+    }
+
+    const targetPath = join(nodeHome, entry);
+    try {
+      const entryStat = await lstat(targetPath);
+      if (entryStat.isSymbolicLink()) {
+        await rm(targetPath, { force: true });
+      } else if (entryStat.isDirectory()) {
+        try {
+          await rm(targetPath, { recursive: true, force: true });
+        } catch {
+          if (!isTrash) {
+            const trashPath = join(nodeHome, `.trash-${randomUUID()}`);
+            await rename(targetPath, trashPath).catch(() => {});
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup never fails the installation.
+    }
+  }
+}
+
 /** Publish the new version, PATH, active pointer and smoke test as one rollback transaction. */
 async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home, smokeTest) {
   const activeFile = join(nodeHome, ".active-version");
@@ -875,12 +916,8 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       await rm(launcherBackup, { force: true });
       temporaryFiles.delete(launcherBackup);
     }
-    if (versionBackup) await rm(versionBackup, { recursive: true, force: true });
-    for (const entry of await readdir(nodeHome)) {
-      if (entry.startsWith(`${version}.install-`) && join(nodeHome, entry) !== publishDir) {
-        await rm(join(nodeHome, entry), { recursive: true, force: true });
-      }
-    }
+    if (versionBackup) await rm(versionBackup, { recursive: true, force: true }).catch(() => {});
+    await cleanupOldVersions(nodeHome, version);
   } catch (error) {
     await restoreProfiles(pathSnapshots);
     if (pointerWritten) {

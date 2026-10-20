@@ -440,7 +440,7 @@ installerCase("--force on the active version publishes into a unique version dir
   expect(readdirSync(nodeHome).filter((entry) => entry.startsWith(`${VERSION}.install-`))).toHaveLength(1);
 });
 
-installerCase("an update activates the new version and retains the previous version", async () => {
+installerCase("an update activates the new version and removes the previous version", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-update-");
   expect((await runInstaller(home, server.baseUrl)).code).toBe(0);
@@ -451,9 +451,81 @@ installerCase("an update activates the new version and retains the previous vers
   expect(update.code, update.stderr).toBe(0);
   expect(update.stdout).toContain("se actualizó de 1.0.0 a 1.1.0");
   expect(readFileSync(join(nodeHome, ".active-version"), "utf8").trim()).toBe("1.1.0");
-  expect(existsSync(join(nodeHome, "1.0.0"))).toBe(true);
+  expect(existsSync(join(nodeHome, "1.0.0"))).toBe(false);
   expect(existsSync(join(nodeHome, "1.1.0"))).toBe(true);
   expect(readdirSync(nodeHome).filter((entry) => entry.startsWith("legacy-")).length).toBe(0);
+});
+
+installerCase("installing cleans old SemVer versions, legacy directories, and links to outside while preserving user files and outside targets", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-clean-old-");
+  const nodeHome = join(home, ".forge614", NODE);
+  mkdirSync(join(nodeHome, "0.1.0"), { recursive: true });
+  mkdirSync(join(nodeHome, "0.2.0"), { recursive: true });
+  mkdirSync(join(nodeHome, "0.3.0"), { recursive: true });
+  mkdirSync(join(nodeHome, "legacy-old-dir"), { recursive: true });
+  writeFileSync(join(nodeHome, "memory-falsa.bak"), "loose file to keep");
+  const outsideDir = tempDir("forge614-outside-target-");
+  writeFileSync(join(outsideDir, "keep.txt"), "outside content");
+  symlinkSync(outsideDir, join(nodeHome, "legacy-symlink"));
+
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code, result.stderr).toBe(0);
+
+  expect(existsSync(join(nodeHome, VERSION))).toBe(true);
+  expect(existsSync(join(nodeHome, "bin"))).toBe(true);
+  expect(existsSync(join(nodeHome, ".active-version"))).toBe(true);
+  expect(existsSync(join(nodeHome, ".bin-dir"))).toBe(true);
+  expect(existsSync(join(nodeHome, "memory-falsa.bak"))).toBe(true);
+
+  expect(existsSync(outsideDir)).toBe(true);
+  expect(existsSync(join(outsideDir, "keep.txt"))).toBe(true);
+
+  expect(existsSync(join(nodeHome, "0.1.0"))).toBe(false);
+  expect(existsSync(join(nodeHome, "0.2.0"))).toBe(false);
+  expect(existsSync(join(nodeHome, "0.3.0"))).toBe(false);
+  expect(existsSync(join(nodeHome, "legacy-old-dir"))).toBe(false);
+  expect(existsSync(join(nodeHome, "legacy-symlink"))).toBe(false);
+});
+
+installerCase("a failed installation does not remove any old versions", async () => {
+  const server = await fakeReleaseServer();
+  server.publish(VERSION, { failSmoke: true });
+  const home = tempDir("forge614-install-failed-smoke-keep-old-");
+  const nodeHome = join(home, ".forge614", NODE);
+  mkdirSync(join(nodeHome, "0.1.0"), { recursive: true });
+  mkdirSync(join(nodeHome, "0.2.0"), { recursive: true });
+
+  const result = await runInstaller(home, server.baseUrl);
+  expect(result.code).not.toBe(0);
+  expect(existsSync(join(nodeHome, "0.1.0"))).toBe(true);
+  expect(existsSync(join(nodeHome, "0.2.0"))).toBe(true);
+});
+
+installerCase("an unremovable old version directory does not fail installation and is renamed to .trash", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-unremovable-old-");
+  const nodeHome = join(home, ".forge614", NODE);
+  const lockedDir = join(nodeHome, "0.1.0");
+  mkdirSync(lockedDir, { recursive: true });
+  writeFileSync(join(lockedDir, "file.txt"), "data");
+  if (!onWindows) chmodSync(lockedDir, 0o555);
+
+  try {
+    const result = await runInstaller(home, server.baseUrl);
+    expect(result.code, result.stderr).toBe(0);
+    expect(existsSync(join(nodeHome, VERSION))).toBe(true);
+    expect(existsSync(lockedDir)).toBe(false);
+    const trashDirs = readdirSync(nodeHome).filter((entry) => entry.startsWith(".trash-"));
+    expect(trashDirs.length).toBeGreaterThan(0);
+  } finally {
+    if (!onWindows) {
+      for (const entry of readdirSync(nodeHome)) {
+        if (entry.startsWith(".trash-")) chmodSync(join(nodeHome, entry), 0o755);
+      }
+      if (existsSync(lockedDir)) chmodSync(lockedDir, 0o755);
+    }
+  }
 });
 
 installerCase("a bad active checksum returns 66 before creating the node directory", async () => {
