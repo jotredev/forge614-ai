@@ -530,7 +530,17 @@ installerCase("an unremovable old version directory does not fail installation a
 });
 
 installerCase("install.mjs rejects node pointers with invalid userData entries", async () => {
-  for (const invalidUserData of [["demo/x"], ["/abs"], ["../x"]]) {
+  for (const invalidUserData of [
+    ["demo/x"],
+    ["/abs"],
+    ["../x"],
+    ["./demo"],
+    ["demo/."],
+    ["memory/../demo"],
+    ["Demo"],
+    ["."],
+    [""],
+  ]) {
     const server = await fakeReleaseServer();
     server.publish("1.0.0", { userData: invalidUserData });
     server.setLatest("1.0.0");
