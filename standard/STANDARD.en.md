@@ -1,4 +1,4 @@
-# Forge614 Node Standard — version 1.2.1
+# Forge614 Node Standard — version 1.3.0
 
 > Binding norm for every repository in the Forge614 ecosystem. "Must" means the verifier checks it or that human review requires it before merging. The decisions that originate it live in `docs/decisions/` of `forge614-ai`.
 
@@ -15,7 +15,7 @@
   }
   ```
 
-  `kind: internal` marks pieces nobody installs by hand (Engines, Workers).
+  `kind: internal` marks pieces nobody installs by hand (Engines, Workers). The optional `install` block declares the node's distribution for `install.mjs` (record 0031). Within it, `userData` (optional) declares folders relative to `FORGE614_HOME` where the node stores user data (forbidden from starting with `<node>/`, being absolute, or containing `..`). The installer never deletes them, and uninstallation aborts without deleting anything with exit code 65 if `uninstall --self` fails on a node declaring `userData`.
 - Every node carries `CONTRACT.md` and `CONTRACT.en.md` at its root, with fixed sections: one-sentence purpose; what it does; what it does not do; dependencies (nodes and external binaries); public commands with input schema, output schema and `schemaVersion`; error codes; mandatory requirements for supported AI agents (link to the central procedure); compatibility policy. The contract is updated in the same change that modifies any of those points.
 - `FORGE614_ECOSYSTEM_CONTRACT.md` is not copied. Each repository references it through the pointer; the verifier checks that the local text, if present, is byte-identical to the one published by `forge614-ai` for the pinned version.
 
@@ -85,12 +85,12 @@ They are named by problem. An abstraction that does not answer a listed problem 
 - **Three operating systems, always** (record 0018): every node publishes binaries and an installer for macOS (arm64 and x64), Linux (arm64 and x64) and Windows (x64). There are no exceptions and no "pending"; a node missing one of the three is not released.
 - Minimal `install.sh` and `install.ps1` bootstraps plus one shared `install.mjs`, from `standard/templates/`. Only two data lines in each bootstrap vary: node name and repository. `install.mjs` is byte-identical and reads node data from the `install` block in the release's pointer (record 0031).
 - Node 22.19+ is required to install every node; Python is not required. Each node documents its runtime separately (record 0031).
-- Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. It checks twice that `--version` returns exactly `forge614-<node> <version>`; `.active-version` is written last and failures roll back PATH, launcher, pointer and migration (record 0031).
+- Destination `~/.forge614/<node>/<version>/` with stable launcher `~/.forge614/<node>/bin/forge614-<node>` and `.active-version`. It checks twice that `--version` returns exactly `forge614-<node> <version>`; on failure, the error includes the exit code and sanitized stdout/stderr. `.active-version` is written last and failures roll back PATH, launcher, pointer and migration. After a successful install, it deletes old versions, `legacy-*`, `.version-backup-*` and `.trash-*` on a best-effort basis (record 0031).
 - Download over HTTPS only; mandatory SHA-256 verification against the same release's `SHA256SUMS`; the installer never executes remote scripts without verifying their fingerprint.
 - `FORGE614_INSTALL_TEST_BASE_URL` is for tests only and accepts only `http://127.0.0.1:<port>` or `http://[::1]:<port>`; every other address requires HTTPS (record 0031).
 - No other language runtime is required for installation: Node 22.19+ is the minimum; Python is not required (record 0031).
 - Engram, Shell and Atlas edit existing profiles or create one based on `$SHELL` (`.zshrc`, `.bashrc` or `.profile`); they preserve symlinks and permissions. Engines, Workers and Sentinel do not modify PATH (record 0031).
-- `--uninstall` uses the node identity from the bootstrap and needs no network. It warns if `uninstall --self` fails, removes the external launcher and the node's PATH blocks, then deletes only `FORGE614_HOME/<node>/`. It never deletes all of `~/.forge614/`.
+- `--uninstall` uses the node identity from the bootstrap, requires no network, and runs `uninstall --self`. If the `.node.json` pointer declares `userData` and the hook fails, uninstallation aborts without deleting anything with exit code 65 to protect user data; without `userData`, it warns on failure and continues. To avoid half-deleted states from file locks, it first renames `FORGE614_HOME/<node>` to `FORGE614_HOME/.<node>-removing-<uuid>`, removes the external launcher and the node's PATH blocks, then deletes the temporary folder (folders declared in `userData` are never deleted). Uninstallation is only confirmed if the node directory no longer exists (record 0031).
 - Update (`<node> update`): downloads and verifies the installer **of the target release**, allows `--version`, and records the previous version for rollback.
 
 ## 7. Release, versioning and workflows

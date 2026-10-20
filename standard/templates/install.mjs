@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmod, copyFile, lstat, mkdir, readFile, readlink, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { gunzipSync, inflateRawSync } from "node:zlib";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 
 const EXIT = Object.freeze({ OK: 0, USAGE: 64, REQUIREMENT: 65, DOWNLOAD: 66, DEPENDENCY: 69 });
 const MIN_NODE = [22, 19, 0];
@@ -59,6 +59,8 @@ function message(key, values = {}) {
     pathNotAdded: { es: "forge614-{node} quedó instalado, pero no se agregó al PATH: {reason}.", en: "forge614-{node} was installed, but was not added to PATH: {reason}." },
     removed: { es: "forge614-{node} se desinstaló.", en: "forge614-{node} was uninstalled." },
     uninstallHookFailed: { es: "Aviso: falló forge614-{node} uninstall --self; se sigue con la limpieza del instalador.", en: "Warning: forge614-{node} uninstall --self failed; continuing with installer cleanup." },
+    uninstallCleanupFailed: { es: "Aviso: no se pudo borrar la carpeta temporal de desinstalación de forge614-{node}; se limpiará en la siguiente instalación.", en: "Warning: could not delete temporary uninstallation directory for forge614-{node}; it will be cleaned up on the next installation." },
+    userDataProtected: { es: "Falló forge614-{node} uninstall --self; no se borró nada para proteger los datos.", en: "forge614-{node} uninstall --self failed; nothing was deleted to protect user data." },
     help: { es: "Uso: install.mjs [--latest] [--force] [--version ETIQUETA] [--archive RUTA] [--uninstall] [--bin-dir RUTA]", en: "Usage: install.mjs [--latest] [--force] [--version TAG] [--archive PATH] [--uninstall] [--bin-dir PATH]" },
   };
   let text = messages[key]?.[locale()] ?? key;
@@ -207,6 +209,25 @@ function parsePointer(bytes) {
   }
   if (!Array.isArray(install.systems) || !Array.isArray(install.dependencies) || !install.asset || typeof install.asset.pattern !== "string") {
     throw new InstallerError(EXIT.REQUIREMENT, "install block is incomplete");
+  }
+  if (install.userData !== undefined) {
+    if (!Array.isArray(install.userData)) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+    for (const entry of install.userData) {
+      if (typeof entry !== "string" || !entry.trim()) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      if (isAbsolute(entry) || /^[A-Za-z]:/.test(entry)) throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      const replaced = entry.replace(/\\/g, "/");
+      if (replaced.startsWith("/") || replaced.split("/").includes("..")) {
+        throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      }
+      const normalized = posix.normalize(replaced);
+      if (normalized === "." || normalized === "" || normalized.startsWith("/") || normalized.split("/").includes("..")) {
+        throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      }
+      const firstSegment = normalized.split("/")[0] ?? "";
+      if (firstSegment.toLowerCase() === pointer.node.toLowerCase()) {
+        throw new InstallerError(EXIT.REQUIREMENT, "install.userData is invalid");
+      }
+    }
   }
   return { node: pointer.node, install };
 }
@@ -806,12 +827,89 @@ async function publishUnixLauncher(source, launcher) {
   }
 }
 
+/** Remove older SemVer versions, legacy folders, backup directories, and trash on a best-effort basis. */
+async function cleanupOldVersions(nodeHome, activeVersion, publishDir) {
+  let entries = [];
+  try {
+    entries = await readdir(nodeHome);
+  } catch {
+    return;
+  }
+  const semverDir = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+  for (const entry of entries) {
+    const targetPath = join(nodeHome, entry);
+    if (entry === activeVersion || targetPath === publishDir) {
+      continue;
+    }
+    const isOldVersion = semverDir.test(entry);
+    const isLegacy = entry.startsWith("legacy-");
+    const isBackup = entry.startsWith(".version-backup-");
+    const isTrash = entry.startsWith(".trash-");
+    const isStaged = entry.startsWith(`${activeVersion}.install-`);
+
+    if (!isOldVersion && !isLegacy && !isBackup && !isTrash && !isStaged) {
+      continue;
+    }
+
+    try {
+      const entryStat = await lstat(targetPath);
+      if (entryStat.isSymbolicLink()) {
+        await rm(targetPath, { force: true });
+      } else if (entryStat.isDirectory()) {
+        try {
+          await rm(targetPath, { recursive: true, force: true });
+        } catch {
+          if (!isTrash) {
+            const trashPath = join(nodeHome, `.trash-${randomUUID()}`);
+            try {
+              await rename(targetPath, trashPath);
+            } catch {
+              await chmod(targetPath, 0o755).catch(() => {});
+              await rename(targetPath, trashPath).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup never fails the installation.
+    }
+  }
+}
+
+/** Sanitize smoke test output by replacing home paths and removing control characters except newline. */
+function sanitizeSmokeDetail(raw) {
+  if (!raw) return "";
+  let text = String(raw);
+  const configuredForge = process.env.FORGE614_HOME;
+  if (configuredForge) text = text.replaceAll(configuredForge, "$FORGE614_HOME");
+  const homeEnv = process.env.HOME;
+  if (homeEnv) text = text.replaceAll(homeEnv, "~");
+  const userProfile = process.env.USERPROFILE;
+  if (userProfile) text = text.replaceAll(userProfile, "~");
+  text = text.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, "");
+  return text.slice(0, 2000);
+}
+
+/** Construct an error detailing a smoke test failure with code, stdout, and stderr. */
+function smokeFailureError(phase, smoke) {
+  const code = smoke.code ?? "unknown";
+  const stdout = sanitizeSmokeDetail(smoke.stdout).trim();
+  const stderr = sanitizeSmokeDetail(smoke.stderr).trim();
+  const parts = [`${phase} launcher smoke test failed (code ${code})`];
+  if (stdout) parts.push(`stdout: ${stdout}`);
+  if (stderr) parts.push(`stderr: ${stderr}`);
+  return new Error(parts.join("; "));
+}
+
 /** Publish the new version, PATH, active pointer and smoke test as one rollback transaction. */
-async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home, smokeTest) {
+async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, binDir, platform, pathModify, home, smokeTest, pointerBytes) {
   const activeFile = join(nodeHome, ".active-version");
   const binDirFile = join(nodeHome, ".bin-dir");
+  const nodeFile = join(nodeHome, ".node.json");
   const hadBinDir = await pathExists(binDirFile);
   const previousBinDir = await readFile(binDirFile).catch(() => null);
+  const hadNodeFile = await pathExists(nodeFile);
+  const previousNodeFile = hadNodeFile ? await readFile(nodeFile).catch(() => null) : null;
   const hadActivePointer = await pathExists(activeFile);
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const launcherName = `forge614-${nodeName}${platform.os === "windows" && stagedLauncher.endsWith(".cmd") ? ".cmd" : platform.os === "windows" ? ".exe" : ""}`;
@@ -865,22 +963,19 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       pathWarning = pathResult.warning;
     }
     await atomicWrite(binDirFile, Buffer.from(`${binDir}\n`));
+    if (pointerBytes) await atomicWrite(nodeFile, pointerBytes);
     await atomicWrite(activeFile, Buffer.from(`${version}\n`));
     pointerWritten = true;
     const smoke = await run(launcher, smokeTest, { allowFailure: true });
     if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${nodeName} ${version}`) {
-      throw new Error("published launcher smoke test failed");
+      throw smokeFailureError("published", smoke);
     }
     if (launcherBackup) {
       await rm(launcherBackup, { force: true });
       temporaryFiles.delete(launcherBackup);
     }
-    if (versionBackup) await rm(versionBackup, { recursive: true, force: true });
-    for (const entry of await readdir(nodeHome)) {
-      if (entry.startsWith(`${version}.install-`) && join(nodeHome, entry) !== publishDir) {
-        await rm(join(nodeHome, entry), { recursive: true, force: true });
-      }
-    }
+    if (versionBackup) await rm(versionBackup, { recursive: true, force: true }).catch(() => {});
+    await cleanupOldVersions(nodeHome, version, publishDir);
   } catch (error) {
     await restoreProfiles(pathSnapshots);
     if (pointerWritten) {
@@ -911,6 +1006,8 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     for (const migration of migrations) await rm(dirname(migration.legacyLauncher), { recursive: true, force: true }).catch(() => {});
     if (previousBinDir) await atomicWrite(binDirFile, previousBinDir).catch(() => {});
     else if (!hadBinDir) await rm(binDirFile, { force: true }).catch(() => {});
+    if (previousNodeFile) await atomicWrite(nodeFile, previousNodeFile).catch(() => {});
+    else if (!hadNodeFile) await rm(nodeFile, { force: true }).catch(() => {});
     await rm(publishDir, { recursive: true, force: true }).catch(() => {});
     if (versionBackup && await pathExists(versionBackup)) await rename(versionBackup, versionDir).catch(() => {});
     throw error;
@@ -941,6 +1038,13 @@ async function main(argv) {
   const platform = currentPlatform();
   requireSupportedSystem(install, platform);
   const nodeHome = join(home, node);
+  try {
+    for (const entry of await readdir(home)) {
+      if (entry.startsWith(`.${node}-removing-`)) {
+        await rm(join(home, entry), { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  } catch {}
   const activeFile = join(nodeHome, ".active-version");
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const version = tag.replace(/^v/, "");
@@ -963,9 +1067,11 @@ async function main(argv) {
     const stagedLauncher = await prepareAsset(install, asset, name, node, stage, platform);
     const smokeTest = install.smokeTest ?? ["--version"];
     const smoke = await run(stagedLauncher, smokeTest, { allowFailure: true });
-    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) throw new Error("staged launcher smoke test failed");
+    if (smoke.code !== 0 || smoke.stdout.trim() !== `forge614-${node} ${version}`) {
+      throw smokeFailureError("staged", smoke);
+    }
     const selectedBinDir = options.binDir ? resolve(options.binDir) : join(nodeHome, "bin");
-    const pathWarning = await activate(node, version, nodeHome, stage, stagedLauncher, selectedBinDir, platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest);
+    const pathWarning = await activate(node, version, nodeHome, stage, stagedLauncher, selectedBinDir, platform, install.path?.modify === true, process.env.HOME || process.env.USERPROFILE || "", smokeTest, pointerBytes);
     process.stdout.write(`${pathWarning
       ? message("pathNotAdded", { node, reason: pathWarning })
       : message(previousVersion === version ? "reinstalled" : previousVersion ? "updated" : "installed", { node, previous: previousVersion, version })}\n`);
@@ -993,17 +1099,50 @@ async function uninstallNode(node, home, binDirOverride) {
   const launcherCandidates = platform.os === "windows"
     ? [`forge614-${node}.exe`, `forge614-${node}.cmd`]
     : [`forge614-${node}`];
+  let userData = [];
+  try {
+    const rawNodeJson = await readFile(join(nodeHome, ".node.json"), "utf8");
+    const parsed = JSON.parse(rawNodeJson);
+    if (Array.isArray(parsed?.install?.userData) && parsed.install.userData.length > 0) {
+      userData = parsed.install.userData;
+    }
+  } catch {
+    // If .node.json is absent or invalid, proceed without userData protection.
+  }
   const found = await findLauncher(nodeHome, node, platform, binDir);
   if (found) {
     const result = await run(found.launcher, ["uninstall", "--self"], { allowFailure: true });
-    if (result.code !== 0) process.stderr.write(`${message("uninstallHookFailed", { node })}\n`);
+    if (result.code !== 0) {
+      if (userData.length > 0) {
+        process.stderr.write(`${message("userDataProtected", { node })}\n`);
+        return EXIT.REQUIREMENT;
+      }
+      process.stderr.write(`${message("uninstallHookFailed", { node })}\n`);
+    }
+  }
+  let removingDir = "";
+  if (await pathExists(nodeHome)) {
+    removingDir = join(home, `.${node}-removing-${randomUUID()}`);
+    try {
+      await rename(nodeHome, removingDir);
+    } catch (renameError) {
+      throw new InstallerError(EXIT.REQUIREMENT, `could not rename ${node} directory for removal: ${renameError.message}`);
+    }
   }
   const removesExternalLauncher = Boolean(binDirOverride || storedBinDir);
   if (removesExternalLauncher) for (const name of launcherCandidates) await rm(join(binDir, name), { force: true });
   const sharedWindowsLauncherRemains = platform.os === "windows" && removesExternalLauncher && await hasWindowsLauncher(binDir);
   if (!sharedWindowsLauncherRemains) await updatePath(process.env.HOME || process.env.USERPROFILE || "", node, binDir, platform, false);
-  await rm(nodeHome, { recursive: true, force: true });
-  process.stdout.write(`${message("removed", { node })}\n`);
+  if (removingDir) {
+    try {
+      await rm(removingDir, { recursive: true, force: true });
+    } catch {
+      process.stderr.write(`${message("uninstallCleanupFailed", { node })}\n`);
+    }
+  }
+  if (!(await pathExists(nodeHome))) {
+    process.stdout.write(`${message("removed", { node })}\n`);
+  }
   return EXIT.OK;
 }
 
