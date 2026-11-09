@@ -14,6 +14,7 @@
     "standard:pack": "bun run src/interfaces/cli/standard-pack.ts",
     "standard:check": "bun run src/interfaces/cli/standard-pack.ts --check",
     "installer:e2e": "bun test src/app/installer-e2e.test.ts",
+    "installer:e2e:windows": "node scripts/e2e/run-windows-deferred-removal.mjs",
     "standard:release": "bun run src/interfaces/cli/standard-release.ts",
     "schemas:generate": "bun run src/interfaces/cli/schemas-generate.ts",
     "notion-map:build": "bun run src/interfaces/cli/notion-map-build.ts",

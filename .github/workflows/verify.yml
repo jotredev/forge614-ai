@@ -31,8 +31,5 @@ jobs:
         with: { node-version: "22.19.0" }
       - run: bun install --frozen-lockfile
       - run: bun run installer:e2e
-      - name: Windows deferred removal of the running launcher
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/e2e/windows-deferred-removal.e2e.ps1
+      - run: bun run installer:e2e:windows
       - run: bun run standard:check
