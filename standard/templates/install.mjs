@@ -60,6 +60,7 @@ function message(key, values = {}) {
     removed: { es: "forge614-{node} se desinstaló.", en: "forge614-{node} was uninstalled." },
     uninstallHookFailed: { es: "Aviso: falló forge614-{node} uninstall --self; se sigue con la limpieza del instalador.", en: "Warning: forge614-{node} uninstall --self failed; continuing with installer cleanup." },
     uninstallCleanupFailed: { es: "Aviso: no se pudo borrar la carpeta temporal de desinstalación de forge614-{node}; se limpiará en la siguiente instalación.", en: "Warning: could not delete temporary uninstallation directory for forge614-{node}; it will be cleaned up on the next installation." },
+    parkedExeRemains: { es: "Aviso: forge614-{node} se desinstaló, pero no se pudo programar el borrado de {paths}; el archivo se borrará en la siguiente instalación o desinstalación.", en: "Warning: forge614-{node} was uninstalled, but the deletion of {paths} could not be scheduled; the file will be deleted on the next installation or uninstallation." },
     userDataProtected: { es: "Falló forge614-{node} uninstall --self; no se borró nada para proteger los datos.", en: "forge614-{node} uninstall --self failed; nothing was deleted to protect user data." },
     help: { es: "Uso: install.mjs [--latest] [--force] [--version ETIQUETA] [--archive RUTA] [--uninstall] [--bin-dir RUTA]", en: "Usage: install.mjs [--latest] [--force] [--version TAG] [--archive PATH] [--uninstall] [--bin-dir PATH]" },
   };
@@ -467,6 +468,79 @@ function testWindowsEnvironmentKey() {
 /** Encode a PowerShell script as UTF-16LE base64 for Windows PowerShell 5.1. */
 function encodedPowerShell(script) {
   return Buffer.from(script, "utf16le").toString("base64");
+}
+
+/** Match a leftover launcher parked in a bin folder by an earlier Windows update. */
+function parkedLauncherPattern(node) {
+  return new RegExp(`^\\.old-forge614-${node}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.exe$`);
+}
+
+/** Match a leftover executable parked in FORGE614_HOME by an earlier Windows uninstall. */
+function parkedHomeExecutablePattern(node) {
+  return new RegExp(`^\\.forge614-${node}-old-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.exe$`);
+}
+
+/** Delete parked executables left by earlier runs; every failure is ignored and no other name is touched. */
+async function cleanupParkedExecutables(home, node, binDirs) {
+  const targets = [[home, parkedHomeExecutablePattern(node)], ...[...new Set(binDirs.filter(Boolean))].map((dir) => [dir, parkedLauncherPattern(node)])];
+  for (const [dir, pattern] of targets) {
+    const entries = await readdir(dir).catch(() => []);
+    for (const name of entries) {
+      if (pattern.test(name)) await rm(join(dir, name), { force: true }).catch(() => {});
+    }
+  }
+}
+
+/** List every regular .exe below a directory without following symbolic links. */
+async function collectExecutables(dir) {
+  const found = [];
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...await collectExecutables(path));
+    else if (entry.isFile() && /\.exe$/i.test(entry.name)) found.push(path);
+  }
+  return found;
+}
+
+/** Second-stage PowerShell: delete only the exact parked files it was given, for at most ten minutes. */
+function deferredRemovalScript(paths) {
+  const encoded = Buffer.from(JSON.stringify(paths), "utf8").toString("base64");
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$encoded = '${encoded}'`,
+    "$paths = @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json)",
+    "$allowed = '^\\.(old-forge614-.+|forge614-.+-old-.+)\\.exe$'",
+    "$pending = @($paths | Where-Object { $_ -is [string] -and ([IO.Path]::GetFileName($_) -match $allowed) })",
+    "$deadline = (Get-Date).AddMinutes(10)",
+    "while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {",
+    "  $next = @()",
+    "  foreach ($item in $pending) {",
+    "    if (-not (Test-Path -LiteralPath $item -PathType Leaf)) { continue }",
+    "    try { Remove-Item -LiteralPath $item -Force -ErrorAction Stop } catch { $next += $item }",
+    "  }",
+    "  $pending = $next",
+    "  if ($pending.Count -gt 0) { Start-Sleep -Seconds 1 }",
+    "}",
+    "exit 0",
+  ].join("\n");
+}
+
+/** Start the bounded deleter outside this process group through WMI; return false when it could not be scheduled. */
+async function scheduleDeferredRemoval(paths) {
+  if (paths.length === 0) return true;
+  const inner = encodedPowerShell(deferredRemovalScript(paths));
+  if (inner.length > 24_000) return false;
+  const launcher = [
+    "$ErrorActionPreference = 'Stop'",
+    "$commandLine = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ' + $env:FORGE614_DEFERRED_REMOVAL",
+    "$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $commandLine }",
+    "if ($result.ReturnValue -ne 0) { exit 1 }",
+  ].join("\n");
+  const result = await run("powershell.exe", ["-NoProfile", "-EncodedCommand", encodedPowerShell(launcher)], {
+    allowFailure: true,
+    env: { ...process.env, FORGE614_DEFERRED_REMOVAL: inner },
+  });
+  return result.code === 0;
 }
 
 /** Resolve the real or test registry path inside PowerShell, without embedding a user value. */
@@ -922,10 +996,14 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
   const launcherExists = await pathExists(launcher);
   let oldLauncherTarget = "";
   let launcherBackup = "";
+  let parkedLauncher = "";
+  let parkedDone = false;
   if (launcherExists) {
     const info = await lstat(launcher);
     if (info.isSymbolicLink()) oldLauncherTarget = await readlink(launcher);
-    else {
+    else if (platform.os === "windows" && /\.exe$/i.test(launcher)) {
+      parkedLauncher = join(dirname(launcher), `.old-forge614-${nodeName}-${randomUUID()}.exe`);
+    } else {
       launcherBackup = join(dirname(launcher), `.launcher-backup-${randomUUID()}`);
       temporaryFiles.add(launcherBackup);
       await copyFile(launcher, launcherBackup);
@@ -947,6 +1025,10 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     const relativeTarget = stagedLauncher.slice(stagedDir.length + 1);
     const publishedLauncher = join(publishDir, relativeTarget);
     if (platform.os === "windows") {
+      if (parkedLauncher) {
+        await rename(launcher, parkedLauncher);
+        parkedDone = true;
+      }
       const temporaryLauncher = `${launcher}.${randomUUID()}.tmp`;
       temporaryFiles.add(temporaryLauncher);
       try {
@@ -974,6 +1056,7 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       await rm(launcherBackup, { force: true });
       temporaryFiles.delete(launcherBackup);
     }
+    if (parkedDone) await scheduleDeferredRemoval([parkedLauncher]).catch(() => false);
     if (versionBackup) await rm(versionBackup, { recursive: true, force: true }).catch(() => {});
     await cleanupOldVersions(nodeHome, version, publishDir);
   } catch (error) {
@@ -982,7 +1065,7 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       if (previousVersion) await atomicWrite(activeFile, Buffer.from(`${previousVersion}\n`)).catch(() => {});
       else await rm(activeFile, { force: true }).catch(() => {});
     }
-    await rm(launcher, { force: true }).catch(() => {});
+    if (!parkedLauncher || parkedDone) await rm(launcher, { force: true }).catch(() => {});
     if (oldLauncherTarget) {
       const tempLink = `${launcher}.${randomUUID()}.rollback`;
       try {
@@ -991,6 +1074,12 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
       } catch (restoreError) {
         await rm(tempLink, { force: true });
         process.stderr.write(`No se pudo restaurar el enlace del lanzador ${launcher}: ${restoreError.message}\n`);
+      }
+    } else if (parkedDone && await pathExists(parkedLauncher)) {
+      try {
+        await rename(parkedLauncher, launcher);
+      } catch (restoreError) {
+        process.stderr.write(`No se pudo restaurar el lanzador ${launcher}: ${restoreError.message}\n`);
       }
     } else if (launcherBackup && await pathExists(launcherBackup)) {
       try {
@@ -1045,6 +1134,8 @@ async function main(argv) {
       }
     }
   } catch {}
+  const storedBinDir = await readFile(join(nodeHome, ".bin-dir"), "utf8").then((value) => value.trim()).catch(() => "");
+  await cleanupParkedExecutables(home, node, [options.binDir ? resolve(options.binDir) : "", storedBinDir, join(nodeHome, "bin")]);
   const activeFile = join(nodeHome, ".active-version");
   const previousVersion = await readFile(activeFile, "utf8").then((value) => value.trim()).catch(() => "");
   const version = tag.replace(/^v/, "");
@@ -1095,6 +1186,7 @@ async function uninstallNode(node, home, binDirOverride) {
   const nodeHome = join(home, node);
   const storedBinDir = await readFile(join(nodeHome, ".bin-dir"), "utf8").then((value) => value.trim()).catch(() => "");
   const binDir = binDirOverride ? resolve(binDirOverride) : storedBinDir || join(nodeHome, "bin");
+  await cleanupParkedExecutables(home, node, [binDirOverride ? resolve(binDirOverride) : "", storedBinDir, join(nodeHome, "bin")]);
   const platform = currentPlatform();
   const launcherCandidates = platform.os === "windows"
     ? [`forge614-${node}.exe`, `forge614-${node}.cmd`]
@@ -1121,6 +1213,18 @@ async function uninstallNode(node, home, binDirOverride) {
     }
   }
   let removingDir = "";
+  const parkedExecutables = [];
+  if (platform.os === "windows" && await pathExists(nodeHome)) {
+    for (const executable of await collectExecutables(nodeHome)) {
+      const parked = join(home, `.forge614-${node}-old-${randomUUID()}.exe`);
+      try {
+        await rename(executable, parked);
+        parkedExecutables.push(parked);
+      } catch {
+        // The directory rename below reports the real blocker.
+      }
+    }
+  }
   if (await pathExists(nodeHome)) {
     removingDir = join(home, `.${node}-removing-${randomUUID()}`);
     try {
@@ -1139,6 +1243,9 @@ async function uninstallNode(node, home, binDirOverride) {
     } catch {
       process.stderr.write(`${message("uninstallCleanupFailed", { node })}\n`);
     }
+  }
+  if (parkedExecutables.length > 0 && !(await scheduleDeferredRemoval(parkedExecutables).catch(() => false))) {
+    process.stderr.write(`${message("parkedExeRemains", { node, paths: parkedExecutables.join(", ") })}\n`);
   }
   if (!(await pathExists(nodeHome))) {
     process.stdout.write(`${message("removed", { node })}\n`);
