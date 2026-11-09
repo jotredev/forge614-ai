@@ -1,7 +1,7 @@
 # {{NODE_TITLE}} (`forge614-{{NODE_NAME}}`)
 
 Las plantillas del instalador cambian en Standard 1.2.0 según el acta [0031](../../docs/decisions/0031-instalador-unico-install-mjs.md).
-En Standard 1.3.0 incorporan limpieza de versiones viejas, protección de datos del usuario (`userData`), renombre previo al borrar en desinstalación y detalle de salida en fallos de la prueba de humo.
+En Standard 1.3.0 incorporan limpieza de versiones viejas, protección de datos del usuario (`userData`), renombre previo al borrar en desinstalación y detalle de salida en fallos de la prueba de humo, además del apartado del `.exe` en uso y borrado diferido en Windows.
 
 > Analogía en una frase: <completar>.
 
