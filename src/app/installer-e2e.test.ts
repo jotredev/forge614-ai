@@ -1034,6 +1034,55 @@ installerCase("--uninstall removes only the node home after its self-uninstall h
   expect(readFileSync(protectedFile, "utf8")).toBe("keep");
 });
 
+/**
+ * Checks that an update and an uninstall leave no `.old-*` / `-old-*` parked files on macOS and Linux.
+ * It exists because the parking of the running launcher is Windows-only and must not change POSIX behavior.
+ */
+installerCase("update and uninstall create no parked .old executables outside Windows", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-no-parked-");
+  expect((await runInstaller(home, server.baseUrl)).code).toBe(0);
+  server.publish("1.1.0");
+  server.setLatest("1.1.0");
+  const updated = await runInstaller(home, server.baseUrl);
+  expect(updated.code, updated.stderr).toBe(0);
+  const forgeHome = join(home, ".forge614");
+  const listParked = () => [...readdirSync(forgeHome), ...readdirSync(join(forgeHome, NODE, "bin"))].filter((name) => /^\.old-|-old-/.test(name));
+  if (!onWindows) expect(listParked()).toEqual([]);
+  const removed = await runInstaller(home, server.baseUrl, ["--uninstall"]);
+  expect(removed.code, removed.stderr).toBe(0);
+  if (!onWindows) expect(readdirSync(forgeHome).filter((name) => /^\.old-|-old-/.test(name))).toEqual([]);
+  expect(existsSync(join(forgeHome, NODE))).toBe(false);
+});
+
+/**
+ * Checks the start-of-run cleanup of parked leftovers in bin and FORGE614_HOME, for install and uninstall.
+ * It exists because a Windows .exe that was still running when parked can only be deleted by a later run,
+ * and because the cleanup must never touch files whose names do not match the exact parked pattern.
+ */
+installerCase("start-of-run cleanup deletes only exact parked leftovers", async () => {
+  const server = await fakeReleaseServer();
+  const home = tempDir("forge614-install-cleanup-parked-");
+  expect((await runInstaller(home, server.baseUrl)).code).toBe(0);
+  const forgeHome = join(home, ".forge614");
+  const bin = join(forgeHome, NODE, "bin");
+  const uuid = "123e4567-e89b-12d3-a456-426614174000";
+  const leftovers = [join(bin, `.old-forge614-${NODE}-${uuid}.exe`), join(forgeHome, `.forge614-${NODE}-old-${uuid}.exe`)];
+  const untouched = [join(bin, ".old-forge614-demo-not-a-uuid.exe"), join(bin, `.old-forge614-other-${uuid}.exe`), join(forgeHome, `.forge614-${NODE}-old-${uuid}.txt`), join(forgeHome, "keep.exe")];
+  const plant = () => { for (const path of [...leftovers, ...untouched]) writeFileSync(path, "x"); };
+  const check = (removedNodeHome = false) => {
+    for (const path of leftovers) expect(existsSync(path), path).toBe(false);
+    // Uninstall deletes the node folder, so only the files kept in FORGE614_HOME itself remain checkable.
+    for (const path of untouched) expect(existsSync(path), path).toBe(removedNodeHome ? !path.startsWith(bin) : true);
+  };
+  plant();
+  expect((await runInstaller(home, server.baseUrl)).code).toBe(0);
+  check();
+  plant();
+  expect((await runInstaller(home, server.baseUrl, ["--uninstall"])).code).toBe(0);
+  check(true);
+});
+
 installerCase("empty and relative FORGE614_HOME values return 64", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-home-invalid-");
