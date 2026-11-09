@@ -1,5 +1,5 @@
 // Local fake release server for the Windows deferred-removal end-to-end script.
-// Serves two releases (1.0.0 and 1.1.0) of the fake node "demo" from two prebuilt .exe launchers.
+// Serves three releases (1.0.0, 1.1.0 and 1.2.0, the last one built to fail its published smoke test) of the fake node "demo" from two prebuilt .exe launchers.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -7,8 +7,8 @@ import { createServer } from "node:http";
 const REPOSITORY = "jotredev/forge614-demo";
 const NODE = "demo";
 const portFile = process.env.FORGE614_E2E_PORT_FILE;
-const executables = { "1.0.0": process.env.FORGE614_E2E_EXE_100, "1.1.0": process.env.FORGE614_E2E_EXE_110 };
-if (!portFile || !executables["1.0.0"] || !executables["1.1.0"]) throw new Error("missing FORGE614_E2E_* environment");
+const executables = { "1.0.0": process.env.FORGE614_E2E_EXE_100, "1.1.0": process.env.FORGE614_E2E_EXE_110, "1.2.0": process.env.FORGE614_E2E_EXE_120 };
+if (!portFile || !executables["1.0.0"] || !executables["1.1.0"] || !executables["1.2.0"]) throw new Error("missing FORGE614_E2E_* environment");
 
 /** Return one GNU SHA256SUMS line. */
 function sumLine(name, bytes) {
@@ -36,7 +36,7 @@ function release(version) {
   return new Map([[asset, executable], ["forge614.node.json", pointer], ["SHA256SUMS", sums]]);
 }
 
-const releases = new Map([["v1.0.0", release("1.0.0")], ["v1.1.0", release("1.1.0")]]);
+const releases = new Map([["v1.0.0", release("1.0.0")], ["v1.1.0", release("1.1.0")], ["v1.2.0", release("1.2.0")]]);
 const server = createServer((request, response) => {
   const parts = (request.url ?? "").split("/");
   const file = decodeURIComponent(parts.at(-1) ?? "");
