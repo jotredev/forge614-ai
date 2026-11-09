@@ -504,13 +504,14 @@ async function collectExecutables(dir) {
 
 /** Second-stage PowerShell: delete only the exact parked files it was given, for at most ten minutes. */
 function deferredRemovalScript(paths) {
-  const encoded = Buffer.from(JSON.stringify(paths), "utf8").toString("base64");
+  // One path per line in base64: Windows PowerShell 5.1 would hand a JSON array to the pipeline as one object.
+  const encoded = Buffer.from(paths.filter((path) => !/[\r\n]/.test(path)).join("\n"), "utf8").toString("base64");
   return [
     "$ErrorActionPreference = 'Stop'",
     `$encoded = '${encoded}'`,
-    "$paths = @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json)",
+    "$paths = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) -split \"`n\" | Where-Object { $_ -ne '' }",
     "$allowed = '^\\.(old-forge614-.+|forge614-.+-old-.+)\\.exe$'",
-    "$pending = @($paths | Where-Object { $_ -is [string] -and ([IO.Path]::GetFileName($_) -match $allowed) })",
+    "$pending = @($paths | Where-Object { [IO.Path]::GetFileName($_) -match $allowed })",
     "$deadline = (Get-Date).AddMinutes(10)",
     "while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {",
     "  $next = @()",

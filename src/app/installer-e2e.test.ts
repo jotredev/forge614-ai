@@ -1083,6 +1083,23 @@ installerCase("start-of-run cleanup deletes only exact parked leftovers", async 
   check(true);
 });
 
+/**
+ * Checks the deferred-removal PowerShell text for two paths.
+ * It exists because Windows PowerShell 5.1 pipes `ConvertFrom-Json` arrays as one object, which would leave
+ * the helper with nothing to delete; paths must travel as base64 text with one path per line instead.
+ */
+installerCase("deferred removal script passes paths as base64 lines, not JSON", () => {
+  const source = readFileSync(join(root, "standard/templates/install.mjs"), "utf8");
+  const match = /function deferredRemovalScript\(paths\) \{[\s\S]*?\n\}\n/.exec(source);
+  expect(match).not.toBeNull();
+  const build = new Function("Buffer", `${match![0]}\nreturn deferredRemovalScript;`)(Buffer) as (paths: string[]) => string;
+  const paths = ["C:\\forge\\.old-forge614-demo-a.exe", "C:\\forge\\.forge614-demo-old-b.exe"];
+  const script = build([...paths, "C:\\bad\nline.exe"]);
+  expect(script).not.toContain("ConvertFrom-Json");
+  const encoded = /\$encoded = '([A-Za-z0-9+/=]+)'/.exec(script)?.[1] ?? "";
+  expect(Buffer.from(encoded, "base64").toString("utf8")).toBe(paths.join("\n"));
+});
+
 installerCase("empty and relative FORGE614_HOME values return 64", async () => {
   const server = await fakeReleaseServer();
   const home = tempDir("forge614-install-home-invalid-");
