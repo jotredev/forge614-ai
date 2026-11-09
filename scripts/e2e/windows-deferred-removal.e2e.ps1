@@ -50,11 +50,12 @@ New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 New-Item -Path "HKCU:\$registryKey" -Force | Out-Null
 
 try {
-  foreach ($version in @("1.0.0", "1.1.0")) {
+  foreach ($version in @("1.0.0", "1.1.0", "1.2.0")) {
     $source = Join-Path $testRoot "launcher-$version.ts"
     @"
 const args = process.argv.slice(2);
-if (args[0] === "--version") console.log("forge614-demo $version");
+// 1.2.0 passes the staged smoke test but answers wrongly once published in bin\, to force the rollback.
+if (args[0] === "--version") console.log(("$version" === "1.2.0" && /\\bin\\/.test(process.execPath)) ? "forge614-demo wrong" : "forge614-demo $version");
 else if (args[0] === "wait") setInterval(() => {}, 1000);
 "@ | Set-Content -LiteralPath $source -Encoding utf8
     & bun build $source --compile --target=bun-windows-x64 --outfile (Join-Path $testRoot "launcher-$version.exe")
@@ -64,6 +65,7 @@ else if (args[0] === "wait") setInterval(() => {}, 1000);
   $env:FORGE614_E2E_PORT_FILE = $portFile
   $env:FORGE614_E2E_EXE_100 = Join-Path $testRoot "launcher-1.0.0.exe"
   $env:FORGE614_E2E_EXE_110 = Join-Path $testRoot "launcher-1.1.0.exe"
+  $env:FORGE614_E2E_EXE_120 = Join-Path $testRoot "launcher-1.2.0.exe"
   $server = Start-Process -FilePath node -ArgumentList @((Join-Path $PSScriptRoot "windows-release-server.mjs")) -PassThru -WindowStyle Hidden
   Assert-True (Wait-Until { Test-Path -LiteralPath $portFile } 15) "the local release server did not start"
 
@@ -90,7 +92,14 @@ else if (args[0] === "wait") setInterval(() => {}, 1000);
   Stop-Fixture $first
   Assert-True (Wait-Until { @(Get-ChildItem -LiteralPath $bin -Filter ".old-forge614-demo-*.exe" -File -ErrorAction SilentlyContinue).Count -eq 0 } 60) "the parked launcher was not deleted within 60 seconds"
 
-  # 4. Uninstall while the (new) launcher runs.
+  # 3b. Failed update to 1.2.0 with the 1.1.0 launcher running: non-zero exit, old launcher restored, nothing parked left.
+  $second = Start-Fixture
+  Assert-True ((Invoke-Installer @("--version", "v1.2.0")) -ne 0) "the update with a failing smoke test must not exit 0"
+  Assert-True ((& $launcher --version) -eq "forge614-demo 1.1.0") "the rollback did not leave the 1.1.0 launcher in place"
+  Assert-True (@(Get-ChildItem -LiteralPath $bin -Filter ".old-forge614-demo-*.exe" -File -ErrorAction SilentlyContinue).Count -eq 0) "the rollback left a parked launcher in bin"
+  Stop-Fixture $second
+
+  # 4. Uninstall while the (restored) launcher runs.
   $second = Start-Fixture
   Assert-True ((Invoke-Installer @("--uninstall")) -eq 0) "uninstall with the launcher running did not exit 0"
   Assert-True (-not (Test-Path -LiteralPath $nodeHome)) "the node folder still exists after uninstall"
