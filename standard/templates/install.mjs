@@ -1026,6 +1026,8 @@ async function activate(nodeName, version, nodeHome, stagedDir, stagedLauncher, 
     const relativeTarget = stagedLauncher.slice(stagedDir.length + 1);
     const publishedLauncher = join(publishDir, relativeTarget);
     if (platform.os === "windows") {
+      // The flat-install migration may already have moved the launcher away; then there is nothing to park.
+      if (parkedLauncher && !(await pathExists(launcher))) parkedLauncher = "";
       if (parkedLauncher) {
         await rename(launcher, parkedLauncher);
         parkedDone = true;
