@@ -28,7 +28,7 @@ function Wait-Until([scriptblock]$condition, [int]$seconds) {
 }
 
 function Invoke-Installer([string[]]$arguments) {
-  & node $installer @arguments
+  & node $installer @arguments | Out-Host
   return $LASTEXITCODE
 }
 
@@ -79,11 +79,13 @@ else if (args[0] === "wait") setInterval(() => {}, 1000);
   $env:FORGE614_LOCALE = "en"
 
   # 1. Install 1.0.0 and keep its launcher running.
-  Assert-True ((Invoke-Installer @("--version", "v1.0.0")) -eq 0) "install 1.0.0 failed"
+  $exitCode = Invoke-Installer @("--version", "v1.0.0")
+  Assert-True ($exitCode -eq 0) "install 1.0.0 failed (exit code: $exitCode)"
   $first = Start-Fixture
 
   # 2. Update while the launcher runs: exit 0, new launcher in place, old one parked.
-  Assert-True ((Invoke-Installer @("--version", "v1.1.0")) -eq 0) "update with the launcher running did not exit 0"
+  $exitCode = Invoke-Installer @("--version", "v1.1.0")
+  Assert-True ($exitCode -eq 0) "update with the launcher running did not exit 0 (exit code: $exitCode)"
   Assert-True ((& $launcher --version) -eq "forge614-demo 1.1.0") "the new launcher is not in place"
   $parked = @(Get-ChildItem -LiteralPath $bin -Filter ".old-forge614-demo-*.exe" -File)
   Assert-True ($parked.Count -eq 1) "expected one parked launcher in bin, found $($parked.Count)"
@@ -94,14 +96,16 @@ else if (args[0] === "wait") setInterval(() => {}, 1000);
 
   # 3b. Failed update to 1.2.0 with the 1.1.0 launcher running: non-zero exit, old launcher restored, nothing parked left.
   $second = Start-Fixture
-  Assert-True ((Invoke-Installer @("--version", "v1.2.0")) -ne 0) "the update with a failing smoke test must not exit 0"
+  $exitCode = Invoke-Installer @("--version", "v1.2.0")
+  Assert-True ($exitCode -ne 0) "the update with a failing smoke test must not exit 0 (exit code: $exitCode)"
   Assert-True ((& $launcher --version) -eq "forge614-demo 1.1.0") "the rollback did not leave the 1.1.0 launcher in place"
   Assert-True (@(Get-ChildItem -LiteralPath $bin -Filter ".old-forge614-demo-*.exe" -File -ErrorAction SilentlyContinue).Count -eq 0) "the rollback left a parked launcher in bin"
   Stop-Fixture $second
 
   # 4. Uninstall while the (restored) launcher runs.
   $second = Start-Fixture
-  Assert-True ((Invoke-Installer @("--uninstall")) -eq 0) "uninstall with the launcher running did not exit 0"
+  $exitCode = Invoke-Installer @("--uninstall")
+  Assert-True ($exitCode -eq 0) "uninstall with the launcher running did not exit 0 (exit code: $exitCode)"
   Assert-True (-not (Test-Path -LiteralPath $nodeHome)) "the node folder still exists after uninstall"
   $parkedHome = @(Get-ChildItem -LiteralPath $forgeHome -Filter ".forge614-demo-old-*.exe" -File)
   Assert-True ($parkedHome.Count -ge 1) "expected a parked executable in FORGE614_HOME"
