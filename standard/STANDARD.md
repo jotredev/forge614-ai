@@ -59,9 +59,34 @@ Convención única (acta 0013): cambia el formato que Shell leía de Engines, po
 - Códigos de salida: `0` éxito; `1` error; `2` entrada inválida; `75` pausa recuperable (cuota); otros solo si el contrato del nodo los documenta.
 - Flujos de eventos: NDJSON en stdout, un objeto por línea, cada uno con `schemaVersion` y `event`; evento terminal garantizado.
 - `--version` imprime `forge614-<nodo> X.Y.Z`; `--version --json` imprime `{"schemaVersion":1,"name":"forge614-<nodo>","version":"X.Y.Z"}`. Ambos y `--help` salen por stdout con código 0; los errores salen por stderr en el formato de error de máquina (acta 0031).
-- `<nodo> update`, `<nodo> uninstall` y `<nodo> uninstall --self` muestran por defecto una frase para personas por stdout; con `--json` muestran sus resultados JSON definidos en el acta 0031. Los errores CLI van por stderr; los códigos son 0 en éxito, 1 en error y 2 en entrada inválida (acta 0031).
+- `<nodo> update`, `<nodo> uninstall` y `<nodo> uninstall --self` muestran por defecto una frase para personas por stdout. Con `--json`, `update` usa el formato común de abajo y los comandos de desinstalación usan los resultados del acta 0031. Los errores CLI van por stderr. Los códigos son 0 en éxito, 1 en error y 2 en entrada inválida.
 - Cambios incompatibles suben `schemaVersion`; el consumidor rechaza versiones que no conoce con `SCHEMA_UNSUPPORTED`.
 - El `code` es un identificador estable en `MAYUSCULAS_CON_GUION_BAJO` (regex `^[A-Z][A-Z0-9_]+$`), listado en el `CONTRACT.md` del nodo. Los nodos con interfaz humana derivan el texto del mismo `code` mediante un catálogo tipado por idioma (8).
+
+### Resultado común de `update --json`
+
+Al adoptar el estándar 1.3.0, cada nodo usa [`update-result.schema.json`](schemas/update-result.schema.json) (acta 0032). Con código 0 escribe un único objeto JSON seguido de un salto de línea en stdout. El progreso del instalador queda fuera de la salida de máquina. La raíz describe el nodo invocado:
+
+```json
+{
+  "schemaVersion": 2,
+  "updated": true,
+  "previousVersion": "1.17.0",
+  "installedVersion": "1.18.0",
+  "dependencies": [
+    { "node": "engines", "updated": true, "previousVersion": "1.18.0", "installedVersion": "1.19.0" },
+    { "node": "engram", "updated": false, "previousVersion": "1.11.0", "installedVersion": "1.11.0", "pendingVersion": "1.12.0" }
+  ]
+}
+```
+
+- Las versiones se escriben como `X.Y.Z`, sin `v`. `previousVersion` es la versión instalada antes de la operación e `installedVersion` la que se verificó al terminar. `updated` es `true` cuando son distintas, incluida una vuelta a una versión anterior. Si quedaron iguales, `updated` es `false`.
+- `pendingVersion` solo se incluye al programar un reemplazo diferido a una versión distinta. En ese caso, `installedVersion` sigue siendo `previousVersion` y `updated` es `false`.
+- `dependencies` se omite si no hubo cambios ni reemplazos programados en otros nodos. Cada entrada usa el identificador de `forge614.node.json` (`engines`, `engram`, etc.) y los mismos campos de versión, una vez por nodo. Solo en esa lista, `previousVersion: null` indica que el nodo se instaló por primera vez. Shell informa aquí los cambios que provoque en Engines y Engram.
+- Con código 1 o 2, stdout queda vacío y stderr contiene un solo [objeto de error](schemas/error-envelope.schema.json). El error de una actualización de varios nodos puede ocurrir después de un cambio ya aplicado en otro nodo.
+- El esquema JSON publicado comprueba la estructura. El validador Zod del estándar comprueba también la coherencia de las versiones y que cada dependencia aparezca una sola vez.
+
+Durante la adopción, los consumidores leen la salida publicada anterior y `schemaVersion: 2` durante al menos un ciclo de release. Los nodos que ya publicaban una salida de máquina para `update` la documentan y conservan durante la transición mediante `update --json --format 1`. Antes de cambiar la salida de Engines, Shell debe poder leer ambas formas y elegir la invocación compatible antes de actualizar. Las instalaciones anteriores de Engines devolvían JSON con `update` sin banderas. Los formatos desconocidos reciben `SCHEMA_UNSUPPORTED`. El retiro del formato anterior se rige por el acta 0024.
 
 ## 5. Patrones obligatorios
 

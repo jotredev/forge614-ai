@@ -133,7 +133,7 @@ Cada release publica el activo declarado por `install.asset.pattern`, `SHA256SUM
 | `<nodo> --version` | `forge614-<nodo> X.Y.Z\n` | 0 | Objeto estructurado en stderr. |
 | `<nodo> --version --json` | `{"schemaVersion":1,"name":"forge614-<nodo>","version":"X.Y.Z"}\n` | 0 | Objeto estructurado en stderr. |
 | `<nodo> --help` | Ayuda de texto, terminada en salto de línea | 0 | Objeto estructurado en stderr si no se puede generar. |
-| `<nodo> update` | Por defecto, una frase para personas por stdout (por ejemplo, `forge614-engram se actualizó de 1.9.0 a 1.9.1.` o `forge614-engram ya está al día (1.9.1).`); el JSON definido sale solo con `--json` | 0 | Objeto de error por stderr; código 1. |
+| `<nodo> update` | Por defecto, una frase para personas por stdout (por ejemplo, `forge614-engram se actualizó de 1.9.0 a 1.9.1.` o `forge614-engram ya está al día (1.9.1).`). Con `--json`, usa el [resultado común del acta 0032](0032-formato-comun-update-json.md). | 0 | Objeto de error por stderr; código 1. |
 | `<nodo> uninstall` | Por defecto, una frase para personas por stdout tras confirmar; el JSON `{"schemaVersion":1,"result":{"removed":true}}\n` sale solo con `--json` | 0 | Objeto de error por stderr; código 1. Cancelar: 130. |
 | `<nodo> uninstall --self` | Por defecto, una frase para personas por stdout; el JSON `{"schemaVersion":1,"result":{"integrationsRemoved":true}}\n` sale solo con `--json` | 0 | Objeto de error por stderr; código 1. |
 

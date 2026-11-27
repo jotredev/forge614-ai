@@ -18,6 +18,7 @@ One sentence.
 ## Public commands
 | Command | Input (schema) | Output (schema) | `schemaVersion` | Exit codes |
 | --- | --- | --- | --- | --- |
+| `update` | Optional `--version X.Y.Z` and `--json` | Text by default. With `--json`, [common result](https://github.com/jotredev/forge614-ai/blob/standard-v{{STANDARD_VERSION}}/standard/schemas/update-result.schema.json). | `2` for the JSON result | `0`, `1`, `2` |
 
 ## Error codes
 | Code | Meaning |
