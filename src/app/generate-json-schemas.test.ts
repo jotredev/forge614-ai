@@ -16,6 +16,7 @@ test("emits one JSON Schema per zod schema with $id", () => {
     "pack.schema.json",
     "rule-manifest.schema.json",
     "support-matrix.schema.json",
+    "update-result.schema.json",
   ]);
   const parsed = GeneratedSchema.parse(JSON.parse(files["node-pointer.schema.json"] ?? "{}"));
   expect(parsed.$id).toContain("node-pointer");

@@ -59,9 +59,34 @@ Single convention (record 0013): it changes the format Shell used to read from E
 - Exit codes: `0` success; `1` error; `2` invalid input; `75` recoverable pause (quota); others only if the node's contract documents them.
 - Event streams: NDJSON on stdout, one object per line, each with `schemaVersion` and `event`; a terminal event is guaranteed.
 - `--version` prints `forge614-<node> X.Y.Z`; `--version --json` prints `{"schemaVersion":1,"name":"forge614-<node>","version":"X.Y.Z"}`. Both and `--help` write to stdout and exit 0; errors go to stderr in the machine error format (record 0031).
-- `<node> update`, `<node> uninstall` and `<node> uninstall --self` print a human-readable sentence to stdout by default; with `--json` they print the JSON results defined in record 0031. CLI errors go to stderr; exit codes are 0 on success, 1 on error and 2 on invalid input (record 0031).
+- `<node> update`, `<node> uninstall` and `<node> uninstall --self` print a human-readable sentence to stdout by default. With `--json`, `update` uses the common format below, and the uninstall commands use the results from record 0031. CLI errors go to stderr. Exit codes are 0 on success, 1 on error and 2 on invalid input.
 - Incompatible changes bump `schemaVersion`; the consumer rejects versions it does not know with `SCHEMA_UNSUPPORTED`.
 - The `code` is a stable identifier in `UPPERCASE_WITH_UNDERSCORES` (regex `^[A-Z][A-Z0-9_]+$`), listed in the node's `CONTRACT.md`. Nodes with a human interface derive the text from the same `code` through a typed catalog per language (8).
+
+### Common `update --json` result
+
+When adopting standard 1.3.0, each node uses [`update-result.schema.json`](schemas/update-result.schema.json) (record 0032). With exit code 0, it writes a single JSON object followed by a newline to stdout. Installer progress stays out of the machine output. The root fields describe the invoked node.
+
+```json
+{
+  "schemaVersion": 2,
+  "updated": true,
+  "previousVersion": "1.17.0",
+  "installedVersion": "1.18.0",
+  "dependencies": [
+    { "node": "engines", "updated": true, "previousVersion": "1.18.0", "installedVersion": "1.19.0" },
+    { "node": "engram", "updated": false, "previousVersion": "1.11.0", "installedVersion": "1.11.0", "pendingVersion": "1.12.0" }
+  ]
+}
+```
+
+- Versions use `X.Y.Z` without `v`. `previousVersion` is the version installed before the operation and `installedVersion` is the version verified at the end. `updated` is `true` when they differ, including when rolling back to an earlier version. If they match, `updated` is `false`.
+- `pendingVersion` appears only when a deferred replacement to a different version has been scheduled. In that case, `installedVersion` still matches `previousVersion` and `updated` is `false`.
+- Omit `dependencies` when no other node changed or had a replacement scheduled. Each entry uses the identifier from `forge614.node.json` (`engines`, `engram`, etc.) and the same version fields, once per node. Within that list, `previousVersion: null` means the node was installed for the first time. Shell reports any changes it made to Engines or Engram here.
+- With exit code 1 or 2, stdout stays empty and stderr contains a single [error object](schemas/error-envelope.schema.json). A multi-node update can fail after another node has already changed.
+- The published JSON Schema checks the structure. The standard's Zod validator also checks that the versions agree and each dependency appears only once.
+
+During adoption, consumers read the previous published output and `schemaVersion: 2` for at least one release cycle. Nodes that already published machine output for `update` document and preserve it during the transition through `update --json --format 1`. Before Engines changes its output, Shell must be able to read both forms and select the compatible invocation before updating. Older Engines installations returned JSON from `update` without flags. Unknown formats receive `SCHEMA_UNSUPPORTED`. Record 0024 governs retirement of the previous format.
 
 ## 5. Mandatory patterns
 

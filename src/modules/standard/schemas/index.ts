@@ -7,6 +7,7 @@ import { NodePointerSchema } from "./node-pointer";
 import { PackSchema } from "./pack";
 import { RuleManifestSchema } from "./rule-manifest";
 import { SupportMatrixSchema } from "./support-matrix";
+import { UpdateResultSchema } from "./update-result";
 
 export {
   DecisionsIndexSchema,
@@ -17,6 +18,7 @@ export {
   PackSchema,
   RuleManifestSchema,
   SupportMatrixSchema,
+  UpdateResultSchema,
 };
 export type { DecisionsIndex } from "./decisions-index";
 export type { ErrorEnvelope } from "./error-envelope";
@@ -26,6 +28,7 @@ export type { NodePointer } from "./node-pointer";
 export type { Pack } from "./pack";
 export type { RuleManifest } from "./rule-manifest";
 export type { SupportMatrix } from "./support-matrix";
+export type { UpdateResult } from "./update-result";
 
 export const ALL_SCHEMAS: Record<string, z.ZodType> = {
   "node-pointer": NodePointerSchema,
@@ -36,4 +39,5 @@ export const ALL_SCHEMAS: Record<string, z.ZodType> = {
   "ndjson-event": NdjsonEventSchema,
   "decisions-index": DecisionsIndexSchema,
   "forbidden-mentions": ForbiddenMentionsSchema,
+  "update-result": UpdateResultSchema,
 };

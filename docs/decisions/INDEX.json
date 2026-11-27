@@ -279,6 +279,15 @@
       "date": "2026-10-15",
       "session": "forge614-ai-2026-10-15-t45-orquestador",
       "file": "0031-instalador-unico-install-mjs.md"
+    },
+    {
+      "number": "0032",
+      "slug": "formato-comun-update-json",
+      "title": "Formato común de `update --json`",
+      "status": "aceptada",
+      "date": "2026-11-26",
+      "session": "forge614-ai-2026-11-26-r2b",
+      "file": "0032-formato-comun-update-json.md"
     }
   ]
 }
